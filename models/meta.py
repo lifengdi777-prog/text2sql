@@ -1,9 +1,11 @@
 from sqlalchemy import String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-
+#继承了Base类，Base类是一个SQLAlchemy ORM模型的基类，定义了四个类：TableInfoMySQL、ColumnInfoMySQL、MetricInfoMySQL和ColumnMetricMySQL。
+#每个类都对应数据库中的一张表，并定义了表的结构和字段属性。
 from models import Base
 
-
+#ORM模型定义了四个类，分别对应元数据库中的四张表：table_info、column_info、metric_info和column_metric。
+#每个类都继承自Base，并使用SQLAlchemy的映射功能定义了表结构和字段属性。
 class TableInfoMySQL(Base):
     __tablename__ = "table_info"
 

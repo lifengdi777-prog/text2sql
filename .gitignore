@@ -14,3 +14,6 @@ logs/
 
 #docker相关文件
 docker/
+
+#版本号.md
+版本号.md
