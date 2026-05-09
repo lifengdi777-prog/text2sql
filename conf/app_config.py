@@ -41,6 +41,13 @@ class QdrantConfig(BaseModel):
 class EmbeddingConfig(BaseModel):
     host: str
     port: int
+    enable: bool
+    model_config = ConfigDict(from_attributes=True)
+
+class EmbeddingFallbackConfig(BaseModel):
+    base_url: str
+    api_key: str
+    model_name: str
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -64,6 +71,7 @@ class AppConfig(BaseModel):
     db_dw: DBConfig
     qdrant: QdrantConfig
     embedding: EmbeddingConfig
+    embedding_fallback: EmbeddingFallbackConfig
     es: ESConfig
     llm: LLMConfig
 
