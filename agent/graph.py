@@ -15,11 +15,17 @@ from agent.nodes.generate_sql import generate_sql
 from agent.nodes.correct_sql import correct_sql
 from agent.nodes.execute_sql import execute_sql
 from langchain.messages import HumanMessage
+from clients.mysql import dw_mysql_client, meta_mysql_client
+from clients.es import es_client
+from clients.qdrant import qdrant_client
+from clients.embedding import embedding_client
+from repositories.mysql import DWDBRepository, MetaDBRepository
+from repositories.es import ESRepository
+from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 
-
-#这行是在创建一个 LangGraph 的状态图构建器。
-#StateGraph 表示一个基于状态流转的图。
+#定义图的结构（StateGraph）
 #state_schema=WSAgentState表示整个图运行时共享的状态结构。
+#context_schema=WSAgentContext表示整个图运行时共享的上下文结构。
 graph_builder = StateGraph(state_schema=WSAgentState, context_schema=WSAgentContext)
 #添加节点
 graph_builder.add_node(parse_query_intention)
@@ -94,19 +100,36 @@ graph = graph_builder.compile()
 
 if __name__ == "__main__":
     import asyncio
-    async def test():
-        while True:
-            query = input("请输入你的查询：")
-            if query == "exit" or query == "quit":
-                break
-            state = WSAgentState(messages=[HumanMessage(content=query)])
-        #graph.astream是一个异步生成器函数，用于执行图并以流式的方式输出结果。
-            async for chunk in graph.astream(
-            state,
-            #初始状态，包含一个用户输入的消息"你好"。这个状态会在图的执行过程中被不断更新和传递。
-            #流式输出的模式，设置为"custom"表示我们会自己处理每个输出的chunk。
-            #用 custom 模式，你精准收到自己推送的数据，比如"step": "解析提问意图","status": "running"，而不是被 LangGraph 包装成一个完整的消息对象。
-            stream_mode="custom"
-            ):
-                print(chunk)
-    asyncio.run(test())
+    async def main():
+        query = "帮我统计一下上个季度销售额排名前三的产品"
+        try:
+            async with (
+                dw_mysql_client.session() as dw_session,
+                meta_mysql_client.session() as meta_session
+            ):  
+                dw_db_repo = DWDBRepository(dw_session)
+                meta_db_repo = MetaDBRepository(meta_session)
+                es_repo = ESRepository(es_client.client)
+                column_qdrant_repo = ColumnQdrantRepository(qdrant_client.client)
+                metric_qdrant_repo = MetricQdrantRepository(qdrant_client.client)
+                state = WSAgentState(messages=[HumanMessage(query)])
+                context = WSAgentContext(
+                    dw_db_repo=dw_db_repo,
+                    meta_db_repo=meta_db_repo,
+                    es_repo=es_repo,
+                    column_qdrant_repo=column_qdrant_repo,
+                    metric_qdrant_repo=metric_qdrant_repo
+                )
+                #异步流式执行整个 LangGraph 图，每当有数据产出时，就立刻拿到一个 chunk（数据块）
+                async for chunk in graph.astream(
+                    input=state,           # 初始状态 对应 state_schema=WSAgentState
+                    context=context,       # 上下文（各种 repo 客户端） 对应 context_schema=WSAgentContext
+                    stream_mode="custom"   # 流式模式 "custom" 表示我们自己控制流式输出，而不是默认的按节点输出
+                ):
+                    print(chunk)
+        finally:
+            await dw_mysql_client.close()
+            await meta_mysql_client.close()
+            await qdrant_client.close()
+            await es_client.close()
+    asyncio.run(main())

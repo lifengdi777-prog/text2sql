@@ -3,7 +3,7 @@ from qdrant_client.models import VectorParams, Distance, PointStruct, Filter
 from typing import Sequence
 from dtos.qdrant import ColumnQdrantInfo, MetricQdrantInfo, BaseQdrantInfo
 from abc import ABC
-
+from dtos.meta import ColumnInfo, MetricInfo
 
 class BaseQdrantRepository(ABC):
     collection_name: str
@@ -50,6 +50,21 @@ class BaseQdrantRepository(ABC):
             #写入 Qdrant 数据库中，进行 upsert 操作。
             await self.client.upsert(self.collection_name, points=points)
 
+    #根据输入的 embedding 向 Qdrant 数据库中查询相似的点，返回它们的 payload。
+    async def _search(
+        self, 
+        embedding: list[float], 
+        score_threshold: float=0.6, 
+        limit: int=5
+    ) -> list:
+        result = await self.client.query_points(
+            collection_name=self.collection_name,
+            query=embedding,
+            score_threshold=score_threshold,
+            limit=limit
+        )
+        return [point.payload for point in result.points]
+
 #这里定义了两个子类，分别继承 BaseQdrantRepository。
 #它们通过设置不同的 collection_name 来操作不同的 Qdrant 集合。
 #同时它们重写了父类的 upsert 方法，但内部只是调用 super().upsert()，所以实际逻辑仍然复用父类的方法。
@@ -59,9 +74,28 @@ class ColumnQdrantRepository(BaseQdrantRepository):
     async def upsert(self, qdrant_infos: list[ColumnQdrantInfo]):
         await super().upsert(qdrant_infos)
 
+    async def search(
+        self,
+        embedding: list[float], 
+        score_threshold: float=0.6, 
+        limit: int=5
+    ) -> list[ColumnInfo]:
+        #调用父类的 _search 方法，获取原始的 payload 列表。
+        payloads = await super()._search(embedding, score_threshold, limit)
+        return [ColumnInfo.model_validate(payload) for payload in payloads]
 
 class MetricQdrantRepository(BaseQdrantRepository):
     collection_name: str = "metric_info"
     
     async def upsert(self, qdrant_infos: list[MetricQdrantInfo]):
         await super().upsert(qdrant_infos)
+
+    async def search(
+        self,
+        embedding: list[float], 
+        score_threshold: float=0.6, 
+        limit: int=5
+    ) -> list[MetricInfo]:
+        #调用父类的 _search 方法，获取原始的 payload 列表。
+        payloads = await super()._search(embedding, score_threshold, limit)
+        return [MetricInfo.model_validate(payload) for payload in payloads]
