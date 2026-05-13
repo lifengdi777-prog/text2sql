@@ -45,6 +45,9 @@ async def sync_dw_to_meta_db() -> tuple[list[ColumnInfo], list[MetricInfo]]:
             column_types: dict[str, str] = await dw_repo.get_column_types(table.name)
             column_values: dict[str, list[Any]] = await dw_repo.get_column_values(table.name, [column.name for column in table.columns])
             
+            #从meta_config.json中读取每个表的列的数据，
+            #并将这些数据用ColumnInfo对象表示出来，
+            # 最后把这些对象添加到column_infos列表中。
             for column in table.columns:
                 values = column_values[column.name]
                 examples = list(set(values))
