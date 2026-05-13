@@ -33,7 +33,7 @@ async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     result: list[str] = await chain.ainvoke({"query": query}) # type: ignore
     keywords = list(set((keywords or [] )+result))
 
-    print("基础版关键词 + 大模型拓展后的关键词:", keywords)
+    print("column_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
     
     # 召回字段
     #str就是column_info.id，ColumnInfo是从qdrant里搜出来的字段信息对象

@@ -101,7 +101,7 @@ graph = graph_builder.compile()
 if __name__ == "__main__":
     import asyncio
     async def main():
-        query = "帮我统计一下上个季度销售额排名前三的产品"
+        query = "帮我统计一下上个季度华东地区销售额排名前三的产品"
         try:
             async with (
                 dw_mysql_client.session() as dw_session,

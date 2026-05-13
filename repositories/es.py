@@ -39,3 +39,21 @@ class ESRepository:
     # {"index": {"_index": "value_info", "_id": "003"}},
     # {"id": "003", "value": "小米平板", "column_id": "col_1"},
             await self.client.bulk(operations=operations)
+
+    async def search(
+        self,
+        keyword: str,
+        score_threshold: float = 0.6,
+        limit: int = 5
+    ) -> list[ValueInfo]:
+        result = await self.client.search(
+            index=self.index_name,
+            query={
+                "match": {
+                    "value": keyword
+                }
+            },
+            min_score=score_threshold,
+            size=limit
+        )
+        return [ValueInfo.model_validate(hit['_source']) for hit in result['hits']['hits']]

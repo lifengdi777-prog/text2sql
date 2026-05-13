@@ -6,7 +6,7 @@ from typing import Optional, Literal
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository, DWDBRepository
-from dtos.meta import ColumnInfo, MetricInfo
+from dtos.meta import ColumnInfo, MetricInfo, ValueInfo
 
 class WSAgentState(BaseModel):
     #Annotated的作用是为messages字段添加一个额外的验证器add_messages，
@@ -23,6 +23,10 @@ class WSAgentState(BaseModel):
     keywords: list[str] | None = None
     #记录召回的列信息
     recalled_columns: list[ColumnInfo] | None = None
+    #记录召回的指标信息
+    recalled_metrics: list[MetricInfo] | None = None
+    #记录召回的数值信息
+    value_infos: list[ValueInfo] | None = None
     #记录错误信息
     error: Optional[str] = None
 
