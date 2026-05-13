@@ -76,6 +76,9 @@ class AppConfig(BaseModel):
     llm: LLMConfig
 
 config_path = Path(__file__).parent / "app_config.yaml"
+#context就是从app_config.yaml文件中读取的配置数据。
 context = OmegaConf.load(config_path)
-#app_config是一个AppConfig对象，包含了从app_config.yaml文件加载的所有配置项。
+#①model_validate的作用是将yaml文件的数据转换成AppConfig对象的属性
+#②定义了一个全局的app_config变量，类型是AppConfig，
+#并且通过调用AppConfig.model_validate(context)来初始化这个变量。
 app_config: AppConfig = AppConfig.model_validate(context)
