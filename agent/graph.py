@@ -94,14 +94,19 @@ graph = graph_builder.compile()
 
 if __name__ == "__main__":
     import asyncio
-    async def main():
+    async def test():
+        while True:
+            query = input("请输入你的查询：")
+            if query == "exit" or query == "quit":
+                break
+            state = WSAgentState(messages=[HumanMessage(content=query)])
         #graph.astream是一个异步生成器函数，用于执行图并以流式的方式输出结果。
-        async for chunk in graph.astream(
+            async for chunk in graph.astream(
+            state,
             #初始状态，包含一个用户输入的消息"你好"。这个状态会在图的执行过程中被不断更新和传递。
-            WSAgentState(messages=[HumanMessage("你好")]), 
             #流式输出的模式，设置为"custom"表示我们会自己处理每个输出的chunk。
             #用 custom 模式，你精准收到自己推送的数据，比如"step": "解析提问意图","status": "running"，而不是被 LangGraph 包装成一个完整的消息对象。
             stream_mode="custom"
             ):
-            print(chunk)
-    asyncio.run(main())
+                print(chunk)
+    asyncio.run(test())
