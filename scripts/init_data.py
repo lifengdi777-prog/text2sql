@@ -24,78 +24,67 @@ async def sync_dw_to_meta_db() -> tuple[list[ColumnInfo], list[MetricInfo]]:
         meta_mysql_client.session() as meta_session,
         dw_mysql_client.session() as dw_session
     ):
-        # 1. 同步TableInfo和ColumnInfo
-        # 初始化dw和meta的repository对象
         dw_repo = DWDBRepository(dw_session)
         meta_repo = MetaDBRepository(meta_session)
 
-        table_infos: list[TableInfo] = []
-        # Tips: 这里调整了一下，从tables的for循环中调整到上层了
-        column_infos: list[ColumnInfo] = []
+        async with meta_session.begin():
+            # 1. 同步TableInfo和ColumnInfo到meta元数据库中
+            table_infos: list[TableInfo] = []
+            column_infos: list[ColumnInfo] = []
 
-        for table in meta_config.tables:
-            table_info = TableInfo(
-                id=table.name,
-                name=table.name,
-                role=table.role,
-                description=table.description
-            )
-            table_infos.append(table_info)
-
-            column_types: dict[str, str] = await dw_repo.get_column_types(table.name)
-            column_values: dict[str, list[Any]] = await dw_repo.get_column_values(table.name, [column.name for column in table.columns])
-            
-            #从meta_config.json中读取每个表的列的数据，
-            #并将这些数据用ColumnInfo对象表示出来，
-            # 最后把这些对象添加到column_infos列表中。
-            for column in table.columns:
-                values = column_values[column.name]
-                examples = list(set(values))
-                column_info = ColumnInfo(
-                    id=f"{table.name}.{column.name}",
-                    name=column.name,
-                    type=column_types[column.name],
-                    role=column.role,
-                    examples=examples,
-                    description=column.description,
-                    alias=column.alias,
-                    table_id=table_info.id
+            for table in meta_config.tables:
+                table_info = TableInfo(
+                    id=table.name,
+                    name=table.name,
+                    role=table.role,
+                    description=table.description
                 )
-                column_infos.append(column_info)
-        
-        # Tips: 这里调整了一下，从tables循环中放到tables循环结束后
-        # 将当前表的所有列的信息存储到元数据库中
-        await meta_repo.add_column_infos(column_infos)
-        # 统一将所有table_infos添加到数据库中
-        await meta_repo.add_table_infos(table_infos)
+                table_infos.append(table_info)
 
-        # 2. 同步MetricInfo和ColumnMetric到元数据库中
-        metric_infos: list[MetricInfo] = []
-        for metric in meta_config.metrics:
-            metric_info: MetricInfo = MetricInfo(
-                id=metric.name,
-                name=metric.name,
-                description=metric.description,
-                relevant_columns=metric.relevant_columns,
-                alias=metric.alias
-            )
-            metric_infos.append(metric_info)
+                column_types: dict[str, str] = await dw_repo.get_column_types(table.name)
+                column_values: dict[str, list[Any]] = await dw_repo.get_column_values(table.name, [column.name for column in table.columns])
 
-            column_metrics: list[ColumnMetric] = []
-            for relevant_column in metric.relevant_columns:
-                column_metric = ColumnMetric(
-                    column_id=relevant_column,
-                    metric_id=metric_info.id
+                for column in table.columns:
+                    values = column_values[column.name]
+                    examples = list(set(values))
+                    column_info = ColumnInfo(
+                        id=f"{table.name}.{column.name}",
+                        name=column.name,
+                        type=column_types[column.name],
+                        role=column.role,
+                        examples=examples,
+                        description=column.description,
+                        alias=column.alias,
+                        table_id=table_info.id
+                    )
+                    column_infos.append(column_info)
+
+            await meta_repo.add_column_infos(column_infos)
+            await meta_repo.add_table_infos(table_infos)
+
+            # 2. 同步MetricInfo和ColumnMetric到meta元数据库中
+            metric_infos: list[MetricInfo] = []
+            for metric in meta_config.metrics:
+                metric_info: MetricInfo = MetricInfo(
+                    id=metric.name,
+                    name=metric.name,
+                    description=metric.description,
+                    relevant_columns=metric.relevant_columns,
+                    alias=metric.alias
                 )
-                column_metrics.append(column_metric)
-            # 添加column_metrics到元数据库中
-            await meta_repo.add_column_metrics(column_metrics)
-        # 统一将所有metric_infos添加到元数据库中
-        await meta_repo.add_metric_infos(metric_infos)
+                metric_infos.append(metric_info)
 
-        # Tips：这里调整了一下，返回column_infos和metric_infos
-        #column_infos和metric_infos是一个对象列表
-        return column_infos, metric_infos
+                column_metrics: list[ColumnMetric] = []
+                for relevant_column in metric.relevant_columns:
+                    column_metric = ColumnMetric(
+                        column_id=relevant_column,
+                        metric_id=metric_info.id
+                    )
+                    column_metrics.append(column_metric)
+                await meta_repo.add_column_metrics(column_metrics)
+            await meta_repo.add_metric_infos(metric_infos)
+
+            return column_infos, metric_infos
 
     
 async def sync_meta_column_to_qdrant(column_infos: list[ColumnInfo]):

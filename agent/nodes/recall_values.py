@@ -34,6 +34,6 @@ async def recall_values(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     
     recalled_values: list[ValueInfo] = list(recalled_values_mapping.values())
 
-    print("recalled_values:", recalled_values)
+    # print("recalled_values:", recalled_values)
     writer(WSStepInfo(step="召回业务数据库数据", status="success"))
     return {"recalled_values": recalled_values}

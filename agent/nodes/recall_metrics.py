@@ -44,6 +44,6 @@ async def recall_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     
     recalled_metrics: list[MetricInfo] = list(recalled_metrics_mapping.values())
 
-    print("recalled_metrics:", recalled_metrics)
+    # print("recalled_metrics:", recalled_metrics)
     writer(WSStepInfo(step="召回指标信息", status="success"))
     return {"recalled_metrics": recalled_metrics}

@@ -8,6 +8,13 @@ from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository, DWDBRepository
 from dtos.meta import ColumnInfo, MetricInfo, ValueInfo
 
+class WSAgentTableInfoState(BaseModel):
+    id: str
+    name: str
+    role: Literal['dim', 'fact']
+    description: str
+    columns: list[ColumnInfo]
+
 class WSAgentState(BaseModel):
     #Annotated的作用是为messages字段添加一个额外的验证器add_messages，
     # 这个验证器会在messages字段被赋值时被调用。
@@ -26,7 +33,11 @@ class WSAgentState(BaseModel):
     #记录召回的指标信息
     recalled_metrics: list[MetricInfo] | None = None
     #记录召回的数值信息
-    value_infos: list[ValueInfo] | None = None
+    recalled_values: list[ValueInfo] | None = None
+    #meta表信息
+    table_infos: list[WSAgentTableInfoState] | None = None
+    #meta指标信息
+    metric_infos: list[MetricInfo] | None =  None
     #记录错误信息
     error: Optional[str] = None
 

@@ -53,6 +53,6 @@ async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     #这里就是只返回所有的 ColumnInfo 对象
     recalled_columns: list[ColumnInfo] = list(recalled_columns_mapping.values())
 
-    print("recalled_columns:", recalled_columns)
+    # print("recalled_columns:", recalled_columns)
     writer(WSStepInfo(step="召回字段信息", status="success"))
     return {"recalled_columns": recalled_columns}

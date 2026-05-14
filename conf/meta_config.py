@@ -2,7 +2,8 @@ from pydantic import BaseModel, ConfigDict
 from typing import Literal
 from pathlib import Path
 import json
-#从meta_config.json文件中读取配置，并将其解析为MetaConfig对象。MetaConfig对象包含了表格和指标的配置信息。
+#从meta_config.json文件中读取配置，并将其解析为MetaConfig对象。
+# MetaConfig对象包含了表格和指标的配置信息。
 class ColumnConfig(BaseModel):
     name: str
     role: Literal["primary_key", "foreign_key", "dimension", "measure"]

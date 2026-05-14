@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
 from models.meta import ColumnInfoMySQL, MetricInfoMySQL, TableInfoMySQL, ColumnMetricMySQL
 from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric
-from sqlalchemy import text
+from sqlalchemy import text, and_
 from typing import Any
 
 # MetaDBRepository类用于操作元数据库中的表格和指标信息。
@@ -34,6 +34,36 @@ class MetaDBRepository:
 
     async def add_column_metrics(self, column_metrics: list[ColumnMetric]):
         self.session.add_all([ColumnMetricMySQL(**column_metric.model_dump()) for column_metric in column_metrics])
+
+    async def get_column_info_by_id(self, column_id: str) -> ColumnInfo | None:
+        stmt = select(ColumnInfoMySQL).where(ColumnInfoMySQL.id == column_id)
+        column_info_mysql = await self.session.scalar(stmt)
+        if column_info_mysql:
+            #返回相应的ColumnInfo对象，如果没有找到对应的记录，则返回None。
+            return ColumnInfo.model_validate(column_info_mysql)
+        return None
+    
+    # 根据table_id获取表的主外键信息
+    async def get_table_pfks_by_id(self, table_id: str) -> list[ColumnInfo]:
+        # 根据table_id获取表的主外键
+        stmt = select(ColumnInfoMySQL).where(
+            and_(
+                ColumnInfoMySQL.table_id == table_id,
+                ColumnInfoMySQL.role.in_(['primary_key', 'foreign_key'])
+            )
+        )
+        column_info_mysqls = await self.session.scalars(stmt)
+        return [ColumnInfo.model_validate(column_info_mysql) for column_info_mysql in column_info_mysqls]
+    
+    async def get_table_info_by_id(self, table_id: str) -> TableInfo | None:
+        #构造一个SQL查询语句，查询TableInfoMySQL表中id等于table_id的记录。
+        stmt = select(TableInfoMySQL).where(TableInfoMySQL.id == table_id)
+        #执行查询，并将结果存储在table_info_mysql变量中。
+        table_info_mysql = await self.session.scalar(stmt)
+        if table_info_mysql:
+            #返回相应的TableInfo对象，如果没有找到对应的记录，则返回None。
+            return TableInfo.model_validate(table_info_mysql)
+        return None    
 
 #操作业务数据库的DWDBRepository类，提供了获取表格列类型和列值的方法。
 class DWDBRepository:
