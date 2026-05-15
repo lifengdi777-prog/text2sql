@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from langgraph.graph import MessagesState, add_messages
-from typing import Annotated
+from typing import Annotated, Any
 from langchain.messages import AnyMessage
 from typing import Optional, Literal
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
@@ -66,5 +66,7 @@ class WSStepInfo(BaseModel):
     step: str
     #步骤的状态
     status: Literal['running', 'success', 'error']
+    #可选的数据字段，可以用来携带额外的信息，比如错误信息、生成的SQL等。
+    data: Any | None = None
     #整个的图，agent的状态
     finish: bool = False
