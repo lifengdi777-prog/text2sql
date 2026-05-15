@@ -1,3 +1,5 @@
+from csv import writer
+
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from datetime import datetime
@@ -20,7 +22,8 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
     weekday = now.weekday() + 1
     quarter = f"Q{(now.month-1) // 3 + 1}"
     date_info = f"当前时间为：{now_str}，星期{weekday}，第{quarter}季度"
-
+    
+    writer(WSStepInfo(step="添加额外信息", status="success"))
     logger.info(db_info)
     logger.info(date_info)
     #在 LangGraph 中，节点函数不需要手动调用任何 set 方法，

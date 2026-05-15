@@ -68,5 +68,7 @@ class WSStepInfo(BaseModel):
     status: Literal['running', 'success', 'error']
     #可选的数据字段，可以用来携带额外的信息，比如错误信息、生成的SQL等。
     data: Any | None = None
+    #可选的用户指导性查询语句，用于帮助用户继续进行交互。
+    guide_queries: list[str] | None = None
     #整个的图，agent的状态
     finish: bool = False
