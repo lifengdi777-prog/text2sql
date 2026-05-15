@@ -152,3 +152,12 @@ class DWDBRepository:
         )
         # 将数据库信息以字典形式返回，供后续节点组装成自然语言描述传给 LLM
         return {"version": version, "dialect": dialect, "charset": charset}
+    
+    #校验SQL语句是否正确，是否符合规范。
+    async def validate_sql(self, sql: str):
+        await self.session.execute(text(f"explain {sql}"))
+
+    #执行SQL语句，并返回结果。
+    async def execute_sql(self, sql: str):
+        result = await self.session.execute(text(sql))
+        return [dict(row) for row in result.mappings().fetchall()]

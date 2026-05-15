@@ -28,6 +28,7 @@ async def sync_dw_to_meta_db() -> tuple[list[ColumnInfo], list[MetricInfo]]:
         meta_repo = MetaDBRepository(meta_session)
 
         async with meta_session.begin():
+            await meta_repo.clear_all()
             # 1. 同步TableInfo和ColumnInfo到meta元数据库中
             table_infos: list[TableInfo] = []
             column_infos: list[ColumnInfo] = []

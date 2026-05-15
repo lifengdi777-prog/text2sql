@@ -42,6 +42,8 @@ class WSAgentState(BaseModel):
     db_info: str | None = None
     #当前日期时间上下文
     date_info: str | None = None
+    #记录生成的 SQL 语句
+    sql: str | None = None
     #记录错误信息
     error: Optional[str] = None
 

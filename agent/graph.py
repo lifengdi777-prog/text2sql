@@ -86,12 +86,7 @@ graph_builder.add_conditional_edges(
     lambda state: "correct_sql" if state.error else "execute_sql"
 )
 #如果需要校正，校正完后继续执行SQL。
-graph_builder.add_conditional_edges(
-    "correct_sql", 
-    #根据state中的error字段来判断是否需要继续校正。如果error不为None，说明还有问题，需要继续校正；
-    #如果error为None，说明SQL已经正确，可以执行了。
-    lambda state: "correct_sql" if state.error is not None else "execute_sql"
-)
+graph_builder.add_edge("correct_sql", "validate_sql")
 #最后都要进入END节点，结束整个流程。
 graph_builder.add_edge("execute_sql", END)
 #编译图，生成最终的可执行图对象。
@@ -101,7 +96,7 @@ graph = graph_builder.compile()
 if __name__ == "__main__":
     import asyncio
     async def main():
-        query = "帮我统计一下上个季度华东地区销售额排名前三的产品"
+        query = "帮我统计一下上个季度上海市的华东地区销售额排名前三的产品"
         try:
             async with (
                 dw_mysql_client.session() as dw_session,

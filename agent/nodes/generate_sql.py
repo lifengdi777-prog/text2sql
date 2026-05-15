@@ -1,7 +1,42 @@
-from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from langgraph.runtime import Runtime
+from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
+from agent.prompts import load_prompt
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from agent.llm import llm
+from core.log import logger
+
 
 async def generate_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
-    #实时反馈当前步骤状态
-    writer =  runtime.stream_writer
-    writer(WSStepInfo(step="生成SQL语句", status="running").model_dump())
+    writer = runtime.stream_writer
+    writer(WSStepInfo(step="生成SQL语句", status="running"))
+    #用户的查询语句
+    query = state.messages[-1].content
+    #合并了召回和过滤之后的表信息
+    table_infos = state.table_infos or []
+    #合并了召回和过滤之后的指标信息
+    metric_infos = state.metric_infos or []
+    #当前日期时间上下文
+    date_info = state.date_info
+    #当前数据库信息
+    db_info = state.db_info
+
+
+    prompt = await load_prompt("generate_sql")
+    #定义提示词模板，指定输入变量列表。这个模板会被用来生成最终的提示词文本，输入变量会被替换成实际的值。
+    prompt_template = PromptTemplate(template=prompt, input_variables=['query', "table_infos", 'metric_infos', 'date_info', 'db_info'])
+    chain = prompt_template | llm | StrOutputParser()
+    #异步执行整条 LangChain 链，把所有需要的数据一次性传入，获取最终结果。
+    result = await chain.ainvoke({
+        "query": query, 
+        #把组 Pydantic 对象转换成字典列表，然后传入提示词模板。因为提示词模板只能处理基本数据类型，不能直接处理复杂对象。
+        "table_infos": [table_info.model_dump() for table_info in table_infos],
+        "metric_infos": [metric_info.model_dump() for metric_info in metric_infos],
+        "date_info": date_info,
+        "db_info": db_info
+    })
+    writer(WSStepInfo(step="生成SQL语句", status="success"))
+
+    logger.info(f"sql: {result}")
+
+    return {"sql": result}

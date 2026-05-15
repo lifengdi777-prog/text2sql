@@ -12,7 +12,7 @@ class MySQLClient:
         self.engine: AsyncEngine = create_async_engine(
             self.db_uri,
             # 将输出所有执行SQL的日志（默认是关闭的）
-            echo=True,
+            echo=False,
             # 连接池大小（默认是5个）
             pool_size=5,
             # 允许连接池最大的连接数（默认是10个）
