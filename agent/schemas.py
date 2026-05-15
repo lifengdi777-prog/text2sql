@@ -38,6 +38,10 @@ class WSAgentState(BaseModel):
     table_infos: list[WSAgentTableInfoState] | None = None
     #meta指标信息
     metric_infos: list[MetricInfo] | None =  None
+    #获取当前数据库的基本信息，用于后续 LLM 生成 SQL 时提供数据库环境上下文。
+    db_info: str | None = None
+    #当前日期时间上下文
+    date_info: str | None = None
     #记录错误信息
     error: Optional[str] = None
 

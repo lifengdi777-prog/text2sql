@@ -102,6 +102,7 @@ class DWDBRepository:
             column_values[column_name] = [row[index] for row in rows]
         return column_values
     
+    
 # select distinct username, department from users;
 # 假设查出来的 rows 数据如下（注意它是纯数字索引的元组）：
 # rows = [
@@ -130,3 +131,24 @@ class DWDBRepository:
     #    例如 distinct(gender, city) 后，gender 这一列仍可能得到 ["男", "女", "女", "男"]。
     # 所以如果这个方法的目标是给每一列提供“候选枚举值”，通常还需要在这里再按列去重；
     # 如果目标是保留原始采样结果或频次特征，则不应该去重。
+
+    async def get_db_info(self):
+        """
+        获取当前数据库的基本环境信息。
+        用于向 LLM 提供数据库上下文，帮助生成兼容的 SQL 语句。
+        """
+        # 执行 SQL 查询获取数据库版本号
+        version = await self.session.scalar(text("SELECT VERSION()"))
+        # 从 SQLAlchemy 的连接绑定中获取方言名称（无需查询数据库）
+        # dialect 表示数据库类型，例如：'mysql' / 'postgresql' / 'sqlite'
+        # 用于告知 LLM 应生成哪种数据库方言的 SQL
+        dialect = self.session.get_bind().dialect.name
+        # 查询 information_schema 系统表，获取当前数据库的字符编码
+        # DATABASE() 函数返回当前连接所使用的数据库名DW
+        charset = await self.session.scalar(
+            text(
+                "SELECT DEFAULT_CHARACTER_SET_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()"
+            )
+        )
+        # 将数据库信息以字典形式返回，供后续节点组装成自然语言描述传给 LLM
+        return {"version": version, "dialect": dialect, "charset": charset}
