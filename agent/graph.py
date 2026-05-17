@@ -65,7 +65,7 @@ graph_builder.add_edge("extract_keywords", "recall_columns")
 graph_builder.add_edge("extract_keywords", "recall_metrics")
 graph_builder.add_edge("extract_keywords", "recall_values")
 #把召回的信息合并到一起，方便后续处理
-graph_builder.add_edge("recall_values", "merge_recalled_infos")
+graph_builder.add_edge("recall_columns", "merge_recalled_infos")
 graph_builder.add_edge("recall_metrics", "merge_recalled_infos")
 graph_builder.add_edge("recall_values", "merge_recalled_infos")
 #根据召回的信息，过滤掉不相关的指标和表
