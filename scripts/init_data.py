@@ -87,28 +87,30 @@ async def sync_dw_to_meta_db() -> tuple[list[ColumnInfo], list[MetricInfo]]:
 
             return column_infos, metric_infos
 
-    
+#向量化 字段的名字丶描述和别名 便于向量化检索召回字段相关信息 
 async def sync_meta_column_to_qdrant(column_infos: list[ColumnInfo]):
     column_qdrant_infos: list[ColumnQdrantInfo] = []
     for column_info in column_infos:
         texts = [column_info.name, column_info.description] + column_info.alias
         embeddings_list = await embedding_client.client.aembed_documents(texts)
+        #分别量化防止破坏语义信息，保证每个文本都能得到一个独立的向量表示。
         for embeddings in embeddings_list:
             column_qdrant_infos.append(
                 ColumnQdrantInfo(
                     id=str(uuid4()),
+                    #储存字段相关的向量信息
                     embeddings=embeddings,
+                    #payload储存字段的具体信息
                     payload=column_info
                 )
             )
-    #qdrant_client.client是调用QDrantClient类中的AsyncQdrantClient对象。
+    #调用ColumnQdrantRepository的upsert方法
     qdrant_repo = ColumnQdrantRepository(qdrant_client.client)
-    #在子方法里面写好了collection_name，所以这里不需要传collection_name参数了。
     await qdrant_repo.clear_all()
     await qdrant_repo.ensure_collection()
     await qdrant_repo.upsert(column_qdrant_infos)
 
-
+#向量化指标的名字丶描述和别名 便于向量化检索召回指标相关信息
 async def sync_meta_metric_to_qdrant(metric_infos: list[MetricInfo]):
     metric_qdrant_infos: list[MetricQdrantInfo] = []
     for metric_info in metric_infos:
@@ -142,11 +144,10 @@ async def sync_dw_value_to_es(column_infos: list[ColumnInfo]):
         index: int = 0
         for table in meta_config.tables:
             for column in table.columns:
-                #根据index索引从column_infos中取出对应的column_info对象。
+                #遍历
                 column_info = column_infos[index]
                 if column.sync:
                     values_dict: dict[str, list[Any]] = await dw_repo.get_column_values(table.name, [column.name], limit=100000)
-                    #用column.name作为key从values_dict中取出对应的值列表，然后为每个值创建一个ValueInfo对象，最后把这些对象添加到value_infos列表中。
                     values: list = values_dict[column.name]
                     the_value_infos = [
                         ValueInfo(
