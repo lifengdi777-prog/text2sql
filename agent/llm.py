@@ -7,5 +7,7 @@ llm = ChatOpenAI(
     model=app_config.llm.model_name,
     api_key=SecretStr(app_config.llm.api_key),
     base_url=app_config.llm.base_url,
-    temperature=0
+    temperature=0,
+    timeout=150,
+    max_retries=2
 )
