@@ -1,0 +1,129 @@
+# Extra Hard: 反向语义 / 嵌套 / 业务术语 / 噪声信息
+# 这一档最考验业务理解,正常 baseline 命中率在 30~50% 之间是正常的
+
+- id: extra_001
+  difficulty: extra
+  category: not_exists
+  query: "找出从未买过手机数码类产品的客户"
+  gold_sql: |
+    SELECT customer_id, customer_name FROM table_customer
+    WHERE customer_id NOT IN (
+      SELECT DISTINCT o.customer_id FROM table_order o
+      JOIN table_product p ON o.product_id = p.product_id
+      WHERE p.category = '手机数码'
+    )
+  gold_tables: [table_customer, table_order, table_product]
+  gold_columns: [customer_id, customer_name, category]
+
+- id: extra_002
+  difficulty: extra
+  category: noisy_term
+  query: "上个季度上海市的华东地区销售额排名前三的产品"
+  # 噪声信息：上海市本身就在华东。Agent 应该理解 province=上海市,不应该多加 region_name 过滤
+  # 同时今天是 2026-05-22 (Q2),上个季度=2026 Q1
+  gold_sql: |
+    SELECT p.product_name, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    JOIN table_region r ON o.region_id = r.region_id
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.quarter = 'Q1' AND r.province = '上海市'
+    GROUP BY p.product_name
+    ORDER BY total DESC
+    LIMIT 3
+  gold_tables: [table_order, table_product, table_region, table_date]
+  gold_columns: [product_name, order_amount, province, year, quarter]
+
+- id: extra_003
+  difficulty: extra
+  category: relative_time
+  query: "上个月卖得最好的产品是什么？"  # 今天 2026-05-22,上个月 = 2026-04
+  gold_sql: |
+    SELECT p.product_name, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.month = 4
+    GROUP BY p.product_name
+    ORDER BY total DESC
+    LIMIT 1
+  gold_tables: [table_order, table_product, table_date]
+  gold_columns: [product_name, order_amount, year, month]
+
+- id: extra_004
+  difficulty: extra
+  category: business_term
+  query: "我们的 VIP 客户都买了些什么？"  # VIP 通常指铂金/黄金等高等级会员
+  gold_sql: |
+    SELECT DISTINCT p.product_name
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    JOIN table_product p ON o.product_id = p.product_id
+    WHERE c.member_level IN ('铂金', '黄金')
+  gold_tables: [table_order, table_customer, table_product]
+  gold_columns: [product_name, member_level]
+
+- id: extra_005
+  difficulty: extra
+  category: nested_subquery
+  query: "找出销售额高于全公司平均水平的产品类别"
+  gold_sql: |
+    SELECT category, total FROM (
+      SELECT p.category, SUM(o.order_amount) AS total
+      FROM table_order o
+      JOIN table_product p ON o.product_id = p.product_id
+      GROUP BY p.category
+    ) t WHERE total > (
+      SELECT AVG(s) FROM (
+        SELECT SUM(o.order_amount) AS s
+        FROM table_order o
+        JOIN table_product p ON o.product_id = p.product_id
+        GROUP BY p.category
+      ) avg_t
+    )
+  gold_tables: [table_order, table_product]
+  gold_columns: [category, order_amount]
+
+- id: extra_006
+  difficulty: extra
+  category: anti_join
+  query: "2026年Q1有哪些产品一件都没卖出去？"
+  gold_sql: |
+    SELECT p.product_name FROM table_product p
+    WHERE p.product_id NOT IN (
+      SELECT DISTINCT o.product_id FROM table_order o
+      JOIN table_date d ON o.date_id = d.date_id
+      WHERE d.year = 2026 AND d.quarter = 'Q1'
+    )
+  gold_tables: [table_product, table_order, table_date]
+  gold_columns: [product_name, product_id, year, quarter]
+
+- id: extra_007
+  difficulty: extra
+  category: business_term
+  query: "本季度销售冠军是谁？"  # 本季度=2026 Q2,数据没有,应返回空
+  gold_sql: |
+    SELECT c.customer_name, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.quarter = 'Q2'
+    GROUP BY c.customer_name
+    ORDER BY total DESC
+    LIMIT 1
+  gold_tables: [table_order, table_customer, table_date]
+  gold_columns: [customer_name, order_amount, year, quarter]
+
+- id: extra_008
+  difficulty: extra
+  category: implicit_metric
+  query: "哪个区域的人最舍得花钱？"  # 隐含=客单价 or 总销售额最高
+  gold_sql: |
+    SELECT r.region_name, SUM(o.order_amount) / COUNT(DISTINCT o.customer_id) AS per_customer
+    FROM table_order o
+    JOIN table_region r ON o.region_id = r.region_id
+    GROUP BY r.region_name
+    ORDER BY per_customer DESC
+    LIMIT 1
+  gold_tables: [table_order, table_region]
+  gold_columns: [region_name, order_amount, customer_id]

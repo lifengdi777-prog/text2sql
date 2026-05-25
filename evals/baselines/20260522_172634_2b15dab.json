@@ -1,0 +1,975 @@
+{
+  "summary": {
+    "by_difficulty": {
+      "easy": {
+        "count": 12,
+        "execution_accuracy": 0.6667,
+        "exact_match": 0.5,
+        "schema_linking_table_recall": 0.7083,
+        "schema_linking_column_recall": 0.6667,
+        "latency": {
+          "p50": 32943.25,
+          "p95": 47973.72,
+          "avg": 28440.7,
+          "count": 12
+        }
+      }
+    },
+    "overall": {
+      "count": 12,
+      "execution_accuracy": 0.6667,
+      "exact_match": 0.5,
+      "latency": {
+        "p50": 32943.25,
+        "p95": 47973.72,
+        "avg": 28440.7,
+        "count": 12
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "easy_001",
+      "difficulty": "easy",
+      "category": "single_table_filter",
+      "query": "查询所有华东地区的省份",
+      "gold_sql": "SELECT province FROM table_region WHERE region_name = '华东'\n",
+      "pred_sql": "SELECT province FROM table_region WHERE region_name = '华东';",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 2,
+        "pred_rows": 2
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_region"
+        ],
+        "required_columns": [
+          "province",
+          "region_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 25198.57,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4880.71
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 4865.7
+          },
+          "召回字段信息": {
+            "duration_ms": 5035.81
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 9473.26
+          },
+          "合并召回信息": {
+            "duration_ms": 22.08
+          },
+          "过滤指标信息": {
+            "duration_ms": 3680.05
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 5718.92
+          },
+          "添加额外信息": {
+            "duration_ms": 11.4
+          },
+          "生成SQL语句": {
+            "duration_ms": 5035.68
+          },
+          "校验SQL语句": {
+            "duration_ms": 3.93
+          },
+          "执行SQL语句": {
+            "duration_ms": 2.57
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_002",
+      "difficulty": "easy",
+      "category": "count",
+      "query": "黄金会员一共有多少人？",
+      "gold_sql": "SELECT COUNT(*) FROM table_customer WHERE member_level = '黄金'\n",
+      "pred_sql": "SELECT COUNT(*) AS total FROM table_customer WHERE member_level = '黄金'",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_customer"
+        ],
+        "required_columns": [
+          "member_level"
+        ]
+      },
+      "cost": {
+        "total_ms": 47973.72,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4551.69
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 4144.39
+          },
+          "召回指标信息": {
+            "duration_ms": 6862.05
+          },
+          "召回字段信息": {
+            "duration_ms": 13463.48
+          },
+          "合并召回信息": {
+            "duration_ms": 9.21
+          },
+          "过滤指标信息": {
+            "duration_ms": 3664.24
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 21226.49
+          },
+          "添加额外信息": {
+            "duration_ms": 4.18
+          },
+          "生成SQL语句": {
+            "duration_ms": 8374.2
+          },
+          "校验SQL语句": {
+            "duration_ms": 2.72
+          },
+          "执行SQL语句": {
+            "duration_ms": 0.92
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_003",
+      "difficulty": "easy",
+      "category": "count",
+      "query": "苹果品牌有几款产品？",
+      "gold_sql": "SELECT COUNT(*) FROM table_product WHERE brand = '苹果'\n",
+      "pred_sql": "SELECT COUNT(*) FROM table_product WHERE brand = '苹果';",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product"
+        ],
+        "required_columns": [
+          "brand"
+        ]
+      },
+      "cost": {
+        "total_ms": 29410.84,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 5030.61
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回字段信息": {
+            "duration_ms": 6389.77
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 7652.27
+          },
+          "召回指标信息": {
+            "duration_ms": 9129.8
+          },
+          "合并召回信息": {
+            "duration_ms": 7.11
+          },
+          "过滤指标信息": {
+            "duration_ms": 3709.78
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 7226.99
+          },
+          "添加额外信息": {
+            "duration_ms": 2.92
+          },
+          "生成SQL语句": {
+            "duration_ms": 7985.63
+          },
+          "校验SQL语句": {
+            "duration_ms": 1.97
+          },
+          "执行SQL语句": {
+            "duration_ms": 1.07
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_004",
+      "difficulty": "easy",
+      "category": "filter_list",
+      "query": "列出所有手机数码类的产品名称",
+      "gold_sql": "SELECT product_name FROM table_product WHERE category = '手机数码'\n",
+      "pred_sql": null,
+      "should_continue": false,
+      "guide_queries": [
+        "统计手机数码类产品的各品牌销量排行",
+        "统计2026年1月手机数码类产品的销售额",
+        "查询手机数码类产品中销售额最高的前10个产品",
+        "分析手机数码类产品在不同地区的销售分布"
+      ],
+      "error": null,
+      "execution": {
+        "match": false,
+        "gold_error": null,
+        "pred_error": "pred_sql is empty",
+        "gold_rows": 0,
+        "pred_rows": 0
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": false,
+        "column_match": false,
+        "aggregate_match": false,
+        "structure_match": false
+      },
+      "schema_linking": {
+        "table_recall": 0.0,
+        "column_recall": 0.0,
+        "missing_tables": [
+          "table_product"
+        ],
+        "missing_columns": [
+          "category",
+          "product_name"
+        ],
+        "required_tables": [
+          "table_product"
+        ],
+        "required_columns": [
+          "category",
+          "product_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 6989.86,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 6988.03
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_005",
+      "difficulty": "easy",
+      "category": "filter_list",
+      "query": "有哪些女性客户？",
+      "gold_sql": "SELECT customer_name FROM table_customer WHERE gender = '女'\n",
+      "pred_sql": null,
+      "should_continue": false,
+      "guide_queries": [
+        "统计女性客户的订单数量和总销售额。",
+        "按地区统计女性客户的订单数量。",
+        "查询女性客户平均订单金额。",
+        "统计不同会员等级的女性客户数量。"
+      ],
+      "error": null,
+      "execution": {
+        "match": false,
+        "gold_error": null,
+        "pred_error": "pred_sql is empty",
+        "gold_rows": 0,
+        "pred_rows": 0
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": false,
+        "column_match": false,
+        "aggregate_match": false,
+        "structure_match": false
+      },
+      "schema_linking": {
+        "table_recall": 0.0,
+        "column_recall": 0.0,
+        "missing_tables": [
+          "table_customer"
+        ],
+        "missing_columns": [
+          "customer_name",
+          "gender"
+        ],
+        "required_tables": [
+          "table_customer"
+        ],
+        "required_columns": [
+          "customer_name",
+          "gender"
+        ]
+      },
+      "cost": {
+        "total_ms": 6212.14,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 6210.28
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_006",
+      "difficulty": "easy",
+      "category": "aggregate_filter",
+      "query": "2026年1月一共有多少订单？",
+      "gold_sql": "SELECT COUNT(*) FROM table_order o\nJOIN table_date d ON o.date_id = d.date_id\nWHERE d.year = 2026 AND d.month = 1\n",
+      "pred_sql": "SELECT COUNT(order_id) AS total_orders FROM table_order WHERE date_id BETWEEN 20260101 AND 20260131;",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": false,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 0.5,
+        "column_recall": 0.0,
+        "missing_tables": [
+          "table_date"
+        ],
+        "missing_columns": [
+          "month",
+          "year"
+        ],
+        "required_tables": [
+          "table_date",
+          "table_order"
+        ],
+        "required_columns": [
+          "month",
+          "year"
+        ]
+      },
+      "cost": {
+        "total_ms": 33257.72,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4231.56
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 3904.24
+          },
+          "召回字段信息": {
+            "duration_ms": 5710.87
+          },
+          "召回指标信息": {
+            "duration_ms": 5897.76
+          },
+          "合并召回信息": {
+            "duration_ms": 6.03
+          },
+          "过滤指标信息": {
+            "duration_ms": 4523.81
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 12315.62
+          },
+          "添加额外信息": {
+            "duration_ms": 4.2
+          },
+          "生成SQL语句": {
+            "duration_ms": 10783.53
+          },
+          "校验SQL语句": {
+            "duration_ms": 2.53
+          },
+          "执行SQL语句": {
+            "duration_ms": 0.78
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_007",
+      "difficulty": "easy",
+      "category": "distinct",
+      "query": "一共有几个区域？",
+      "gold_sql": "SELECT COUNT(DISTINCT region_name) FROM table_region\n",
+      "pred_sql": "SELECT COUNT(*) FROM table_region",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": false,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": false
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_region"
+        ],
+        "required_columns": [
+          "region_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 32943.25,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3654.64
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回字段信息": {
+            "duration_ms": 5800.21
+          },
+          "召回指标信息": {
+            "duration_ms": 6020.26
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 12938.39
+          },
+          "合并召回信息": {
+            "duration_ms": 9.16
+          },
+          "过滤指标信息": {
+            "duration_ms": 4126.8
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 8386.64
+          },
+          "添加额外信息": {
+            "duration_ms": 3.46
+          },
+          "生成SQL语句": {
+            "duration_ms": 7930.23
+          },
+          "校验SQL语句": {
+            "duration_ms": 2.19
+          },
+          "执行SQL语句": {
+            "duration_ms": 1.84
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_008",
+      "difficulty": "easy",
+      "category": "max_aggregate",
+      "query": "订单金额最高的一笔是多少钱？",
+      "gold_sql": "SELECT MAX(order_amount) FROM table_order\n",
+      "pred_sql": "SELECT MAX(order_amount) FROM table_order",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_order"
+        ],
+        "required_columns": [
+          "order_amount"
+        ]
+      },
+      "cost": {
+        "total_ms": 27782.29,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 5130.79
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 7187.61
+          },
+          "召回指标信息": {
+            "duration_ms": 8622.09
+          },
+          "召回字段信息": {
+            "duration_ms": 9175.76
+          },
+          "合并召回信息": {
+            "duration_ms": 7.37
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 5430.7
+          },
+          "过滤指标信息": {
+            "duration_ms": 7468.94
+          },
+          "添加额外信息": {
+            "duration_ms": 2.9
+          },
+          "生成SQL语句": {
+            "duration_ms": 5978.54
+          },
+          "校验SQL语句": {
+            "duration_ms": 1.94
+          },
+          "执行SQL语句": {
+            "duration_ms": 0.72
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_009",
+      "difficulty": "easy",
+      "category": "avg_aggregate",
+      "query": "所有订单的平均金额是多少？",
+      "gold_sql": "SELECT AVG(order_amount) FROM table_order\n",
+      "pred_sql": "SELECT AVG(order_amount) AS avg_order_amount FROM table_order",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_order"
+        ],
+        "required_columns": [
+          "order_amount"
+        ]
+      },
+      "cost": {
+        "total_ms": 38054.35,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 7245.1
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 6029.16
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 8280.12
+          },
+          "召回字段信息": {
+            "duration_ms": 12826.57
+          },
+          "合并召回信息": {
+            "duration_ms": 5.26
+          },
+          "过滤指标信息": {
+            "duration_ms": 4936.22
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 4972.74
+          },
+          "添加额外信息": {
+            "duration_ms": 2.39
+          },
+          "生成SQL语句": {
+            "duration_ms": 12981.86
+          },
+          "校验SQL语句": {
+            "duration_ms": 3.27
+          },
+          "执行SQL语句": {
+            "duration_ms": 0.94
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_010",
+      "difficulty": "easy",
+      "category": "filter_list",
+      "query": "戴森品牌有哪些产品？",
+      "gold_sql": "SELECT product_name FROM table_product WHERE brand = '戴森'\n",
+      "pred_sql": "SELECT product_name FROM table_product WHERE brand = '戴森'",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product"
+        ],
+        "required_columns": [
+          "brand",
+          "product_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 37758.93,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 8113.15
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回字段信息": {
+            "duration_ms": 5349.07
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 6726.98
+          },
+          "召回指标信息": {
+            "duration_ms": 14296.23
+          },
+          "合并召回信息": {
+            "duration_ms": 5.14
+          },
+          "过滤指标信息": {
+            "duration_ms": 3796.32
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 8997.84
+          },
+          "添加额外信息": {
+            "duration_ms": 7.43
+          },
+          "生成SQL语句": {
+            "duration_ms": 6322.58
+          },
+          "校验SQL语句": {
+            "duration_ms": 2.11
+          },
+          "执行SQL语句": {
+            "duration_ms": 0.71
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_011",
+      "difficulty": "easy",
+      "category": "count",
+      "query": "鞋靴类的产品有几款？",
+      "gold_sql": "SELECT COUNT(*) FROM table_product WHERE category = '鞋靴'\n",
+      "pred_sql": "SELECT COUNT(product_id) FROM table_product WHERE category = '鞋靴';",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product"
+        ],
+        "required_columns": [
+          "category"
+        ]
+      },
+      "cost": {
+        "total_ms": 35153.58,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 6322.15
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 7146.09
+          },
+          "召回指标信息": {
+            "duration_ms": 9289.56
+          },
+          "召回字段信息": {
+            "duration_ms": 14406.38
+          },
+          "合并召回信息": {
+            "duration_ms": 5.69
+          },
+          "过滤指标信息": {
+            "duration_ms": 5430.84
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 9435.98
+          },
+          "添加额外信息": {
+            "duration_ms": 2.42
+          },
+          "生成SQL语句": {
+            "duration_ms": 4964.68
+          },
+          "校验SQL语句": {
+            "duration_ms": 1.78
+          },
+          "执行SQL语句": {
+            "duration_ms": 0.61
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_012",
+      "difficulty": "easy",
+      "category": "aggregate_filter",
+      "query": "2026年Q1一共发生了多少笔订单？",
+      "gold_sql": "SELECT COUNT(*) FROM table_order o\nJOIN table_date d ON o.date_id = d.date_id\nWHERE d.year = 2026 AND d.quarter = 'Q1'\n",
+      "pred_sql": null,
+      "should_continue": false,
+      "guide_queries": [
+        "统计2026年第一季度全部订单的订单数。",
+        "统计2026年第一季度各地区订单数量。",
+        "统计2026年第一季度各品类商品订单数量排行。",
+        "统计2026年第一季度每月订单数量变化趋势。"
+      ],
+      "error": null,
+      "execution": {
+        "match": false,
+        "gold_error": null,
+        "pred_error": "pred_sql is empty",
+        "gold_rows": 0,
+        "pred_rows": 0
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": false,
+        "column_match": false,
+        "aggregate_match": false,
+        "structure_match": false
+      },
+      "schema_linking": {
+        "table_recall": 0.0,
+        "column_recall": 0.0,
+        "missing_tables": [
+          "table_date",
+          "table_order"
+        ],
+        "missing_columns": [
+          "quarter",
+          "year"
+        ],
+        "required_tables": [
+          "table_date",
+          "table_order"
+        ],
+        "required_columns": [
+          "quarter",
+          "year"
+        ]
+      },
+      "cost": {
+        "total_ms": 20553.16,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 20551.65
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    }
+  ],
+  "git_sha": "2b15dab",
+  "timestamp": "20260522_172634"
+}

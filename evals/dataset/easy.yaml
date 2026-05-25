@@ -1,0 +1,114 @@
+# Easy: 单表查询 + 简单筛选 / 计数
+# 目标：基础召回能不能跑通、表/列名能不能对上
+
+- id: easy_001
+  difficulty: easy
+  category: single_table_filter
+  query: "查询所有华东地区的省份"
+  gold_sql: |
+    SELECT province FROM table_region WHERE region_name = '华东'
+  gold_tables: [table_region]
+  gold_columns: [province, region_name]
+
+- id: easy_002
+  difficulty: easy
+  category: count
+  query: "黄金会员一共有多少人？"
+  gold_sql: |
+    SELECT COUNT(*) FROM table_customer WHERE member_level = '黄金'
+  gold_tables: [table_customer]
+  gold_columns: [member_level]
+
+- id: easy_003
+  difficulty: easy
+  category: count
+  query: "苹果品牌有几款产品？"
+  gold_sql: |
+    SELECT COUNT(*) FROM table_product WHERE brand = '苹果'
+  gold_tables: [table_product]
+  gold_columns: [brand]
+
+- id: easy_004
+  difficulty: easy
+  category: filter_list
+  query: "列出所有手机数码类的产品名称"
+  gold_sql: |
+    SELECT product_name FROM table_product WHERE category = '手机数码'
+  gold_tables: [table_product]
+  gold_columns: [product_name, category]
+
+- id: easy_005
+  difficulty: easy
+  category: filter_list
+  query: "有哪些女性客户？"
+  gold_sql: |
+    SELECT customer_name FROM table_customer WHERE gender = '女'
+  gold_tables: [table_customer]
+  gold_columns: [customer_name, gender]
+
+- id: easy_006
+  difficulty: easy
+  category: aggregate_filter
+  query: "2026年1月一共有多少订单？"
+  gold_sql: |
+    SELECT COUNT(*) FROM table_order o
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.month = 1
+  gold_tables: [table_order, table_date]
+  gold_columns: [year, month]
+
+- id: easy_007
+  difficulty: easy
+  category: distinct
+  query: "一共有几个区域？"
+  gold_sql: |
+    SELECT COUNT(DISTINCT region_name) FROM table_region
+  gold_tables: [table_region]
+  gold_columns: [region_name]
+
+- id: easy_008
+  difficulty: easy
+  category: max_aggregate
+  query: "订单金额最高的一笔是多少钱？"
+  gold_sql: |
+    SELECT MAX(order_amount) FROM table_order
+  gold_tables: [table_order]
+  gold_columns: [order_amount]
+
+- id: easy_009
+  difficulty: easy
+  category: avg_aggregate
+  query: "所有订单的平均金额是多少？"
+  gold_sql: |
+    SELECT AVG(order_amount) FROM table_order
+  gold_tables: [table_order]
+  gold_columns: [order_amount]
+
+- id: easy_010
+  difficulty: easy
+  category: filter_list
+  query: "戴森品牌有哪些产品？"
+  gold_sql: |
+    SELECT product_name FROM table_product WHERE brand = '戴森'
+  gold_tables: [table_product]
+  gold_columns: [product_name, brand]
+
+- id: easy_011
+  difficulty: easy
+  category: count
+  query: "鞋靴类的产品有几款？"
+  gold_sql: |
+    SELECT COUNT(*) FROM table_product WHERE category = '鞋靴'
+  gold_tables: [table_product]
+  gold_columns: [category]
+
+- id: easy_012
+  difficulty: easy
+  category: aggregate_filter
+  query: "2026年Q1一共发生了多少笔订单？"
+  gold_sql: |
+    SELECT COUNT(*) FROM table_order o
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.quarter = 'Q1'
+  gold_tables: [table_order, table_date]
+  gold_columns: [year, quarter]

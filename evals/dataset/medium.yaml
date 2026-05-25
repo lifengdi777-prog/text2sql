@@ -1,0 +1,154 @@
+# Medium: JOIN + GROUP BY + 排序
+# 目标：能不能正确选 JOIN 表、聚合维度、排序方向
+
+- id: medium_001
+  difficulty: medium
+  category: group_by
+  query: "统计每个会员等级的客户数量"
+  gold_sql: |
+    SELECT member_level, COUNT(*) AS cnt
+    FROM table_customer
+    GROUP BY member_level
+  gold_tables: [table_customer]
+  gold_columns: [member_level]
+
+- id: medium_002
+  difficulty: medium
+  category: join_aggregate
+  query: "每个产品类别的总销售额是多少？按销售额降序"
+  gold_sql: |
+    SELECT p.category, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    GROUP BY p.category
+    ORDER BY total DESC
+  gold_tables: [table_order, table_product]
+  gold_columns: [category, order_amount]
+
+- id: medium_003
+  difficulty: medium
+  category: join_filter_count
+  query: "华南地区一共下了多少订单？"
+  gold_sql: |
+    SELECT COUNT(*) FROM table_order o
+    JOIN table_region r ON o.region_id = r.region_id
+    WHERE r.region_name = '华南'
+  gold_tables: [table_order, table_region]
+  gold_columns: [region_name]
+
+- id: medium_004
+  difficulty: medium
+  category: business_term
+  query: "客单价最高的会员等级是哪个？"
+  gold_sql: |
+    SELECT c.member_level, SUM(o.order_amount) / COUNT(o.order_id) AS avg_amount
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    GROUP BY c.member_level
+    ORDER BY avg_amount DESC
+    LIMIT 1
+  gold_tables: [table_order, table_customer]
+  gold_columns: [member_level, order_amount, order_id]
+
+- id: medium_005
+  difficulty: medium
+  category: join_group_by
+  query: "每个区域的订单总金额是多少？"
+  gold_sql: |
+    SELECT r.region_name, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_region r ON o.region_id = r.region_id
+    GROUP BY r.region_name
+  gold_tables: [table_order, table_region]
+  gold_columns: [region_name, order_amount]
+
+- id: medium_006
+  difficulty: medium
+  category: join_group_by
+  query: "每个品牌一共卖出了多少件商品？"
+  gold_sql: |
+    SELECT p.brand, SUM(o.order_quantity) AS total_qty
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    GROUP BY p.brand
+  gold_tables: [table_order, table_product]
+  gold_columns: [brand, order_quantity]
+
+- id: medium_007
+  difficulty: medium
+  category: top_n
+  query: "销售额最高的 5 个产品是什么？"
+  gold_sql: |
+    SELECT p.product_name, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    GROUP BY p.product_name
+    ORDER BY total DESC
+    LIMIT 5
+  gold_tables: [table_order, table_product]
+  gold_columns: [product_name, order_amount]
+
+- id: medium_008
+  difficulty: medium
+  category: count_distinct
+  query: "铂金会员一共有几个不同的人下过单？"
+  gold_sql: |
+    SELECT COUNT(DISTINCT o.customer_id)
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    WHERE c.member_level = '铂金'
+  gold_tables: [table_order, table_customer]
+  gold_columns: [customer_id, member_level]
+
+- id: medium_009
+  difficulty: medium
+  category: month_aggregate
+  query: "2026年2月每个区域的销售额是多少？"
+  gold_sql: |
+    SELECT r.region_name, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_region r ON o.region_id = r.region_id
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.month = 2
+    GROUP BY r.region_name
+  gold_tables: [table_order, table_region, table_date]
+  gold_columns: [region_name, order_amount, year, month]
+
+- id: medium_010
+  difficulty: medium
+  category: having
+  query: "哪些产品类别的总销售额超过 30000 元？"
+  gold_sql: |
+    SELECT p.category, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    GROUP BY p.category
+    HAVING total > 30000
+  gold_tables: [table_order, table_product]
+  gold_columns: [category, order_amount]
+
+- id: medium_011
+  difficulty: medium
+  category: gender_group
+  query: "男性和女性客户分别贡献了多少销售额？"
+  gold_sql: |
+    SELECT c.gender, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    GROUP BY c.gender
+  gold_tables: [table_order, table_customer]
+  gold_columns: [gender, order_amount]
+
+- id: medium_012
+  difficulty: medium
+  category: top_n
+  query: "下单次数最多的 3 个客户是谁？"
+  gold_sql: |
+    SELECT c.customer_name, COUNT(o.order_id) AS cnt
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    GROUP BY c.customer_name
+    ORDER BY cnt DESC
+    LIMIT 3
+  gold_tables: [table_order, table_customer]
+  gold_columns: [customer_name, order_id]

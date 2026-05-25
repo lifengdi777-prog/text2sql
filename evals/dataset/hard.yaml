@@ -1,0 +1,158 @@
+# Hard: 3+ 表 JOIN + 复杂时间表达 + 窗口函数
+# 目标：复杂 schema linking + 业务语义理解
+
+- id: hard_001
+  difficulty: hard
+  category: top_n_per_dim
+  query: "2026年第一季度华东地区销售额排名前三的产品"
+  gold_sql: |
+    SELECT p.product_name, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    JOIN table_region r ON o.region_id = r.region_id
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.quarter = 'Q1' AND r.region_name = '华东'
+    GROUP BY p.product_name
+    ORDER BY total DESC
+    LIMIT 3
+  gold_tables: [table_order, table_product, table_region, table_date]
+  gold_columns: [product_name, order_amount, region_name, year, quarter]
+
+- id: hard_002
+  difficulty: hard
+  category: window_function
+  query: "每个区域销量最高的产品分别是什么？"
+  gold_sql: |
+    SELECT region_name, product_name, total_qty FROM (
+      SELECT r.region_name, p.product_name,
+             SUM(o.order_quantity) AS total_qty,
+             ROW_NUMBER() OVER (PARTITION BY r.region_name ORDER BY SUM(o.order_quantity) DESC) AS rn
+      FROM table_order o
+      JOIN table_product p ON o.product_id = p.product_id
+      JOIN table_region r ON o.region_id = r.region_id
+      GROUP BY r.region_name, p.product_name
+    ) t WHERE rn = 1
+  gold_tables: [table_order, table_product, table_region]
+  gold_columns: [region_name, product_name, order_quantity]
+
+- id: hard_003
+  difficulty: hard
+  category: month_over_month
+  query: "对比2026年1月和2月各品牌的销售额"
+  gold_sql: |
+    SELECT p.brand,
+      SUM(CASE WHEN d.month = 1 THEN o.order_amount ELSE 0 END) AS jan,
+      SUM(CASE WHEN d.month = 2 THEN o.order_amount ELSE 0 END) AS feb
+    FROM table_order o
+    JOIN table_product p ON o.product_id = p.product_id
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE d.year = 2026 AND d.month IN (1, 2)
+    GROUP BY p.brand
+  gold_tables: [table_order, table_product, table_date]
+  gold_columns: [brand, order_amount, year, month]
+
+- id: hard_004
+  difficulty: hard
+  category: multi_join_filter
+  query: "黄金会员在2026年Q1购买的所有手机数码类产品的总金额"
+  gold_sql: |
+    SELECT SUM(o.order_amount)
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    JOIN table_product p ON o.product_id = p.product_id
+    JOIN table_date d ON o.date_id = d.date_id
+    WHERE c.member_level = '黄金'
+      AND p.category = '手机数码'
+      AND d.year = 2026 AND d.quarter = 'Q1'
+  gold_tables: [table_order, table_customer, table_product, table_date]
+  gold_columns: [order_amount, member_level, category, year, quarter]
+
+- id: hard_005
+  difficulty: hard
+  category: window_function
+  query: "每个客户的累计消费金额，按下单时间排序"
+  gold_sql: |
+    SELECT c.customer_name, o.date_id, o.order_amount,
+      SUM(o.order_amount) OVER (PARTITION BY o.customer_id ORDER BY o.date_id) AS cumulative
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    ORDER BY c.customer_name, o.date_id
+  gold_tables: [table_order, table_customer]
+  gold_columns: [customer_name, date_id, order_amount, customer_id]
+
+- id: hard_006
+  difficulty: hard
+  category: ratio
+  query: "华东地区的销售额占全国销售额的百分比是多少？"
+  gold_sql: |
+    SELECT
+      SUM(CASE WHEN r.region_name = '华东' THEN o.order_amount ELSE 0 END)
+      / SUM(o.order_amount) * 100 AS pct
+    FROM table_order o
+    JOIN table_region r ON o.region_id = r.region_id
+  gold_tables: [table_order, table_region]
+  gold_columns: [region_name, order_amount]
+
+- id: hard_007
+  difficulty: hard
+  category: business_term
+  query: "复购率最高的产品类别是哪个？"  # 复购率 = 重复购买的客户数 / 总客户数
+  gold_sql: |
+    SELECT p.category,
+      COUNT(DISTINCT CASE WHEN cnt > 1 THEN customer_id END) * 1.0 / COUNT(DISTINCT customer_id) AS repurchase_rate
+    FROM (
+      SELECT o.customer_id, p.category, COUNT(*) AS cnt
+      FROM table_order o
+      JOIN table_product p ON o.product_id = p.product_id
+      GROUP BY o.customer_id, p.category
+    ) t
+    JOIN table_product p ON p.category = t.category
+    GROUP BY p.category
+    ORDER BY repurchase_rate DESC
+    LIMIT 1
+  gold_tables: [table_order, table_product]
+  gold_columns: [category, customer_id]
+
+- id: hard_008
+  difficulty: hard
+  category: window_function
+  query: "每个产品类别销售额排名第二的产品是什么？"
+  gold_sql: |
+    SELECT category, product_name, total FROM (
+      SELECT p.category, p.product_name, SUM(o.order_amount) AS total,
+             ROW_NUMBER() OVER (PARTITION BY p.category ORDER BY SUM(o.order_amount) DESC) AS rn
+      FROM table_order o
+      JOIN table_product p ON o.product_id = p.product_id
+      GROUP BY p.category, p.product_name
+    ) t WHERE rn = 2
+  gold_tables: [table_order, table_product]
+  gold_columns: [category, product_name, order_amount]
+
+- id: hard_009
+  difficulty: hard
+  category: cross_dim
+  query: "每个会员等级的客户在每个产品类别上的总花费"
+  gold_sql: |
+    SELECT c.member_level, p.category, SUM(o.order_amount) AS total
+    FROM table_order o
+    JOIN table_customer c ON o.customer_id = c.customer_id
+    JOIN table_product p ON o.product_id = p.product_id
+    GROUP BY c.member_level, p.category
+  gold_tables: [table_order, table_customer, table_product]
+  gold_columns: [member_level, category, order_amount]
+
+- id: hard_010
+  difficulty: hard
+  category: time_compare
+  query: "2026年Q1环比上一季度增长了多少销售额？"  # 数据只有 Q1,上一季度为 2025 Q4 应该是空,结果应为 NULL/Q1 数
+  gold_sql: |
+    SELECT
+      (SELECT COALESCE(SUM(o.order_amount), 0) FROM table_order o
+       JOIN table_date d ON o.date_id = d.date_id
+       WHERE d.year = 2026 AND d.quarter = 'Q1')
+      -
+      (SELECT COALESCE(SUM(o.order_amount), 0) FROM table_order o
+       JOIN table_date d ON o.date_id = d.date_id
+       WHERE d.year = 2025 AND d.quarter = 'Q4') AS growth
+  gold_tables: [table_order, table_date]
+  gold_columns: [order_amount, year, quarter]
