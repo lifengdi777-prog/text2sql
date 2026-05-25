@@ -18,10 +18,6 @@ docker/
 #版本号.md
 版本号.md
 
-#前端
-wenshu-frontend/
-
-
 #api密钥等敏感信息
 conf/app_config.yaml
 

@@ -40,10 +40,14 @@ async def query_graph(query: str):
             metric_qdrant_repo=metric_qdrant_repo
         )
         #异步流式执行整个 LangGraph 图，每当有数据产出时，就立刻拿到一个 chunk（数据块）
-        async for chunk in graph.astream(
-            input=state, 
-            context=context, 
-            stream_mode="custom"# 使用自定义流模式，由各节点的 writer 控制输出
+        # subgraphs=True:让子图(如 chart_agent)节点内部 runtime.stream_writer
+        # 写出的事件也能冒泡到这里,前端才能收到"分析数据形状/图表决策/生成图表"
+        # 这 3 个步骤事件。返回值变成 (namespace, chunk) tuple,namespace 我们不用。
+        async for namespace, chunk in graph.astream(
+            input=state,
+            context=context,
+            stream_mode="custom",
+            subgraphs=True,
         ):
             yield f"data: {chunk.model_dump_json()}\n\n"
 #           ↑ SSE 格式：每条消息以 "data: " 开头，以 "\n\n" 结尾
