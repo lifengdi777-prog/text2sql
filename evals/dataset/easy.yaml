@@ -1,114 +1,153 @@
-# Easy: 单表查询 + 简单筛选 / 计数
-# 目标：基础召回能不能跑通、表/列名能不能对上
+# Easy: 单一指标 + 1~2 表 JOIN,主体明确
+# 设计原则:
+#   - 全部能通过新的严格 parse_query_intention prompt(主体+指标+条件)
+#   - SQL 复杂度低,主要测召回链路和基础 SQL 生成
+#   - 数据集场景:制造业生产记录(2026 Q1+Q2)
 
 - id: easy_001
   difficulty: easy
-  category: single_table_filter
-  query: "查询所有华东地区的省份"
+  category: single_metric_groupby
+  query: "统计各产线的实际产量"
   gold_sql: |
-    SELECT province FROM table_region WHERE region_name = '华东'
-  gold_tables: [table_region]
-  gold_columns: [province, region_name]
+    SELECT w.line_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.line_name
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [line_name, actual_quantity]
 
 - id: easy_002
   difficulty: easy
-  category: count
-  query: "黄金会员一共有多少人？"
+  category: single_metric_groupby
+  query: "统计各产品类别的实际产量"
   gold_sql: |
-    SELECT COUNT(*) FROM table_customer WHERE member_level = '黄金'
-  gold_tables: [table_customer]
-  gold_columns: [member_level]
+    SELECT pd.product_category, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_product pd ON p.product_id = pd.product_id
+    GROUP BY pd.product_category
+  gold_tables: [table_production_record, table_product]
+  gold_columns: [product_category, actual_quantity]
 
 - id: easy_003
   difficulty: easy
-  category: count
-  query: "苹果品牌有几款产品？"
+  category: single_metric_groupby
+  query: "统计各车间的实际产量"
   gold_sql: |
-    SELECT COUNT(*) FROM table_product WHERE brand = '苹果'
-  gold_tables: [table_product]
-  gold_columns: [brand]
+    SELECT w.workshop_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.workshop_name
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [workshop_name, actual_quantity]
 
 - id: easy_004
   difficulty: easy
-  category: filter_list
-  query: "列出所有手机数码类的产品名称"
+  category: single_metric_groupby
+  query: "统计各设备类型的停机时长"
   gold_sql: |
-    SELECT product_name FROM table_product WHERE category = '手机数码'
-  gold_tables: [table_product]
-  gold_columns: [product_name, category]
+    SELECT e.equipment_type, SUM(p.downtime_minutes) AS downtime_minutes
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    GROUP BY e.equipment_type
+  gold_tables: [table_production_record, table_equipment]
+  gold_columns: [equipment_type, downtime_minutes]
 
 - id: easy_005
   difficulty: easy
-  category: filter_list
-  query: "有哪些女性客户？"
+  category: single_metric_groupby
+  query: "统计各工序的不良数量"
   gold_sql: |
-    SELECT customer_name FROM table_customer WHERE gender = '女'
-  gold_tables: [table_customer]
-  gold_columns: [customer_name, gender]
+    SELECT pr.process_name, SUM(p.defect_quantity) AS defect_quantity
+    FROM table_production_record p
+    JOIN table_process pr ON p.process_id = pr.process_id
+    GROUP BY pr.process_name
+  gold_tables: [table_production_record, table_process]
+  gold_columns: [process_name, defect_quantity]
 
 - id: easy_006
   difficulty: easy
-  category: aggregate_filter
-  query: "2026年1月一共有多少订单？"
+  category: filter_aggregate
+  query: "统计测试工序的不良数量"
   gold_sql: |
-    SELECT COUNT(*) FROM table_order o
-    JOIN table_date d ON o.date_id = d.date_id
-    WHERE d.year = 2026 AND d.month = 1
-  gold_tables: [table_order, table_date]
-  gold_columns: [year, month]
+    SELECT SUM(p.defect_quantity) AS defect_quantity
+    FROM table_production_record p
+    JOIN table_process pr ON p.process_id = pr.process_id
+    WHERE pr.process_name = '测试'
+  gold_tables: [table_production_record, table_process]
+  gold_columns: [defect_quantity, process_name]
 
 - id: easy_007
   difficulty: easy
-  category: distinct
-  query: "一共有几个区域？"
+  category: order_by
+  query: "统计各设备停机时长排名"
   gold_sql: |
-    SELECT COUNT(DISTINCT region_name) FROM table_region
-  gold_tables: [table_region]
-  gold_columns: [region_name]
+    SELECT e.equipment_name, SUM(p.downtime_minutes) AS downtime_minutes
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    GROUP BY e.equipment_name
+    ORDER BY downtime_minutes DESC
+  gold_tables: [table_production_record, table_equipment]
+  gold_columns: [equipment_name, downtime_minutes]
 
 - id: easy_008
   difficulty: easy
-  category: max_aggregate
-  query: "订单金额最高的一笔是多少钱？"
+  category: top_n
+  query: "统计各设备的生产效率排名前三"
   gold_sql: |
-    SELECT MAX(order_amount) FROM table_order
-  gold_tables: [table_order]
-  gold_columns: [order_amount]
+    SELECT e.equipment_name,
+           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    GROUP BY e.equipment_name
+    ORDER BY efficiency DESC
+    LIMIT 3
+  gold_tables: [table_production_record, table_equipment]
+  gold_columns: [equipment_name, actual_quantity, production_hours]
 
 - id: easy_009
   difficulty: easy
-  category: avg_aggregate
-  query: "所有订单的平均金额是多少？"
+  category: time_filter
+  query: "统计 2026 年 Q1 各产线的实际产量"
   gold_sql: |
-    SELECT AVG(order_amount) FROM table_order
-  gold_tables: [table_order]
-  gold_columns: [order_amount]
+    SELECT w.line_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.year = 2026 AND d.quarter = 'Q1'
+    GROUP BY w.line_name
+  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_columns: [line_name, actual_quantity, year, quarter]
 
 - id: easy_010
   difficulty: easy
-  category: filter_list
-  query: "戴森品牌有哪些产品？"
+  category: time_compare
+  query: "统计Q1和Q2的实际产量对比"
   gold_sql: |
-    SELECT product_name FROM table_product WHERE brand = '戴森'
-  gold_tables: [table_product]
-  gold_columns: [product_name, brand]
+    SELECT d.quarter, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.quarter IN ('Q1', 'Q2')
+    GROUP BY d.quarter
+  gold_tables: [table_production_record, table_date]
+  gold_columns: [quarter, actual_quantity]
 
 - id: easy_011
   difficulty: easy
-  category: count
-  query: "鞋靴类的产品有几款？"
+  category: detail_query
+  query: "查询生产记录ID为 PRD20260105001 的生产记录详情"
   gold_sql: |
-    SELECT COUNT(*) FROM table_product WHERE category = '鞋靴'
-  gold_tables: [table_product]
-  gold_columns: [category]
+    SELECT * FROM table_production_record WHERE record_id = 'PRD20260105001'
+  gold_tables: [table_production_record]
+  gold_columns: [record_id]
 
 - id: easy_012
   difficulty: easy
-  category: aggregate_filter
-  query: "2026年Q1一共发生了多少笔订单？"
+  category: status_filter
+  query: "统计运行状态设备的实际产量"
   gold_sql: |
-    SELECT COUNT(*) FROM table_order o
-    JOIN table_date d ON o.date_id = d.date_id
-    WHERE d.year = 2026 AND d.quarter = 'Q1'
-  gold_tables: [table_order, table_date]
-  gold_columns: [year, quarter]
+    SELECT SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    WHERE e.equipment_status = '运行'
+  gold_tables: [table_production_record, table_equipment]
+  gold_columns: [actual_quantity, equipment_status]

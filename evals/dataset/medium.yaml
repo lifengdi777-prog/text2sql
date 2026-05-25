@@ -1,154 +1,176 @@
-# Medium: JOIN + GROUP BY + 排序
-# 目标：能不能正确选 JOIN 表、聚合维度、排序方向
+# Medium: 3 表 JOIN + 计算复合指标(达成率/合格率/不良率/生产效率)
+# 这一档考察 LLM 能否识别业务术语 → 计算公式的映射
 
 - id: medium_001
   difficulty: medium
-  category: group_by
-  query: "统计每个会员等级的客户数量"
+  category: multi_join_filter
+  query: "统计华东工厂各产线的实际产量"
   gold_sql: |
-    SELECT member_level, COUNT(*) AS cnt
-    FROM table_customer
-    GROUP BY member_level
-  gold_tables: [table_customer]
-  gold_columns: [member_level]
+    SELECT w.line_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    WHERE w.factory_name = '华东工厂'
+    GROUP BY w.line_name
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [line_name, actual_quantity, factory_name]
 
 - id: medium_002
   difficulty: medium
-  category: join_aggregate
-  query: "每个产品类别的总销售额是多少？按销售额降序"
+  category: derived_metric
+  query: "统计各车间的产量达成率"
+  # 达成率 = SUM(actual) / SUM(planned)
   gold_sql: |
-    SELECT p.category, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_product p ON o.product_id = p.product_id
-    GROUP BY p.category
-    ORDER BY total DESC
-  gold_tables: [table_order, table_product]
-  gold_columns: [category, order_amount]
+    SELECT w.workshop_name,
+           SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.workshop_name
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [workshop_name, actual_quantity, planned_quantity]
 
 - id: medium_003
   difficulty: medium
-  category: join_filter_count
-  query: "华南地区一共下了多少订单？"
+  category: derived_metric_topn
+  query: "统计各产品的不良率排名前五"
+  # 不良率 = SUM(defect) / SUM(actual)
   gold_sql: |
-    SELECT COUNT(*) FROM table_order o
-    JOIN table_region r ON o.region_id = r.region_id
-    WHERE r.region_name = '华南'
-  gold_tables: [table_order, table_region]
-  gold_columns: [region_name]
+    SELECT pd.product_name,
+           SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
+    FROM table_production_record p
+    JOIN table_product pd ON p.product_id = pd.product_id
+    GROUP BY pd.product_name
+    ORDER BY defect_rate DESC
+    LIMIT 5
+  gold_tables: [table_production_record, table_product]
+  gold_columns: [product_name, defect_quantity, actual_quantity]
 
 - id: medium_004
   difficulty: medium
-  category: business_term
-  query: "客单价最高的会员等级是哪个？"
+  category: derived_metric
+  query: "统计各工序的合格率"
+  # 合格率 = SUM(qualified) / SUM(actual)
   gold_sql: |
-    SELECT c.member_level, SUM(o.order_amount) / COUNT(o.order_id) AS avg_amount
-    FROM table_order o
-    JOIN table_customer c ON o.customer_id = c.customer_id
-    GROUP BY c.member_level
-    ORDER BY avg_amount DESC
-    LIMIT 1
-  gold_tables: [table_order, table_customer]
-  gold_columns: [member_level, order_amount, order_id]
+    SELECT pr.process_name,
+           SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
+    FROM table_production_record p
+    JOIN table_process pr ON p.process_id = pr.process_id
+    GROUP BY pr.process_name
+  gold_tables: [table_production_record, table_process]
+  gold_columns: [process_name, qualified_quantity, actual_quantity]
 
 - id: medium_005
   difficulty: medium
-  category: join_group_by
-  query: "每个区域的订单总金额是多少？"
+  category: derived_metric
+  query: "统计各产线的生产效率"
+  # 生产效率 = SUM(actual) / SUM(production_hours)
   gold_sql: |
-    SELECT r.region_name, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_region r ON o.region_id = r.region_id
-    GROUP BY r.region_name
-  gold_tables: [table_order, table_region]
-  gold_columns: [region_name, order_amount]
+    SELECT w.line_name,
+           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.line_name
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [line_name, actual_quantity, production_hours]
 
 - id: medium_006
   difficulty: medium
-  category: join_group_by
-  query: "每个品牌一共卖出了多少件商品？"
+  category: multi_metric
+  query: "统计Q2各产线的计划产量和实际产量"
   gold_sql: |
-    SELECT p.brand, SUM(o.order_quantity) AS total_qty
-    FROM table_order o
-    JOIN table_product p ON o.product_id = p.product_id
-    GROUP BY p.brand
-  gold_tables: [table_order, table_product]
-  gold_columns: [brand, order_quantity]
+    SELECT w.line_name,
+           SUM(p.planned_quantity) AS planned_quantity,
+           SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.quarter = 'Q2'
+    GROUP BY w.line_name
+  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_columns: [line_name, planned_quantity, actual_quantity, quarter]
 
 - id: medium_007
   difficulty: medium
-  category: top_n
-  query: "销售额最高的 5 个产品是什么？"
+  category: derived_metric_time
+  query: "统计Q2各工厂的合格率"
   gold_sql: |
-    SELECT p.product_name, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_product p ON o.product_id = p.product_id
-    GROUP BY p.product_name
-    ORDER BY total DESC
-    LIMIT 5
-  gold_tables: [table_order, table_product]
-  gold_columns: [product_name, order_amount]
+    SELECT w.factory_name,
+           SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.quarter = 'Q2'
+    GROUP BY w.factory_name
+  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_columns: [factory_name, qualified_quantity, actual_quantity, quarter]
 
 - id: medium_008
   difficulty: medium
-  category: count_distinct
-  query: "铂金会员一共有几个不同的人下过单？"
+  category: multi_metric_filter
+  query: "统计停机状态设备的实际产量和停机时长"
   gold_sql: |
-    SELECT COUNT(DISTINCT o.customer_id)
-    FROM table_order o
-    JOIN table_customer c ON o.customer_id = c.customer_id
-    WHERE c.member_level = '铂金'
-  gold_tables: [table_order, table_customer]
-  gold_columns: [customer_id, member_level]
+    SELECT SUM(p.actual_quantity) AS actual_quantity,
+           SUM(p.downtime_minutes) AS downtime_minutes
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    WHERE e.equipment_status = '停机'
+  gold_tables: [table_production_record, table_equipment]
+  gold_columns: [actual_quantity, downtime_minutes, equipment_status]
 
 - id: medium_009
   difficulty: medium
-  category: month_aggregate
-  query: "2026年2月每个区域的销售额是多少？"
+  category: ratio
+  query: "统计 2026 年第一季度不同产品类别的实际产量占比"
   gold_sql: |
-    SELECT r.region_name, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_region r ON o.region_id = r.region_id
-    JOIN table_date d ON o.date_id = d.date_id
-    WHERE d.year = 2026 AND d.month = 2
-    GROUP BY r.region_name
-  gold_tables: [table_order, table_region, table_date]
-  gold_columns: [region_name, order_amount, year, month]
+    SELECT pd.product_category,
+           SUM(p.actual_quantity) * 1.0 /
+             (SELECT SUM(p2.actual_quantity)
+              FROM table_production_record p2
+              JOIN table_date d2 ON p2.date_id = d2.date_id
+              WHERE d2.year = 2026 AND d2.quarter = 'Q1') AS ratio
+    FROM table_production_record p
+    JOIN table_product pd ON p.product_id = pd.product_id
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.year = 2026 AND d.quarter = 'Q1'
+    GROUP BY pd.product_category
+  gold_tables: [table_production_record, table_product, table_date]
+  gold_columns: [product_category, actual_quantity, year, quarter]
 
 - id: medium_010
   difficulty: medium
-  category: having
-  query: "哪些产品类别的总销售额超过 30000 元？"
+  category: top_n
+  query: "统计各设备类型的停机时长排行前 10"
   gold_sql: |
-    SELECT p.category, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_product p ON o.product_id = p.product_id
-    GROUP BY p.category
-    HAVING total > 30000
-  gold_tables: [table_order, table_product]
-  gold_columns: [category, order_amount]
+    SELECT e.equipment_type, SUM(p.downtime_minutes) AS downtime_minutes
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    GROUP BY e.equipment_type
+    ORDER BY downtime_minutes DESC
+    LIMIT 10
+  gold_tables: [table_production_record, table_equipment]
+  gold_columns: [equipment_type, downtime_minutes]
 
 - id: medium_011
   difficulty: medium
-  category: gender_group
-  query: "男性和女性客户分别贡献了多少销售额？"
+  category: derived_metric_topn
+  query: "统计各车间的合格率排行"
   gold_sql: |
-    SELECT c.gender, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_customer c ON o.customer_id = c.customer_id
-    GROUP BY c.gender
-  gold_tables: [table_order, table_customer]
-  gold_columns: [gender, order_amount]
+    SELECT w.workshop_name,
+           SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.workshop_name
+    ORDER BY qualified_rate DESC
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [workshop_name, qualified_quantity, actual_quantity]
 
 - id: medium_012
   difficulty: medium
-  category: top_n
-  query: "下单次数最多的 3 个客户是谁？"
+  category: derived_metric_filter
+  query: "统计华南工厂的不良率"
   gold_sql: |
-    SELECT c.customer_name, COUNT(o.order_id) AS cnt
-    FROM table_order o
-    JOIN table_customer c ON o.customer_id = c.customer_id
-    GROUP BY c.customer_name
-    ORDER BY cnt DESC
-    LIMIT 3
-  gold_tables: [table_order, table_customer]
-  gold_columns: [customer_name, order_id]
+    SELECT SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    WHERE w.factory_name = '华南工厂'
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [defect_quantity, actual_quantity, factory_name]

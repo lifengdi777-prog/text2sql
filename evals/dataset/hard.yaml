@@ -1,158 +1,157 @@
-# Hard: 3+ 表 JOIN + 复杂时间表达 + 窗口函数
-# 目标：复杂 schema linking + 业务语义理解
+# Hard: 多表 JOIN + 多个指标 + 时间趋势 + 多维度交叉 + 窗口函数
 
 - id: hard_001
   difficulty: hard
-  category: top_n_per_dim
-  query: "2026年第一季度华东地区销售额排名前三的产品"
+  category: multi_metric_time
+  query: "计算 2026 年每月实际产量、合格率和生产效率"
   gold_sql: |
-    SELECT p.product_name, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_product p ON o.product_id = p.product_id
-    JOIN table_region r ON o.region_id = r.region_id
-    JOIN table_date d ON o.date_id = d.date_id
-    WHERE d.year = 2026 AND d.quarter = 'Q1' AND r.region_name = '华东'
-    GROUP BY p.product_name
-    ORDER BY total DESC
-    LIMIT 3
-  gold_tables: [table_order, table_product, table_region, table_date]
-  gold_columns: [product_name, order_amount, region_name, year, quarter]
+    SELECT d.month,
+           SUM(p.actual_quantity) AS actual_quantity,
+           SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate,
+           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
+    FROM table_production_record p
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.year = 2026
+    GROUP BY d.month
+    ORDER BY d.month
+  gold_tables: [table_production_record, table_date]
+  gold_columns: [month, actual_quantity, qualified_quantity, production_hours, year]
 
 - id: hard_002
   difficulty: hard
-  category: window_function
-  query: "每个区域销量最高的产品分别是什么？"
+  category: top_n_detail
+  query: "列出 2026 年 Q1 实际产量最高的前 10 条生产记录"
   gold_sql: |
-    SELECT region_name, product_name, total_qty FROM (
-      SELECT r.region_name, p.product_name,
-             SUM(o.order_quantity) AS total_qty,
-             ROW_NUMBER() OVER (PARTITION BY r.region_name ORDER BY SUM(o.order_quantity) DESC) AS rn
-      FROM table_order o
-      JOIN table_product p ON o.product_id = p.product_id
-      JOIN table_region r ON o.region_id = r.region_id
-      GROUP BY r.region_name, p.product_name
-    ) t WHERE rn = 1
-  gold_tables: [table_order, table_product, table_region]
-  gold_columns: [region_name, product_name, order_quantity]
+    SELECT p.*
+    FROM table_production_record p
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.year = 2026 AND d.quarter = 'Q1'
+    ORDER BY p.actual_quantity DESC
+    LIMIT 10
+  gold_tables: [table_production_record, table_date]
+  gold_columns: [actual_quantity, year, quarter]
 
 - id: hard_003
   difficulty: hard
-  category: month_over_month
-  query: "对比2026年1月和2月各品牌的销售额"
+  category: multi_filter_topn
+  query: "统计华东工厂 2026 年 Q2 实际产量最高的前 5 个产品"
   gold_sql: |
-    SELECT p.brand,
-      SUM(CASE WHEN d.month = 1 THEN o.order_amount ELSE 0 END) AS jan,
-      SUM(CASE WHEN d.month = 2 THEN o.order_amount ELSE 0 END) AS feb
-    FROM table_order o
-    JOIN table_product p ON o.product_id = p.product_id
-    JOIN table_date d ON o.date_id = d.date_id
-    WHERE d.year = 2026 AND d.month IN (1, 2)
-    GROUP BY p.brand
-  gold_tables: [table_order, table_product, table_date]
-  gold_columns: [brand, order_amount, year, month]
+    SELECT pd.product_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_product pd ON p.product_id = pd.product_id
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE w.factory_name = '华东工厂' AND d.year = 2026 AND d.quarter = 'Q2'
+    GROUP BY pd.product_name
+    ORDER BY actual_quantity DESC
+    LIMIT 5
+  gold_tables: [table_production_record, table_product, table_workshop, table_date]
+  gold_columns: [product_name, actual_quantity, factory_name, year, quarter]
 
 - id: hard_004
   difficulty: hard
-  category: multi_join_filter
-  query: "黄金会员在2026年Q1购买的所有手机数码类产品的总金额"
+  category: time_trend
+  query: "统计每个月的不良率趋势"
   gold_sql: |
-    SELECT SUM(o.order_amount)
-    FROM table_order o
-    JOIN table_customer c ON o.customer_id = c.customer_id
-    JOIN table_product p ON o.product_id = p.product_id
-    JOIN table_date d ON o.date_id = d.date_id
-    WHERE c.member_level = '黄金'
-      AND p.category = '手机数码'
-      AND d.year = 2026 AND d.quarter = 'Q1'
-  gold_tables: [table_order, table_customer, table_product, table_date]
-  gold_columns: [order_amount, member_level, category, year, quarter]
+    SELECT d.year, d.month,
+           SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
+    FROM table_production_record p
+    JOIN table_date d ON p.date_id = d.date_id
+    GROUP BY d.year, d.month
+    ORDER BY d.year, d.month
+  gold_tables: [table_production_record, table_date]
+  gold_columns: [year, month, defect_quantity, actual_quantity]
 
 - id: hard_005
   difficulty: hard
-  category: window_function
-  query: "每个客户的累计消费金额，按下单时间排序"
+  category: cross_dim
+  query: "统计各工厂各车间的产量达成率"
   gold_sql: |
-    SELECT c.customer_name, o.date_id, o.order_amount,
-      SUM(o.order_amount) OVER (PARTITION BY o.customer_id ORDER BY o.date_id) AS cumulative
-    FROM table_order o
-    JOIN table_customer c ON o.customer_id = c.customer_id
-    ORDER BY c.customer_name, o.date_id
-  gold_tables: [table_order, table_customer]
-  gold_columns: [customer_name, date_id, order_amount, customer_id]
+    SELECT w.factory_name, w.workshop_name,
+           SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.factory_name, w.workshop_name
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [factory_name, workshop_name, actual_quantity, planned_quantity]
 
 - id: hard_006
   difficulty: hard
-  category: ratio
-  query: "华东地区的销售额占全国销售额的百分比是多少？"
+  category: time_compare
+  query: "对比各产品类别 Q1 和 Q2 的实际产量"
   gold_sql: |
-    SELECT
-      SUM(CASE WHEN r.region_name = '华东' THEN o.order_amount ELSE 0 END)
-      / SUM(o.order_amount) * 100 AS pct
-    FROM table_order o
-    JOIN table_region r ON o.region_id = r.region_id
-  gold_tables: [table_order, table_region]
-  gold_columns: [region_name, order_amount]
+    SELECT pd.product_category,
+      SUM(CASE WHEN d.quarter = 'Q1' THEN p.actual_quantity ELSE 0 END) AS q1_actual,
+      SUM(CASE WHEN d.quarter = 'Q2' THEN p.actual_quantity ELSE 0 END) AS q2_actual
+    FROM table_production_record p
+    JOIN table_product pd ON p.product_id = pd.product_id
+    JOIN table_date d ON p.date_id = d.date_id
+    GROUP BY pd.product_category
+  gold_tables: [table_production_record, table_product, table_date]
+  gold_columns: [product_category, actual_quantity, quarter]
 
 - id: hard_007
   difficulty: hard
-  category: business_term
-  query: "复购率最高的产品类别是哪个？"  # 复购率 = 重复购买的客户数 / 总客户数
+  category: cross_dim
+  query: "统计各车间下不同工序的合格率"
   gold_sql: |
-    SELECT p.category,
-      COUNT(DISTINCT CASE WHEN cnt > 1 THEN customer_id END) * 1.0 / COUNT(DISTINCT customer_id) AS repurchase_rate
-    FROM (
-      SELECT o.customer_id, p.category, COUNT(*) AS cnt
-      FROM table_order o
-      JOIN table_product p ON o.product_id = p.product_id
-      GROUP BY o.customer_id, p.category
-    ) t
-    JOIN table_product p ON p.category = t.category
-    GROUP BY p.category
-    ORDER BY repurchase_rate DESC
-    LIMIT 1
-  gold_tables: [table_order, table_product]
-  gold_columns: [category, customer_id]
+    SELECT w.workshop_name, pr.process_name,
+           SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_process pr ON p.process_id = pr.process_id
+    GROUP BY w.workshop_name, pr.process_name
+  gold_tables: [table_production_record, table_workshop, table_process]
+  gold_columns: [workshop_name, process_name, qualified_quantity, actual_quantity]
 
 - id: hard_008
   difficulty: hard
   category: window_function
-  query: "每个产品类别销售额排名第二的产品是什么？"
+  query: "找出每个工厂实际产量最高的产线"
   gold_sql: |
-    SELECT category, product_name, total FROM (
-      SELECT p.category, p.product_name, SUM(o.order_amount) AS total,
-             ROW_NUMBER() OVER (PARTITION BY p.category ORDER BY SUM(o.order_amount) DESC) AS rn
-      FROM table_order o
-      JOIN table_product p ON o.product_id = p.product_id
-      GROUP BY p.category, p.product_name
-    ) t WHERE rn = 2
-  gold_tables: [table_order, table_product]
-  gold_columns: [category, product_name, order_amount]
+    SELECT factory_name, line_name, actual_quantity FROM (
+      SELECT w.factory_name, w.line_name,
+             SUM(p.actual_quantity) AS actual_quantity,
+             ROW_NUMBER() OVER (PARTITION BY w.factory_name ORDER BY SUM(p.actual_quantity) DESC) AS rn
+      FROM table_production_record p
+      JOIN table_workshop w ON p.workshop_id = w.workshop_id
+      GROUP BY w.factory_name, w.line_name
+    ) t WHERE rn = 1
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [factory_name, line_name, actual_quantity]
 
 - id: hard_009
   difficulty: hard
-  category: cross_dim
-  query: "每个会员等级的客户在每个产品类别上的总花费"
+  category: above_average
+  query: "找出 Q2 不良率高于全厂平均水平的产品"
   gold_sql: |
-    SELECT c.member_level, p.category, SUM(o.order_amount) AS total
-    FROM table_order o
-    JOIN table_customer c ON o.customer_id = c.customer_id
-    JOIN table_product p ON o.product_id = p.product_id
-    GROUP BY c.member_level, p.category
-  gold_tables: [table_order, table_customer, table_product]
-  gold_columns: [member_level, category, order_amount]
+    SELECT product_name, defect_rate FROM (
+      SELECT pd.product_name,
+             SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
+      FROM table_production_record p
+      JOIN table_product pd ON p.product_id = pd.product_id
+      JOIN table_date d ON p.date_id = d.date_id
+      WHERE d.quarter = 'Q2'
+      GROUP BY pd.product_name
+    ) t WHERE defect_rate > (
+      SELECT SUM(p2.defect_quantity) / SUM(p2.actual_quantity)
+      FROM table_production_record p2
+      JOIN table_date d2 ON p2.date_id = d2.date_id
+      WHERE d2.quarter = 'Q2'
+    )
+  gold_tables: [table_production_record, table_product, table_date]
+  gold_columns: [product_name, defect_quantity, actual_quantity, quarter]
 
 - id: hard_010
   difficulty: hard
-  category: time_compare
-  query: "2026年Q1环比上一季度增长了多少销售额？"  # 数据只有 Q1,上一季度为 2025 Q4 应该是空,结果应为 NULL/Q1 数
+  category: cross_dim_metric
+  query: "统计各设备类型在各工厂的停机时长"
   gold_sql: |
-    SELECT
-      (SELECT COALESCE(SUM(o.order_amount), 0) FROM table_order o
-       JOIN table_date d ON o.date_id = d.date_id
-       WHERE d.year = 2026 AND d.quarter = 'Q1')
-      -
-      (SELECT COALESCE(SUM(o.order_amount), 0) FROM table_order o
-       JOIN table_date d ON o.date_id = d.date_id
-       WHERE d.year = 2025 AND d.quarter = 'Q4') AS growth
-  gold_tables: [table_order, table_date]
-  gold_columns: [order_amount, year, quarter]
+    SELECT e.equipment_type, w.factory_name,
+           SUM(p.downtime_minutes) AS downtime_minutes
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY e.equipment_type, w.factory_name
+  gold_tables: [table_production_record, table_equipment, table_workshop]
+  gold_columns: [equipment_type, factory_name, downtime_minutes]
