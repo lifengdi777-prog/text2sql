@@ -8,7 +8,7 @@ from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository, DWDBRepository
 from dtos.meta import ColumnInfo, MetricInfo, ValueInfo
 # Chart Agent 子图相关 schema(WSAgentState 里要嵌)
-from agent.chart_agent.schemas import ChartDecision, DataShape
+from agent.chart_agent.schemas import DataShape, EChartsSpec
 
 class WSAgentTableInfoState(BaseModel):
     id: str
@@ -48,14 +48,20 @@ class WSAgentState(BaseModel):
     sql: str | None = None
     #记录错误信息
     error: Optional[str] = None
-    # ── 以下 4 个字段由 chart_agent 子图使用 ────────────────────────────
+    # ── 以下字段由 chart_agent 子图使用 ───────────────────────────────
     # execute_sql 跑完后的结果集(成功时是 list[dict],出错时为 None)
     sql_result: list[dict[str, Any]] | None = None
-    # 由 chart_agent/analyzer.py 算出的数据形状摘要
+    # analyzer 算出的数据形状摘要
     data_shape: DataShape | None = None
-    # 由 chart_agent/decider.py LLM 决策出的图表类型 + 字段映射
-    chart_decision: ChartDecision | None = None
-    # 由 chart_agent/renderer.py 渲染出的最终 ECharts 配置(前端拿这个 setOption)
+    # LLM 直出的 ECharts spec(generator / corrector 写入)
+    chart_spec: EChartsSpec | None = None
+    # validator 写入的校验问题列表,非空时触发 corrector
+    chart_issues: list[str] | None = None
+    # corrector 重试次数,超 MAX_RETRY 则降级 table
+    chart_retry_count: int = 0
+    # chart_agent 内部记的临时错误信息(generator / corrector 异常时填)
+    chart_error: str | None = None
+    # 最终 ECharts 配置(前端拿这个 setOption)
     chart_config: dict[str, Any] | None = None
 
 

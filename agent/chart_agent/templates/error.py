@@ -1,16 +1,10 @@
-"""错误卡:SQL 执行失败时的友好展示。
-
-前端约定:红色 alert 卡片,展示 message + hint。
-"""
+"""错误卡:SQL 执行失败时的友好展示。"""
 from __future__ import annotations
 
 from typing import Any
 
-from agent.chart_agent.schemas import ChartDecision
-
 
 def _make_friendly_hint(error_message: str) -> str:
-    """根据错误信息给出友好建议。"""
     low = (error_message or "").lower()
     if "unknown column" in low or "unknown field" in low:
         return "可能是字段名拼写错误或表中没有该字段,请尝试换种说法"
@@ -24,15 +18,14 @@ def _make_friendly_hint(error_message: str) -> str:
 
 
 def render(
-    decision: ChartDecision,
-    rows: list[dict[str, Any]],
     error_message: str = "",
     original_sql: str | None = None,
+    title: str = "查询失败",
 ) -> dict[str, Any]:
     return {
         "chart_type": "error",
-        "title": decision.title or "查询失败",
+        "title": title,
         "message": error_message or "未知错误",
         "hint": _make_friendly_hint(error_message),
-        "original_sql": original_sql,   # 给开发者调试用,前端可以折叠展示
+        "original_sql": original_sql,
     }

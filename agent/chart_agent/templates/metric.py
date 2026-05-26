@@ -2,22 +2,15 @@
 
 触发条件:
 - 1 行 1 列 numeric:`SELECT SUM(x) FROM ...`
-- 1 行多列 numeric:`SELECT SUM(x), AVG(y) FROM ...`(多个指标并列展示)
-
-前端约定:
-- chart_type = "metric"
-- metrics 是 [{label, value, unit?}] 数组
+- 1 行多列 numeric:`SELECT SUM(x), AVG(y) FROM ...`
 """
 from __future__ import annotations
 
 from typing import Any
 
-from agent.chart_agent.schemas import ChartDecision
 
-
-# 常见单位 hint:列名包含这些子串时,推断单位
 _UNIT_HINTS = {
-    "rate": "%",       # qualified_rate / defect_rate
+    "rate": "%",
     "ratio": "%",
     "percent": "%",
     "minutes": "分钟",
@@ -36,7 +29,6 @@ def _infer_unit(col_name: str) -> str:
 
 
 def _format_value(v: Any, unit: str) -> Any:
-    """如果是 rate/ratio 单位,自动乘 100 并保留 2 位小数。"""
     if v is None:
         return None
     if unit == "%" and isinstance(v, (int, float)):
@@ -46,14 +38,9 @@ def _format_value(v: Any, unit: str) -> Any:
     return v
 
 
-def render(decision: ChartDecision, rows: list[dict[str, Any]]) -> dict[str, Any]:
+def render(title: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
-        # 理论上不会到这里(empty 分支已处理),保险起见
-        return {
-            "chart_type": "metric",
-            "title": decision.title,
-            "metrics": [],
-        }
+        return {"chart_type": "metric", "title": title, "metrics": []}
 
     row = rows[0]
     metrics = []
@@ -65,8 +52,4 @@ def render(decision: ChartDecision, rows: list[dict[str, Any]]) -> dict[str, Any
             "unit": unit,
         })
 
-    return {
-        "chart_type": "metric",
-        "title": decision.title,
-        "metrics": metrics,
-    }
+    return {"chart_type": "metric", "title": title, "metrics": metrics}

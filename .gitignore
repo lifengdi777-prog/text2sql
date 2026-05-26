@@ -32,3 +32,6 @@ conf/app_config.yaml
 
 #数据库介绍.md
 数据库介绍.md
+
+#chart_agent.md
+agent/chart_agent/README.md
