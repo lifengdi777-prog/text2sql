@@ -1,7 +1,5 @@
-"""根据 validator 报的 issues 让 LLM 修正 spec。
-
-与 SQL 侧 correct_sql 节点同构:把上一轮 spec + issues 反喂回 LLM,
-让它针对性地修。
+"""
+根据 validator 报的 issues 让 LLM 修正 spec。
 """
 from __future__ import annotations
 

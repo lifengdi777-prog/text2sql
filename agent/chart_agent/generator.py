@@ -1,8 +1,6 @@
 """LLM 直接产出 ECharts spec 的节点。
-
-不再走"决策 chart_type → Python 模板拼装"的两段式,
-而是把数据形状 + 样本数据 + 用户问题一次性给 LLM,
-让它直接输出完整 ECharts option。
+把数据形状 + 样本数据 + 用户问题一次性给 LLM,
+直接输出完整 ECharts option。
 """
 from __future__ import annotations
 
