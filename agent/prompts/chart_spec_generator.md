@@ -117,3 +117,8 @@
 
 严格输出一个 JSON 对象,不要 Markdown 代码块包裹,不要解释文本。
 **必须包含** `reason` 字段(中文,一句话说明为什么选这个图表 + 关键字段映射,便于调试)。
+
+**字段必须直接放在 JSON 顶层。** `chart_type`/`title`/`xAxis`/`yAxis`/`series`/`tooltip`/`legend` 等
+都是顶层键,严禁再套一层 `option`/`spec`/`config` 之类的包裹对象。
+正确:`{"chart_type": "line", "title": {...}, "series": [...]}`
+错误:`{"chart_type": "line", "option": {"title": {...}, "series": [...]}}`

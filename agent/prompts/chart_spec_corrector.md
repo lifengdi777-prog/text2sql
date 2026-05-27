@@ -24,3 +24,7 @@
 ## 输出要求
 
 跟 generator 相同:严格 JSON 对象,无 Markdown,无解释。必须包含 `reason` 字段,这次 reason 里要说明**改了什么、为什么改**。
+
+**所有字段必须在 JSON 顶层。** 如果校验报"必须有 xAxis/yAxis""series 不能为空",
+往往是因为上一轮把这些字段错套进了 `option`/`spec` 包裹层 —— 直接把它们提到顶层、删掉包裹键,
+而不是在顶层另写一份。正确:`{"chart_type": "line", "xAxis": {...}, "series": [...]}`。

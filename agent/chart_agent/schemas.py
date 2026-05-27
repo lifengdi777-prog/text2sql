@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ChartType = Literal[
@@ -65,6 +65,22 @@ class EChartsSpec(BaseModel):
     reason: str = ""
 
     model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hoist_nested_option(cls, data: Any) -> Any:
+        """LLM 常把 ECharts 字段错套进 `option`/`spec`/`config` 包裹层,
+        校验前提升到顶层,避免顶层 title/series 缺失而触发整轮 correct 重试。
+        顶层已有的键优先,不被嵌套层覆盖。"""
+        if not isinstance(data, dict):
+            return data
+        for wrapper in ("option", "spec", "config"):
+            nested = data.get(wrapper)
+            if isinstance(nested, dict):
+                for k, v in nested.items():
+                    data.setdefault(k, v)
+                data.pop(wrapper, None)
+        return data
 
     def to_echarts_option(self) -> dict[str, Any]:
         d = self.model_dump(exclude_none=True)

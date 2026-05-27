@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from agent.chart_agent.schemas import ColumnFeature, DataShape, SemanticType
 
 
-_TEMPORAL_NAME_HINTS = ("date", "year", "month", "quarter", "day", "week", "time")
+_TEMPORAL_NAME_HINTS = (
+    "date", "year", "month", "quarter", "day", "week", "time",
+    "年", "月", "季", "周", "日期", "时间", "星期",
+)
 _ID_NAME_SUFFIXES = ("_id",)
 
 
@@ -25,7 +29,9 @@ def _infer_semantic_type(col_name: str, values: list[Any]) -> SemanticType:
         return "temporal"
     if isinstance(sample, bool):
         return "categorical"
-    if isinstance(sample, (int, float)):
+    # Decimal 不是 int/float 的子类,SUM()/AVG() 结果常是 Decimal,必须显式纳入,
+    # 否则指标列会被误判成 categorical,导致图表类型几乎只剩 table。
+    if isinstance(sample, (int, float, Decimal)):
         return "numeric"
     return "categorical"
 
