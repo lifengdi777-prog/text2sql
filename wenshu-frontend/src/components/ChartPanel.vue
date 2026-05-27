@@ -72,6 +72,19 @@ const title = computed(() => {
   return '查询结果'
 })
 
+// 渲染前清洗:单系列 bar/line 的图例只是重复那一个列名,还默认靠左挡住柱子 —— 移除。
+// 坐标轴名保留(列名为中文别名,直接当轴标题展示);
+// pie 的图例是分类名、多系列图例是各序列名,都有意义,也保留。
+function sanitizeOption(opt: Record<string, unknown>): Record<string, unknown> {
+  const o: Record<string, unknown> = { ...opt }
+  const series = o.series
+  if (Array.isArray(series) && series.length <= 1) {
+    const t = (series[0] as { type?: string } | undefined)?.type
+    if (t === 'bar' || t === 'line') delete o.legend
+  }
+  return o
+}
+
 // 要渲染的 ECharts option:默认类型用后端配好的,切换则本地构造;再剥掉元字段
 const activeOption = computed(() => {
   const isDefault = activeType.value === props.config.chart_type
@@ -97,7 +110,7 @@ const activeOption = computed(() => {
   for (const [k, v] of Object.entries(cfg)) {
     if (!meta.has(k)) opt[k] = v
   }
-  return opt
+  return sanitizeOption(opt)
 })
 
 const columns = computed(() => {
@@ -164,7 +177,15 @@ function fmt(v: unknown): string {
       </div>
 
       <!-- 图表 -->
-      <VChart v-else :option="activeOption" :autoresize="true" style="height: 380px; width: 100%" />
+      <!-- notMerge: 切换图表类型时全量替换,清掉上一种图残留的 xAxis/yAxis/轴名
+           (默认合并模式会把柱图的坐标轴留在饼图上,导致标注错乱) -->
+      <VChart
+        v-else
+        :option="activeOption"
+        :update-options="{ notMerge: true }"
+        :autoresize="true"
+        style="height: 380px; width: 100%"
+      />
     </div>
   </section>
 </template>

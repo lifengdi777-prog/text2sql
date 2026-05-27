@@ -52,6 +52,21 @@ function applyGuideQuery(query: string) {
   inputValue.value = query
 }
 
+// 执行链路折叠:执行完成(success)后默认折叠,用户可点击展开/再折叠。
+// collapseOverride 按 message.id 记住用户的显式选择,优先于默认行为。
+const collapseOverride = ref<Record<string, boolean>>({})
+function isStepsCollapsed(message: AgentReplyMessage): boolean {
+  const override = collapseOverride.value[message.id]
+  if (override !== undefined) return override
+  return message.status === 'success'
+}
+function toggleSteps(message: AgentReplyMessage) {
+  collapseOverride.value = {
+    ...collapseOverride.value,
+    [message.id]: !isStepsCollapsed(message),
+  }
+}
+
 async function scrollToBottom() {
   await nextTick()
 
@@ -225,35 +240,64 @@ onBeforeUnmount(() => {
               v-else
               class="w-full max-w-3xl rounded-[28px] rounded-bl-md border border-white/75 bg-white/92 px-5 py-5 shadow-[0_18px_40px_rgba(148,163,184,0.16)] sm:px-6"
             >
-              <div class="mb-4 flex items-center justify-between gap-4">
+              <div
+                class="mb-4 flex cursor-pointer select-none items-center justify-between gap-4"
+                @click="toggleSteps(message)"
+              >
                 <div>
                   <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
                     Agent Status
                   </p>
-                  <h3 class="mt-1 text-base font-semibold text-slate-900">执行链路</h3>
+                  <h3 class="mt-1 text-base font-semibold text-slate-900">
+                    执行链路
+                    <span
+                      v-if="isStepsCollapsed(message)"
+                      class="ml-1 text-xs font-normal text-slate-400"
+                    >
+                      共 {{ message.steps.length }} 步
+                    </span>
+                  </h3>
                 </div>
 
-                <span
-                  class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
-                  :class="
-                    message.status === 'success'
-                      ? 'bg-emerald-50 text-emerald-600'
-                      : message.status === 'error'
-                        ? 'bg-rose-50 text-rose-600'
-                        : 'bg-amber-50 text-amber-600'
-                  "
-                >
-                  {{
-                    message.status === 'success'
-                      ? '已完成'
-                      : message.status === 'error'
-                        ? '已中断'
-                        : '处理中'
-                  }}
-                </span>
+                <div class="flex items-center gap-2">
+                  <span
+                    class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
+                    :class="
+                      message.status === 'success'
+                        ? 'bg-emerald-50 text-emerald-600'
+                        : message.status === 'error'
+                          ? 'bg-rose-50 text-rose-600'
+                          : 'bg-amber-50 text-amber-600'
+                    "
+                  >
+                    {{
+                      message.status === 'success'
+                        ? '已完成'
+                        : message.status === 'error'
+                          ? '已中断'
+                          : '处理中'
+                    }}
+                  </span>
+
+                  <!-- 明显的展开/收起按钮:文字 + 箭头,带边框和悬停高亮 -->
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+                    @click.stop="toggleSteps(message)"
+                  >
+                    {{ isStepsCollapsed(message) ? '展开' : '收起' }}
+                    <span
+                      class="text-[10px] transition-transform"
+                      :class="isStepsCollapsed(message) ? '' : 'rotate-180'"
+                      aria-hidden="true"
+                    >
+                      ▼
+                    </span>
+                  </button>
+                </div>
               </div>
 
-              <div class="space-y-3">
+              <div v-show="!isStepsCollapsed(message)" class="space-y-3">
                 <div
                   v-for="step in message.steps"
                   :key="step.step"

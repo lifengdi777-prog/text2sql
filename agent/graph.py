@@ -14,6 +14,7 @@ from agent.nodes.validate_sql import validate_sql
 from agent.nodes.generate_sql import generate_sql
 from agent.nodes.correct_sql import correct_sql
 from agent.nodes.execute_sql import execute_sql
+from agent.nodes.translate_columns import translate_columns  # 结果列名翻译(英文→中文)
 from agent.nodes.interpret_result import interpret_result  # 数据解读节点(与图表并行)
 from agent.chart_agent import chart_subgraph  # 图表生成子图(以节点身份接入)
 from langchain.messages import HumanMessage
@@ -43,6 +44,9 @@ graph_builder.add_node(generate_sql)
 graph_builder.add_node(validate_sql)
 graph_builder.add_node(correct_sql)
 graph_builder.add_node(execute_sql)
+# 结果列名翻译:execute_sql 之后、图表/解读之前,把英文列 key 改成中文,
+# 让图表轴名/图例/表头与数据解读全部中文且一致。SQL 本身保持英文不变。
+graph_builder.add_node(translate_columns)
 # chart_agent 子图作为一个节点接入主图(LangGraph 1.x subgraph 模式)
 # 子图内部处理 4 种 sql_result 状态:正常多行→LLM 决策图表 / 单值→指标卡 / 空→empty / 报错→error
 graph_builder.add_node("generate_chart", chart_subgraph)
@@ -94,11 +98,13 @@ graph_builder.add_conditional_edges(
 )
 #如果需要校正，校正完后继续执行SQL。
 graph_builder.add_edge("correct_sql", "validate_sql")
-#execute_sql 完成后(不管成败都不抛异常)并行 fan-out 到两个分支：
+#execute_sql 完成后先翻译列名(英文→中文),再并行 fan-out 到两个分支：
 #  - generate_chart:图表生成子图
 #  - interpret_result:自然语言解读
-graph_builder.add_edge("execute_sql", "generate_chart")
-graph_builder.add_edge("execute_sql", "interpret_result")
+#二者都读已翻译的 sql_result,所以图表与解读的列名一致。
+graph_builder.add_edge("execute_sql", "translate_columns")
+graph_builder.add_edge("translate_columns", "generate_chart")
+graph_builder.add_edge("translate_columns", "interpret_result")
 #两个分支各自终结到 END,LangGraph 会等两者都完成
 graph_builder.add_edge("generate_chart", END)
 graph_builder.add_edge("interpret_result", END)
