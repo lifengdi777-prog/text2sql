@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
       class="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center justify-center"
     >
       <div
-        class="flex h-[82vh] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white/82 shadow-[0_30px_90px_rgba(15,23,42,0.12)] backdrop-blur-xl"
+        class="flex h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white/82 shadow-[0_30px_90px_rgba(15,23,42,0.12)] backdrop-blur-xl"
       >
         <header class="border-b border-slate-200/70 px-6 py-6 sm:px-8">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
                 Text to SQL
               </p>
               <h1 class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                智能数据问答工作台
+                智能数据分析工作台
               </h1>
             </div>
 
