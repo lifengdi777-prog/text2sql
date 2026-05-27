@@ -115,6 +115,11 @@ def compatible_chart_types(shape: DataShape | None) -> list[str]:
     if shape is None or not shape.columns:
         return ["table"]
 
+    # 单行(或空)结果画不成趋势/对比图(每列基数都是 1),只能表格。
+    # 单条明细查询就落在这里,避免误给 multi_line / stacked_bar 等切换项。
+    if shape.row_count <= 1:
+        return ["table"]
+
     temporal = [c for c in shape.columns if c.semantic_type == "temporal"]
     categorical = [c for c in shape.columns if c.semantic_type == "categorical"]
     numeric = [c for c in shape.columns if c.semantic_type == "numeric"]
