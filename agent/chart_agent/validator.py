@@ -76,6 +76,9 @@ def _validate_chart_specific(spec: EChartsSpec, rows: list[dict[str, Any]]) -> l
         # pie 不该有 xAxis/yAxis
         if spec.xAxis or spec.yAxis:
             issues.append("pie 图表不应该有 xAxis 或 yAxis 字段,请删除")
+        # series 整个为空时 backfill 也无能为力(没东西可补),必须拦下重做
+        if not spec.series:
+            issues.append("pie series 不能为空")
         # series[0].data 必须是 [{name, value}]
         if spec.series:
             data = spec.series[0].get("data", [])

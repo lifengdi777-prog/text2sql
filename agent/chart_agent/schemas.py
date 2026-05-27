@@ -18,6 +18,17 @@ ChartType = Literal[
 
 SemanticType = Literal["temporal", "categorical", "numeric"]
 
+# chart_type → ECharts series.type 的确定性映射。
+# ECharts 靠 series[].type 决定画什么图,而它与 chart_type 一一对应,
+# 不该依赖 LLM 写对 —— 缺了就按这张表补全。
+_CHART_TYPE_TO_SERIES_TYPE = {
+    "line": "line",
+    "multi_line": "line",
+    "bar": "bar",
+    "stacked_bar": "bar",
+    "pie": "pie",
+}
+
 
 class ColumnFeature(BaseModel):
     name: str
@@ -59,4 +70,10 @@ class EChartsSpec(BaseModel):
         d = self.model_dump(exclude_none=True)
         # reason 是给后端日志用的,前端不需要
         d.pop("reason", None)
+        # 确定性补 series.type:LLM 漏写时按 chart_type 补,避免前端渲染空白
+        series_type = _CHART_TYPE_TO_SERIES_TYPE.get(self.chart_type)
+        if series_type and isinstance(d.get("series"), list):
+            for s in d["series"]:
+                if isinstance(s, dict) and not s.get("type"):
+                    s["type"] = series_type
         return d
