@@ -447,7 +447,7 @@ onBeforeUnmount(() => {
                 v-model="inputValue"
                 rows="3"
                 class="min-h-[80px] flex-1 resize-none rounded-[22px] border border-white bg-white px-4 py-3 text-xs leading-6 text-slate-700 outline-none ring-0 transition placeholder:text-slate-400 focus:border-sky-300 sm:text-sm"
-                placeholder="请输入想查询的数据问题，例如：销量最高的商品有哪些？"
+                placeholder="请输入想查询的生产数据问题，例如：统计 2026 年各工厂的实际产量"
                 @keydown="handleKeydown"
               />
 
