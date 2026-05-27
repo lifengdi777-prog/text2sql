@@ -240,23 +240,12 @@ onBeforeUnmount(() => {
               v-else
               class="w-full max-w-3xl rounded-[28px] rounded-bl-md border border-white/75 bg-white/92 px-5 py-5 shadow-[0_18px_40px_rgba(148,163,184,0.16)] sm:px-6"
             >
-              <div
-                class="mb-4 flex cursor-pointer select-none items-center justify-between gap-4"
-                @click="toggleSteps(message)"
-              >
+              <div class="mb-4 flex items-center justify-between gap-4">
                 <div>
                   <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
                     Agent Status
                   </p>
-                  <h3 class="mt-1 text-base font-semibold text-slate-900">
-                    执行链路
-                    <span
-                      v-if="isStepsCollapsed(message)"
-                      class="ml-1 text-xs font-normal text-slate-400"
-                    >
-                      共 {{ message.steps.length }} 步
-                    </span>
-                  </h3>
+                  <h3 class="mt-1 text-base font-semibold text-slate-900">执行链路</h3>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -279,25 +268,57 @@ onBeforeUnmount(() => {
                     }}
                   </span>
 
-                  <!-- 明显的展开/收起按钮:文字 + 箭头,带边框和悬停高亮 -->
+                  <!-- 展开态:表头给一个明确的「收起」按钮 -->
                   <button
+                    v-if="!isStepsCollapsed(message)"
                     type="button"
                     class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
-                    @click.stop="toggleSteps(message)"
+                    @click="toggleSteps(message)"
                   >
-                    {{ isStepsCollapsed(message) ? '展开' : '收起' }}
-                    <span
-                      class="text-[10px] transition-transform"
-                      :class="isStepsCollapsed(message) ? '' : 'rotate-180'"
-                      aria-hidden="true"
-                    >
-                      ▼
-                    </span>
+                    收起
+                    <span class="text-[10px]" aria-hidden="true">▲</span>
                   </button>
                 </div>
               </div>
 
-              <div v-show="!isStepsCollapsed(message)" class="space-y-3">
+              <!-- 折叠态:整条通栏可点条,占满整行,一眼可见可点击展开 -->
+              <button
+                v-if="isStepsCollapsed(message)"
+                type="button"
+                class="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/85 px-4 py-3 text-left transition hover:border-sky-300 hover:bg-sky-50"
+                @click="toggleSteps(message)"
+              >
+                <span
+                  v-if="message.status === 'success'"
+                  class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white"
+                >
+                  ✓
+                </span>
+                <span
+                  v-else-if="message.status === 'error'"
+                  class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-xs font-bold text-white"
+                >
+                  !
+                </span>
+                <span
+                  v-else
+                  class="h-5 w-5 rounded-full border-2 border-sky-200 border-t-sky-500 animate-spin"
+                />
+
+                <span class="text-xs font-medium text-slate-700 sm:text-sm">
+                  {{
+                    message.status === 'error' ? '执行链路已中断' : '执行链路已完成'
+                  }}
+                  · 共 {{ message.steps.length }} 步
+                </span>
+
+                <span class="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-sky-600">
+                  点击展开查看执行过程
+                  <span aria-hidden="true">▼</span>
+                </span>
+              </button>
+
+              <div v-else class="space-y-3">
                 <div
                   v-for="step in message.steps"
                   :key="step.step"
