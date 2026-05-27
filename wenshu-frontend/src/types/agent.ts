@@ -42,6 +42,7 @@ export interface AgentReplyMessage {
   steps: AgentStep[]
   result: ResultRow[]
   chartConfig: ChartConfig | null   // 由 chart_agent 子图最后一个 finish 事件填充
+  interpretation: string | null     // 由 interpret_result 节点产出的自然语言解读
   guideQueries: string[]
   status: 'streaming' | 'success' | 'error'
   errorMessage?: string

@@ -67,12 +67,15 @@ function mergeReplyMessage(
   // 失败请求只有 chart_agent 的 finish=true(error 卡)
   const isResultEvent = event.finish && isRawRowsData(event.data)
   const isChartEvent = event.finish && isChartConfigData(event.data)
+  // interpret_result 节点的事件:step="数据解读",data 是纯文本(不带 finish)
+  const isInterpretationEvent = event.step === '数据解读' && typeof event.data === 'string'
 
   return {
     ...current,
     steps: nextSteps,
     result: isResultEvent ? (event.data as ResultRow[]) : current.result,
     chartConfig: isChartEvent ? (event.data as ChartConfig) : current.chartConfig,
+    interpretation: isInterpretationEvent ? (event.data as string) : current.interpretation,
     guideQueries: event.finish && event.guide_queries && event.guide_queries.length > 0
       ? event.guide_queries
       : current.guideQueries,
@@ -131,6 +134,7 @@ export async function streamAgentQuery(query: string, options: QueryOptions): Pr
     steps: [],
     result: [],
     chartConfig: null,
+    interpretation: null,
     guideQueries: [],
     status: 'streaming',
   }

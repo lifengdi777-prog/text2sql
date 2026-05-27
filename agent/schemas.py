@@ -63,6 +63,8 @@ class WSAgentState(BaseModel):
     chart_error: str | None = None
     # 最终 ECharts 配置(前端拿这个 setOption)
     chart_config: dict[str, Any] | None = None
+    # interpret_result 节点产出的自然语言解读(与图表并行生成)
+    interpretation: str | None = None
 
 
 #WSAgentContext是一个Pydantic模型，定义了在整个图的执行过程中共享的上下文信息。

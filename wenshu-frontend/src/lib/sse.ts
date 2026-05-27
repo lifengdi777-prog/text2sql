@@ -4,10 +4,12 @@ export type AgentResultValue = string | number | boolean | null
 // data 可能是:
 //   - 数组(execute_sql 的成功结果,raw rows)
 //   - 对象(chart_agent 的 chart_config,带 chart_type 字段)
+//   - 字符串(interpret_result 的自然语言解读)
 //   - null(中间步骤或失败)
 export type AgentEventData =
   | Record<string, AgentResultValue>[]
   | Record<string, unknown>
+  | string
   | null
 
 export interface AgentEvent {

@@ -14,6 +14,7 @@ from agent.nodes.validate_sql import validate_sql
 from agent.nodes.generate_sql import generate_sql
 from agent.nodes.correct_sql import correct_sql
 from agent.nodes.execute_sql import execute_sql
+from agent.nodes.interpret_result import interpret_result  # 数据解读节点(与图表并行)
 from agent.chart_agent import chart_subgraph  # 图表生成子图(以节点身份接入)
 from langchain.messages import HumanMessage
 from clients.mysql import dw_mysql_client, meta_mysql_client
@@ -45,6 +46,8 @@ graph_builder.add_node(execute_sql)
 # chart_agent 子图作为一个节点接入主图(LangGraph 1.x subgraph 模式)
 # 子图内部处理 4 种 sql_result 状态:正常多行→LLM 决策图表 / 单值→指标卡 / 空→empty / 报错→error
 graph_builder.add_node("generate_chart", chart_subgraph)
+# 数据解读节点：与 generate_chart 并行，二者都只依赖 sql_result
+graph_builder.add_node("interpret_result", interpret_result)
 
 #添加边
 graph_builder.add_edge(START, "parse_query_intention")
@@ -91,10 +94,14 @@ graph_builder.add_conditional_edges(
 )
 #如果需要校正，校正完后继续执行SQL。
 graph_builder.add_edge("correct_sql", "validate_sql")
-#execute_sql 完成后(不管成败都不抛异常)进入 chart_agent 子图生成图表
+#execute_sql 完成后(不管成败都不抛异常)并行 fan-out 到两个分支：
+#  - generate_chart:图表生成子图
+#  - interpret_result:自然语言解读
 graph_builder.add_edge("execute_sql", "generate_chart")
-#子图内部 4 条分支都终结到 END(由子图自己 add_edge 到 END)
+graph_builder.add_edge("execute_sql", "interpret_result")
+#两个分支各自终结到 END,LangGraph 会等两者都完成
 graph_builder.add_edge("generate_chart", END)
+graph_builder.add_edge("interpret_result", END)
 #编译图，生成最终的可执行图对象。
 graph = graph_builder.compile()
 

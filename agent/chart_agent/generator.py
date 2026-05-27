@@ -14,18 +14,14 @@ from agent.schemas import WSAgentContext, WSAgentState, WSStepInfo
 from core.log import logger
 
 
-# 喂给 LLM 的样本行数。够它推断字段值,又不爆 token。
-_SAMPLE_ROWS = 30
-
-
 def _build_user_message(query: str, data_shape_json: str, rows: list[dict]) -> str:
-    sample = rows[:_SAMPLE_ROWS]
-    truncated_note = f"\n(共 {len(rows)} 行,只展示前 {_SAMPLE_ROWS} 行)" if len(rows) > _SAMPLE_ROWS else ""
+    # 走到这里时 subgraph 路由已保证 rows ≤ CHART_MAX_ROWS,全量喂,不采样
+    # （采样会漏数据,导致 LLM 把不完整的数据画成图）。
     return (
         f"用户原始问题:{query}\n\n"
         f"数据形状摘要:\n{data_shape_json}\n\n"
-        f"原始数据(用于填充 series.data):{truncated_note}\n"
-        f"{sample}\n\n"
+        f"原始数据(全量,用于填充 series.data):\n"
+        f"{rows}\n\n"
         f"请直接输出 ECharts option JSON。"
     )
 

@@ -43,6 +43,7 @@ function createReplyMessage(): AgentReplyMessage {
     steps: [],
     result: [],
     chartConfig: null,
+    interpretation: null,
     guideQueries: [],
     status: 'streaming',
   }
@@ -324,6 +325,20 @@ onBeforeUnmount(() => {
                     {{ guideQuery }}
                   </button>
                 </div>
+              </section>
+
+              <!-- 数据解读:interpret_result 节点产出,与图表并行生成,放在图表上方先读 -->
+              <section
+                v-if="message.interpretation"
+                class="mt-6 rounded-3xl border border-violet-100 bg-violet-50/60 p-4 sm:p-5"
+              >
+                <div class="mb-2 flex items-center gap-2">
+                  <span class="h-1.5 w-1.5 rounded-full bg-violet-400"></span>
+                  <span class="text-xs font-semibold text-violet-700 sm:text-sm">数据解读</span>
+                </div>
+                <p class="whitespace-pre-line text-xs leading-7 text-slate-700 sm:text-sm">
+                  {{ message.interpretation }}
+                </p>
               </section>
 
               <!--
