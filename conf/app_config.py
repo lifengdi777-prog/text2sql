@@ -42,12 +42,16 @@ class EmbeddingConfig(BaseModel):
     host: str
     port: int
     enable: bool
+    # embedding 服务单次批量上限，超过会分批并行调用。不同服务上限不同
+    # （DashScope=10，OpenAI=2048，本地模型一般无限）。默认 10 兼容旧配置。
+    max_batch_size: int = 10
     model_config = ConfigDict(from_attributes=True)
 
 class EmbeddingFallbackConfig(BaseModel):
     base_url: str
     api_key: str
     model_name: str
+    max_batch_size: int = 10
     model_config = ConfigDict(from_attributes=True)
 
 

@@ -1,3 +1,5 @@
+import asyncio
+
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from agent.llm import llm
@@ -35,22 +37,19 @@ async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
     print("column_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
     
-    # 召回字段
-    #str就是column_info.id，ColumnInfo是从qdrant里搜出来的字段信息对象
+    # 召回字段：批量 embedding（一次 API 往返）+ 并行向量检索（asyncio.gather）
     recalled_columns_mapping: dict[str, ColumnInfo] = {}
-    for keyword in keywords:
-         # 1. 把关键词转成向量（embedding）
-        embedding = await embedding_client.client.aembed_query(keyword)
-         # 2. 拿向量去 Qdrant 里做相似度搜索，返回最相关的字段列表
-        column_infos: list[ColumnInfo] = await column_qdrant_repo.search(embedding)
-        #3.去重收集结果，多个关键词可能搜出同一个字段
-        for column_info in column_infos:
-            #用 id 判断，已存在就跳过，避免重复
-            if column_info.id not in recalled_columns_mapping:
-                recalled_columns_mapping[column_info.id] = column_info
-    #第四步：转成列表输出
-    #返回字典所有的 Value（值），忽略 Key。
-    #这里就是只返回所有的 ColumnInfo 对象
+    if keywords:
+        # 1. 批量把所有关键词转成向量（自动按服务端上限分批 + 并行）
+        embeddings = await embedding_client.aembed_documents_batched(keywords)
+        # 2. 所有向量的 Qdrant 检索并行发出，而不是排队串行
+        search_results: list[list[ColumnInfo]] = await asyncio.gather(*[
+            column_qdrant_repo.search(embedding) for embedding in embeddings
+        ])
+        # 3. 去重收集，多个关键词可能搜出同一个字段，按 id 去重
+        for column_infos in search_results:
+            for column_info in column_infos:
+                recalled_columns_mapping.setdefault(column_info.id, column_info)
     recalled_columns: list[ColumnInfo] = list(recalled_columns_mapping.values())
 
     # print("recalled_columns:", recalled_columns)

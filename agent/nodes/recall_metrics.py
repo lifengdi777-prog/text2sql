@@ -1,3 +1,5 @@
+import asyncio
+
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from agent.prompts import load_prompt
@@ -16,7 +18,6 @@ async def recall_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
     context = runtime.context
 
-    query = state.messages[-1].content
     keywords = state.keywords
 
     metric_qdrant_repo = context.metric_qdrant_repo
@@ -30,18 +31,20 @@ async def recall_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
     print("metric_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
     
-    # 召回字段
+    # 召回指标：批量 embedding（一次 API 往返）+ 并行向量检索（asyncio.gather）
     recalled_metrics_mapping: dict[str, MetricInfo] = {}
-    for keyword in keywords:
-            # 1. 把关键词转成向量（embedding）
-        embedding = await embedding_client.client.aembed_query(keyword)
-            # 2. 拿向量去 Qdrant 里做相似度搜索，返回最相关的字段列表
-        metric_infos: list[MetricInfo] = await metric_qdrant_repo.search(embedding)
-            #3.去重收集结果，多个关键词可能搜出同一个字段
-        for metric_info in metric_infos:
-            if metric_info.id not in recalled_metrics_mapping:
-                recalled_metrics_mapping[metric_info.id] = metric_info
-    
+    if keywords:
+        # 1. 批量把所有关键词转成向量（自动按服务端上限分批 + 并行）
+        embeddings = await embedding_client.aembed_documents_batched(keywords)
+        # 2. 所有向量的 Qdrant 检索并行发出
+        search_results: list[list[MetricInfo]] = await asyncio.gather(*[
+            metric_qdrant_repo.search(embedding) for embedding in embeddings
+        ])
+        # 3. 去重收集，多个关键词可能搜出同一个指标，按 id 去重
+        for metric_infos in search_results:
+            for metric_info in metric_infos:
+                recalled_metrics_mapping.setdefault(metric_info.id, metric_info)
+
     recalled_metrics: list[MetricInfo] = list(recalled_metrics_mapping.values())
 
     # print("recalled_metrics:", recalled_metrics)

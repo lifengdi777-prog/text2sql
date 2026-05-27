@@ -92,7 +92,8 @@ async def sync_meta_column_to_qdrant(column_infos: list[ColumnInfo]):
     column_qdrant_infos: list[ColumnQdrantInfo] = []
     for column_info in column_infos:
         texts = [column_info.name, column_info.description] + column_info.alias
-        embeddings_list = await embedding_client.client.aembed_documents(texts)
+        # 用分批方法：alias 多到超过服务端上限时自动切片并行，避免 400
+        embeddings_list = await embedding_client.aembed_documents_batched(texts)
         #分别量化防止破坏语义信息，保证每个文本都能得到一个独立的向量表示。
         for embeddings in embeddings_list:
             column_qdrant_infos.append(
@@ -115,8 +116,8 @@ async def sync_meta_metric_to_qdrant(metric_infos: list[MetricInfo]):
     metric_qdrant_infos: list[MetricQdrantInfo] = []
     for metric_info in metric_infos:
         texts = [metric_info.name, metric_info.description] + metric_info.alias
-        #一次性将一个列表的文本转换成一组嵌入向量
-        embeddings_list = await embedding_client.client.aembed_documents(texts)
+        # 用分批方法：alias 多到超过服务端上限时自动切片并行，避免 400
+        embeddings_list = await embedding_client.aembed_documents_batched(texts)
         for embeddings in embeddings_list:
             metric_qdrant_infos.append(
                 MetricQdrantInfo(

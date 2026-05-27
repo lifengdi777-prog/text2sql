@@ -1,3 +1,5 @@
+import asyncio
+
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from agent.prompts import load_prompt
@@ -24,14 +26,17 @@ async def recall_values(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
     print("value_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
     
-    # 召回值
+    # 召回值：ES 文本检索本身不需要 embedding，所有关键词的 search 并行发出
     recalled_values_mapping: dict[str, ValueInfo] = {}
-    for keyword in keywords:
-        value_infos: list[ValueInfo] = await es_repo.search(keyword)
-        for value_info in value_infos:
-            if value_info.id not in recalled_values_mapping:
-                recalled_values_mapping[value_info.id] = value_info
-    
+    if keywords:
+        search_results: list[list[ValueInfo]] = await asyncio.gather(*[
+            es_repo.search(keyword) for keyword in keywords
+        ])
+        # 去重收集，多个关键词可能搜出同一个值，按 id 去重
+        for value_infos in search_results:
+            for value_info in value_infos:
+                recalled_values_mapping.setdefault(value_info.id, value_info)
+
     recalled_values: list[ValueInfo] = list(recalled_values_mapping.values())
 
     # print("recalled_values:", recalled_values)
