@@ -26,6 +26,9 @@ export type ChartType =
 export interface ChartConfig {
   chart_type: ChartType
   title?: string | { text: string; left?: string }
+  // 后端确定性算出的兼容类型集 + 字段映射,供前端切换菜单 + 本地构图
+  compatible_types?: ChartType[]
+  field_map?: { dimension?: string; measure?: string; series?: string }
   // metric 卡专用
   metrics?: Array<{ label: string; value: string | number | null; unit?: string }>
   // error 卡专用

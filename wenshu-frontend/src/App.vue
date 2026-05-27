@@ -1,25 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 
-import { formatResultValue, hasDisplayableResult } from '@/lib/result-display'
+import { hasDisplayableResult } from '@/lib/result-display'
 import { streamAgentQuery, toErrorMessage } from '@/services/agent'
-import type { AgentReplyMessage, ChartConfig, ChatMessage, ResultRow } from '@/types/agent'
+import type { AgentReplyMessage, ChatMessage, ResultRow } from '@/types/agent'
 
 // chart_agent 子图产出的 3 个状态卡组件
 import MetricCard from '@/components/MetricCard.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import EmptyCard from '@/components/EmptyCard.vue'
-// 通用 ECharts 渲染器,处理 line/bar/pie/multi_line/stacked_bar 5 种图表
-import EChartsRenderer from '@/components/EChartsRenderer.vue'
-
-// 把 ChartConfig.title 统一抽成字符串(后端可能传字符串或 ECharts title 对象)
-function getChartTitle(config: ChartConfig | null): string {
-  if (!config) return ''
-  const t = config.title
-  if (typeof t === 'string') return t
-  if (t && typeof t === 'object' && 'text' in t) return String(t.text)
-  return ''
-}
+// 图表面板:切换按钮 + 图表/表格渲染(替代原 EChartsRenderer + 表格块)
+import ChartPanel from '@/components/ChartPanel.vue'
 
 // 判断 chart_type 是否走 ECharts 渲染(否则走表格 / 状态卡)
 function isEChartsType(t: string | undefined | null): boolean {
@@ -51,14 +42,6 @@ function createReplyMessage(): AgentReplyMessage {
 
 function isReplyMessage(message: ChatMessage): message is AgentReplyMessage {
   return message.role === 'assistant'
-}
-
-function getColumns(rows: ResultRow[]): string[] {
-  if (rows.length === 0) {
-    return []
-  }
-
-  return Object.keys(rows[0] ?? {})
 }
 
 function shouldShowResult(rows: ResultRow[]): boolean {
@@ -360,58 +343,20 @@ onBeforeUnmount(() => {
                 v-else-if="message.status === 'success' && message.chartConfig?.chart_type === 'empty'"
                 :config="message.chartConfig"
               />
-              <EChartsRenderer
-                v-else-if="message.status === 'success' && isEChartsType(message.chartConfig?.chart_type)"
-                :config="message.chartConfig!"
+              <!--
+                图表/表格统一交给 ChartPanel:
+                  - 它内部按 compatible_types 出切换按钮,默认渲染后端选的类型
+                  - 用户切换时用 message.result(全量 rows)本地重构,不回后端
+              -->
+              <ChartPanel
+                v-else-if="
+                  message.status === 'success' &&
+                  message.chartConfig &&
+                  (isEChartsType(message.chartConfig.chart_type) || message.chartConfig.chart_type === 'table')
+                "
+                :config="message.chartConfig"
+                :rows="message.result"
               />
-
-              <section
-                v-else-if="message.status === 'success' && shouldShowResult(message.result)"
-                class="mt-6 overflow-hidden rounded-3xl border border-slate-200"
-              >
-                <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <h4 class="text-xs font-semibold text-slate-700 sm:text-sm">
-                    {{ getChartTitle(message.chartConfig) || '查询结果' }}
-                  </h4>
-                  <span
-                    v-if="message.chartConfig?.chart_type"
-                    class="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-400 sm:text-xs"
-                  >
-                    {{ message.chartConfig.chart_type }}
-                  </span>
-                </div>
-
-                <div class="overflow-x-auto">
-                  <table class="min-w-full divide-y divide-slate-200 text-left text-xs sm:text-sm">
-                    <thead class="bg-slate-900 text-slate-100">
-                      <tr>
-                        <th
-                          v-for="column in getColumns(message.result)"
-                          :key="column"
-                          class="whitespace-nowrap px-4 py-3 font-medium tracking-wide"
-                        >
-                          {{ column }}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 bg-white">
-                      <tr
-                        v-for="(row, index) in message.result"
-                        :key="`${message.id}-${index}`"
-                        class="hover:bg-slate-50/80"
-                      >
-                        <td
-                          v-for="column in getColumns(message.result)"
-                          :key="`${message.id}-${index}-${column}`"
-                          class="whitespace-nowrap px-4 py-3 text-slate-600"
-                        >
-                          {{ formatResultValue(row[column]) }}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </section>
 
               <section
                 v-else-if="message.status === 'success' && !shouldShowResult(message.result)"

@@ -46,6 +46,8 @@ def _build_table_config(rows: list[dict[str, Any]], title: str, reason: str) -> 
         "columns": columns,
         "rows": [[r.get(c) for c in columns] for r in rows],
         "row_count": len(rows),
+        # 这两种 table 出口(大数据/重试兜底)数据本就不适合画图,不提供切换
+        "compatible_types": ["table"],
         "_fallback_reason": reason,
     }
 

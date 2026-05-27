@@ -87,3 +87,80 @@ def analyze(rows: list[dict[str, Any]]) -> DataShape:
         columns=features,
         shape_pattern=_infer_pattern(features),
     )
+
+
+# 与 validator 保持一致的可读性上限
+_PIE_MAX_CARD = 10
+_BAR_MAX_CARD = 30
+_SERIES_MAX_CARD = 8   # 多系列(multi_line/stacked_bar)的系列数上限
+
+
+def compatible_chart_types(shape: DataShape | None) -> list[str]:
+    """根据数据形状,确定性算出所有兼容的图表类型(无 LLM)。供前端切换菜单用。
+
+    规则就是"这个类型的前提条件满不满足",不是打分:
+    - line:  1 维度(时间) + 1 数值
+    - bar:   1 维度 + 1 数值,维度基数 ≤ 30
+    - pie:   1 维度 + 1 数值,维度基数 ≤ 10
+    - multi_line / stacked_bar: 1 时间 + 1 低基数分类(系列) + 1 数值
+    - stacked_bar: 2 分类 + 1 数值
+    - table: 永远兜底
+    """
+    if shape is None or not shape.columns:
+        return ["table"]
+
+    temporal = [c for c in shape.columns if c.semantic_type == "temporal"]
+    categorical = [c for c in shape.columns if c.semantic_type == "categorical"]
+    numeric = [c for c in shape.columns if c.semantic_type == "numeric"]
+    n_temp, n_cat, n_num = len(temporal), len(categorical), len(numeric)
+
+    types: list[str] = []
+    dim_cols = temporal + categorical
+
+    # 1 维度 + ≥1 数值 → line/bar/pie 这组(多数值时用第一个做主指标,如带了占比列)
+    if len(dim_cols) == 1 and n_num >= 1:
+        dim = dim_cols[0]
+        if dim.semantic_type == "temporal":
+            types.append("line")
+        if dim.cardinality <= _BAR_MAX_CARD:
+            types.append("bar")
+        if dim.cardinality <= _PIE_MAX_CARD:
+            types.append("pie")
+
+    # 多系列:需要透视
+    if n_temp >= 1 and n_cat >= 1 and n_num >= 1:
+        if categorical[0].cardinality <= _SERIES_MAX_CARD:
+            types += ["multi_line", "stacked_bar"]
+    elif n_cat >= 2 and n_num >= 1:
+        if categorical[1].cardinality <= _SERIES_MAX_CARD:
+            types.append("stacked_bar")
+
+    if "table" not in types:
+        types.append("table")
+    return types
+
+
+def chart_field_map(shape: DataShape | None) -> dict[str, str]:
+    """给前端本地构图用的字段映射:dimension(X轴) / measure(数值) / series(分组,可选)。"""
+    if shape is None:
+        return {}
+    temporal = [c.name for c in shape.columns if c.semantic_type == "temporal"]
+    categorical = [c.name for c in shape.columns if c.semantic_type == "categorical"]
+    numeric = [c.name for c in shape.columns if c.semantic_type == "numeric"]
+
+    fm: dict[str, str] = {}
+    if numeric:
+        fm["measure"] = numeric[0]
+
+    # 多系列:X 用时间(或第一个分类),series 用分组分类
+    if temporal and categorical:
+        fm["dimension"] = temporal[0]
+        fm["series"] = categorical[0]
+    elif len(categorical) >= 2:
+        fm["dimension"] = categorical[0]
+        fm["series"] = categorical[1]
+    elif temporal:
+        fm["dimension"] = temporal[0]
+    elif categorical:
+        fm["dimension"] = categorical[0]
+    return fm

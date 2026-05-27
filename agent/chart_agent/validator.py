@@ -9,6 +9,7 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from agent.chart_agent.analyzer import chart_field_map, compatible_chart_types
 from agent.chart_agent.schemas import EChartsSpec
 from agent.schemas import WSAgentContext, WSAgentState, WSStepInfo
 from core.log import logger
@@ -155,6 +156,13 @@ async def validate_spec(state: WSAgentState, runtime: Runtime[WSAgentContext]):
             config["columns"] = columns
             config["rows"] = [[r.get(c) for c in columns] for r in rows]
             config["row_count"] = len(rows)
+        # 注入"兼容类型集 + 字段映射",供前端切换菜单 + 本地构图(确定性,无 LLM)
+        compat = compatible_chart_types(state.data_shape)
+        # 兜底:LLM 实际选的类型一定要在集合里(否则前端切不回当前图)
+        if spec.chart_type not in compat:
+            compat = [spec.chart_type] + compat
+        config["compatible_types"] = compat
+        config["field_map"] = chart_field_map(state.data_shape)
         logger.info(f"图表 spec 校验通过:type={spec.chart_type}")
         writer(WSStepInfo(step="校验图表配置", status="success",
                           data={"chart_type": spec.chart_type}))
