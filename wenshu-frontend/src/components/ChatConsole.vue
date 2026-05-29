@@ -158,11 +158,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- 全屏铺满:去掉圆角/外阴影/外边框,跟左侧侧栏的 border-r 自然分隔 -->
   <div
-    class="flex h-full w-full flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white/82 shadow-[0_30px_90px_rgba(15,23,42,0.12)] backdrop-blur-xl"
+    class="flex h-full w-full flex-col overflow-hidden bg-white/82 backdrop-blur-xl"
   >
-    <header class="border-b border-slate-200/70 px-6 py-6 sm:px-8">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <header class="border-b border-slate-200/70 px-6 py-3 sm:px-8">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">
           <router-link
             v-if="backTo"
@@ -172,11 +173,11 @@ onBeforeUnmount(() => {
           >
             ←
           </router-link>
-          <div class="space-y-2">
-            <p class="text-xs font-semibold uppercase tracking-[0.35em] text-sky-600">
+          <div class="space-y-0.5">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.35em] text-sky-600">
               {{ subtitle }}
             </p>
-            <h1 class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 class="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
               {{ title }}
             </h1>
           </div>
@@ -392,20 +393,20 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <footer class="border-t border-slate-200/70 bg-white/95 px-4 py-4 sm:px-6 lg:px-8">
-      <form class="mx-auto flex w-full max-w-4xl flex-col gap-3" @submit.prevent="submitQuery">
-        <label for="query-input" class="text-xs font-medium text-slate-600 sm:text-sm">
+    <footer class="border-t border-slate-200/70 bg-white/95 px-4 py-3 sm:px-6 lg:px-8">
+      <form class="mx-auto flex w-full max-w-4xl flex-col gap-2" @submit.prevent="submitQuery">
+        <label for="query-input" class="text-xs font-medium text-slate-500">
           输入你的业务问题，按 Enter 发送，Shift + Enter 换行
         </label>
 
         <div
-          class="flex flex-col gap-3 rounded-[28px] border border-slate-200 bg-slate-50/85 p-3 shadow-inner shadow-slate-200/30 sm:flex-row sm:items-end"
+          class="flex flex-col gap-2 rounded-[24px] border border-slate-200 bg-slate-50/85 p-2 shadow-inner shadow-slate-200/30 sm:flex-row sm:items-end"
         >
           <textarea
             id="query-input"
             v-model="inputValue"
-            rows="3"
-            class="min-h-[80px] flex-1 resize-none rounded-[22px] border border-white bg-white px-4 py-3 text-xs leading-6 text-slate-700 outline-none ring-0 transition placeholder:text-slate-400 focus:border-sky-300 sm:text-sm"
+            rows="2"
+            class="min-h-[48px] flex-1 resize-none rounded-[18px] border border-white bg-white px-4 py-2.5 text-xs leading-6 text-slate-700 outline-none ring-0 transition placeholder:text-slate-400 focus:border-sky-300 sm:text-sm"
             :placeholder="placeholder"
             @keydown="handleKeydown"
           />

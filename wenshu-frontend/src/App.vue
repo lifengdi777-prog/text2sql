@@ -19,6 +19,9 @@ const isAuthPage = computed(() => route.name === 'login')
 // 数据集问答下的所有子路由(列表 / 对某数据集问数)都高亮"数据集问答"
 const isDatasetSection = computed(() => route.path.startsWith('/datasets'))
 
+// 聊天页(DB / 数据集问数):去掉上下留白,让聊天卡片贴顶贴底铺满高度
+const isChatView = computed(() => route.name === 'db-chat' || route.name === 'dataset-chat')
+
 const navItems = [
   { key: 'db', label: '数据库问答', desc: 'MySQL 数仓', to: '/db', icon: '🗄️' },
   { key: 'dataset', label: '数据集问答', desc: '上传的 Excel', to: '/datasets', icon: '📊' },
@@ -40,7 +43,7 @@ async function logout() {
 
   <div v-else class="flex h-screen w-screen overflow-hidden bg-slate-100 text-[14px] text-slate-900">
     <aside
-      class="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white/90 px-4 py-6 backdrop-blur"
+      class="relative z-10 flex w-60 shrink-0 flex-col border-r-2 border-slate-200 bg-white/90 px-4 py-6 shadow-[3px_0_10px_rgba(15,23,42,0.05)] backdrop-blur"
     >
       <div class="px-2">
         <p class="text-xs font-semibold uppercase tracking-[0.35em] text-sky-600">Wenshu</p>
@@ -101,7 +104,10 @@ async function logout() {
         />
       </div>
 
-      <div class="relative h-full p-4 sm:p-6 lg:p-8">
+      <div
+        class="relative h-full"
+        :class="isChatView ? '' : 'p-4 sm:p-6 lg:p-8'"
+      >
         <router-view />
       </div>
     </main>
