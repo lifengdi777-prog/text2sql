@@ -27,15 +27,23 @@ from agent.chart_agent import chart_subgraph
 from agent.dataset_agent.nodes.execute_spec import execute_spec
 from agent.dataset_agent.nodes.generate_spec import generate_spec
 from agent.dataset_agent.nodes.load_schema import load_schema
+from agent.dataset_agent.nodes.parse_intent import parse_intent
 from agent.dataset_agent.nodes.recall_values import recall_values
 from agent.dataset_agent.schemas import DatasetAgentContext, DatasetAgentState
 from agent.nodes.interpret_result import interpret_result
+
+
+def _route_after_intent(state: DatasetAgentState):
+    # 闲聊 / 与数据无关 → 直接结束(parse_intent 已发 guide_queries 引导用户);
+    # 正常提问(以及 load_schema 出错的兜底)→ 继续走计算管线。
+    return "recall_values" if state.should_continue else END
 
 
 def _build():
     g = StateGraph(state_schema=DatasetAgentState, context_schema=DatasetAgentContext)
 
     g.add_node("load_schema", load_schema)
+    g.add_node("parse_intent", parse_intent)
     g.add_node("recall_values", recall_values)
     g.add_node("generate_spec", generate_spec)
     g.add_node("execute_spec", execute_spec)
@@ -43,9 +51,14 @@ def _build():
     g.add_node("generate_chart", chart_subgraph)
     g.add_node("interpret_result", interpret_result)
 
-    # 主路径(线性 4 步)
+    # 主路径:先加载 schema,再做(宽松的)意图识别,闲聊在此短路
     g.add_edge(START, "load_schema")
-    g.add_edge("load_schema", "recall_values")
+    g.add_edge("load_schema", "parse_intent")
+    g.add_conditional_edges(
+        "parse_intent",
+        _route_after_intent,
+        {"recall_values": "recall_values", END: END},
+    )
     g.add_edge("recall_values", "generate_spec")
     g.add_edge("generate_spec", "execute_spec")
 
