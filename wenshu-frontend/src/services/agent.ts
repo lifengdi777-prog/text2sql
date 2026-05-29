@@ -125,7 +125,12 @@ function normalizeEvent(event: AgentEvent): AgentEvent | null {
   }
 }
 
-export async function streamAgentQuery(query: string, options: QueryOptions): Promise<void> {
+// DW 问答和数据集问答的 SSE 协议完全一致,只是 URL/body 不同,共用这个 streamer。
+async function runStream(
+  url: string,
+  body: Record<string, unknown>,
+  options: QueryOptions,
+): Promise<void> {
   let processedLength = 0
   let rest = ''
   let message: AgentReplyMessage = {
@@ -139,7 +144,7 @@ export async function streamAgentQuery(query: string, options: QueryOptions): Pr
     status: 'streaming',
   }
 
-  await agentApi.post('/agent/query', { query }, {
+  await agentApi.post(url, body, {
     signal: options.signal,
     onDownloadProgress: (progressEvent) => {
       const target = progressEvent.event?.target as XMLHttpRequest | undefined
@@ -179,6 +184,24 @@ export async function streamAgentQuery(query: string, options: QueryOptions): Pr
       options.onStep(message)
     }
   }
+}
+
+// DW(MySQL 数仓)问答
+export async function streamAgentQuery(query: string, options: QueryOptions): Promise<void> {
+  await runStream('/agent/query', { query }, options)
+}
+
+// 上传数据集(Excel)问答
+export async function streamDatasetQuery(
+  datasetId: number,
+  query: string,
+  options: QueryOptions & { userId?: string },
+): Promise<void> {
+  await runStream(
+    `/dataset/${datasetId}/query`,
+    { query, user_id: options.userId ?? 'anonymous' },
+    options,
+  )
 }
 
 export { toErrorMessage }
