@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "aiofiles>=25.1.0",
     "asyncmy>=0.2.11",
+    "boto3>=1.35.0",
     "cachetools>=5.5.0",
     "cryptography>=48.0.0",
     "elasticsearch[async]>=8,<9",

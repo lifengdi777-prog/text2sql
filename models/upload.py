@@ -6,7 +6,7 @@
     user_id       归属用户
     name          显示名
     original_filename
-    folder_path   data/uploads/ds_{id}
+    folder_path   对象存储前缀 ds_{id}(原始 Excel + 各 sheet parquet 都在此前缀下)
     status        cleaning / ready / failed / deleting
     sheet_count
     total_rows
@@ -28,7 +28,7 @@ class UploadDatasetMySQL(Base):
     user_id: Mapped[str] = mapped_column(String(64), index=True, comment="归属用户")
     name: Mapped[str] = mapped_column(String(255), comment="显示名")
     original_filename: Mapped[str | None] = mapped_column(String(255), comment="原始文件名")
-    folder_path: Mapped[str | None] = mapped_column(String(255), comment="数据文件夹路径")
+    folder_path: Mapped[str | None] = mapped_column(String(255), comment="对象存储前缀 ds_{id}")
     status: Mapped[str] = mapped_column(String(32), default="cleaning",
                                          comment="cleaning / ready / failed / deleting")
     sheet_count: Mapped[int] = mapped_column(Integer, default=0)

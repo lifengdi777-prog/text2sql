@@ -81,7 +81,21 @@ class LLMConfig(BaseModel):
     api_key: str
     base_url: str
 
-    model_config = ConfigDict(from_attributes=True)    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class S3Config(BaseModel):
+    """对象存储(MinIO / 兼容 S3)。存用户上传的原始 Excel + 各 sheet 的 parquet。
+
+    region 对 MinIO 无意义,但 boto3 需要一个值;默认 us-east-1 即可。
+    """
+    endpoint_url: str                 # 例:http://localhost:9000
+    access_key: str
+    secret_key: str
+    bucket: str = "wenshu-datasets"
+    region: str = "us-east-1"
+
+    model_config = ConfigDict(from_attributes=True)
 
 class AppConfig(BaseModel):
     logging: LoggingConfig
@@ -94,6 +108,8 @@ class AppConfig(BaseModel):
     llm: LLMConfig
     # 上传功能用,不配置不影响原 DW 路径(用到时才校验)
     db_upload: UploadDBConfig | None = None
+    # 对象存储,上传功能用;不配置不影响原 DW 路径(用到时才校验)
+    s3: S3Config | None = None
 
 config_path = Path(__file__).parent / "app_config.yaml"
 #context就是从app_config.yaml文件中读取的配置数据。

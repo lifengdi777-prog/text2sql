@@ -7,9 +7,10 @@
     ↓ clean(去空行列/合计行/列名规整/类型清洗)
   cleaned {sheet: DataFrame}
     ↓ 并行:
-    ├─ 写 parquet 到 data/uploads/ds_{id}/{sheet}.parquet
+    ├─ 写 parquet 到对象存储 ds_{id}/{sheet}.parquet(MinIO/S3)
+    ├─ 留档原始 Excel 到 ds_{id}/original/{filename}
     ├─ profile_columns:算每列 dtype/cardinality/values/top_K/min/max
-    └─ 写 MySQL upload_datasets(schema_json 列)
+    └─ 写 MySQL upload_datasets(schema_json 列,folder_path=对象前缀 ds_{id})
     ↓ 异步后台
     └─ 提取 distinct 值灌 ES upload_value_info(为查询时的值召回准备)
 """
@@ -19,8 +20,6 @@ import asyncio
 import hashlib
 import io
 import re
-import shutil
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -31,9 +30,9 @@ from conf.app_config import app_config
 from core.log import logger
 from repositories.es import UploadESRepository
 from repositories.upload import UploadDatasetRepository
+from services import object_store
 
 # ───────── 常量 ─────────────────────────────────────────
-UPLOAD_ROOT = Path("data/uploads")
 _TOTAL_KEYWORDS = {"小计", "合计", "总计", "汇总", "total", "subtotal", "sum"}
 _SMALL_CARD_THRESHOLD = 50         # 小基数列阈值,小于此则全枚举
 _TOP_K = 20                         # 大基数列保留 top-K 频繁值
@@ -236,9 +235,12 @@ def _safe_filename(name: str, fallback: str) -> str:
 
 # ───────── 写 parquet ──────────────────────────────────
 
-def save_parquets(folder: Path, sheets: dict[str, pd.DataFrame]) -> dict[str, str]:
-    """每 sheet 一个 parquet。返回 {sheet_name → 文件名(不含路径)}。"""
-    folder.mkdir(parents=True, exist_ok=True)
+def save_parquets(prefix: str, sheets: dict[str, pd.DataFrame]) -> dict[str, str]:
+    """每 sheet 一个 parquet,上传到对象存储 {prefix}/{name}.parquet。
+
+    返回 {sheet_name → parquet 文件名(不含前缀)}。文件名存进 schema_json,
+    folder_path 存 prefix,读取时拼成完整 object key。
+    """
     out: dict[str, str] = {}
     used: set[str] = set()
     for i, (sheet_name, df) in enumerate(sheets.items()):
@@ -250,9 +252,9 @@ def save_parquets(folder: Path, sheets: dict[str, pd.DataFrame]) -> dict[str, st
             k += 1
             name = f"{safe}_{k}"
         used.add(name)
-        path = folder / f"{name}.parquet"
-        df.to_parquet(path, index=False)
-        out[sheet_name] = f"{name}.parquet"
+        filename = f"{name}.parquet"
+        object_store.upload_df_parquet(f"{prefix}/{filename}", df)
+        out[sheet_name] = filename
     return out
 
 
@@ -340,9 +342,18 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
         await session.commit()
 
     try:
-        # 3. 写 parquet
-        folder = UPLOAD_ROOT / f"ds_{dataset_id}"
-        sheet_files = await asyncio.to_thread(save_parquets, folder, cleaned_sheets)
+        # 3. 写 parquet 到对象存储(folder_path 存对象前缀,不再是本地路径)
+        prefix = f"ds_{dataset_id}"
+        sheet_files = await asyncio.to_thread(save_parquets, prefix, cleaned_sheets)
+
+        # 3b. 原始 Excel 留档(供下载/重新处理),放 {prefix}/original/{文件名}
+        original_key = f"{prefix}/original/{_safe_filename(filename, 'upload.xlsx')}"
+        await asyncio.to_thread(
+            object_store.put_bytes,
+            original_key,
+            file_bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
         # 4. profile 每个 sheet
         def _build_schema() -> tuple[dict, int]:
@@ -365,7 +376,7 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
             repo = UploadDatasetRepository(session)
             await repo.finalize(
                 dataset_id=dataset_id,
-                folder_path=str(folder),
+                folder_path=prefix,
                 schema_json=schema_json,
                 sheet_count=len(cleaned_sheets),
                 total_rows=total_rows,
@@ -380,7 +391,7 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
         return {
             "dataset_id": dataset_id,
             "name": filename,
-            "folder_path": str(folder),
+            "folder_path": prefix,
             "sheet_count": len(cleaned_sheets),
             "total_rows": total_rows,
             "duplicated": False,
@@ -396,7 +407,7 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
 
     except Exception as exc:
         logger.exception(f"数据集 {dataset_id} 入库失败:{exc}")
-        # 出错时标 failed,文件夹保留供 debug,catalog 行不删
+        # 出错时标 failed,已上传对象保留供 debug,catalog 行不删
         async with Session() as session:
             repo = UploadDatasetRepository(session)
             await repo.update_status(dataset_id, "failed")
@@ -407,14 +418,14 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
 # ───────── 删除 ────────────────────────────────────────
 
 async def delete_dataset(dataset_id: int) -> bool:
-    """删数据集:ES → 文件夹 → MySQL 行,三处同步清。"""
+    """删数据集:ES → 对象存储 → MySQL 行,三处同步清。"""
     Session = get_session_factory()
     async with Session() as session:
         repo = UploadDatasetRepository(session)
         ds = await repo.get(dataset_id)
         if ds is None:
             return False
-        folder = ds.folder_path
+        prefix = ds.folder_path
 
     # ES:删该 dataset 的所有值文档(失败只 warn,不阻断)
     try:
@@ -423,11 +434,12 @@ async def delete_dataset(dataset_id: int) -> bool:
     except Exception as exc:
         logger.warning(f"ES 清理 dataset {dataset_id} 失败:{exc}")
 
-    # 文件夹
-    if folder:
-        p = Path(folder)
-        if p.exists():
-            shutil.rmtree(p, ignore_errors=True)
+    # 对象存储:删该 dataset 前缀下所有对象(原始 Excel + 各 parquet)
+    if prefix:
+        try:
+            await asyncio.to_thread(object_store.delete_prefix, prefix)
+        except Exception as exc:
+            logger.warning(f"对象存储清理 dataset {dataset_id} 失败:{exc}")
 
     # MySQL 行
     async with Session() as session:

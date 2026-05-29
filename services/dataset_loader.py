@@ -9,7 +9,7 @@ Schema 渲染:把 schema_json 转成给 LLM 看的 markdown(列名/类型/详情
 """
 from __future__ import annotations
 
-from pathlib import Path
+import asyncio
 from typing import Any
 
 import pandas as pd
@@ -17,6 +17,7 @@ from cachetools import TTLCache
 
 from core.log import logger
 from repositories.upload import UploadDatasetRepository
+from services import object_store
 from services.excel_ingest import get_session_factory
 
 
@@ -24,7 +25,7 @@ from services.excel_ingest import get_session_factory
 # 缓存
 # ───────────────────────────────────────────
 
-# DataFrame 缓存:key = (dataset_id, sheet_name),value = (df, parquet 绝对路径)
+# DataFrame 缓存:key = (dataset_id, sheet_name),value = (df, parquet object key)
 # 按「总内存预算」限容,而不是按条目数:单表可能很大(上传上限 100MB),
 # 按条数限容会被几个大表撑爆内存。getsizeof 让 cachetools 按 DataFrame 实际
 # 内存占用累加,超预算自动淘汰最旧条目。
@@ -79,14 +80,14 @@ async def load_sheet_df(dataset_id: int, sheet_name: str) -> pd.DataFrame:
     key = (dataset_id, sheet_name)
     cached = _DF_CACHE.get(key)
     if cached is not None:
-        df, cached_path = cached
+        df, cached_key = cached
         # 跨进程一致性兜底:invalidate_cache 只能清当前 worker 的缓存,
         # 别的 worker 删了数据集后,本进程缓存仍可能命中旧 DataFrame。
-        # 删除会连带删掉 parquet 文件,这里 stat 一下源文件是否还在:
+        # 删除会连带删掉对象存储里的 parquet,这里 HEAD 一下对象是否还在:
         # 不在 → 说明已被删除,丢弃本地缓存,走下面的重新加载(会抛出删除后的错误)。
         # (同一 dataset_id 的 parquet 内容不会原地变更——重传会分配新 id——
-        #  所以只需防「已删除」这一种陈旧情形,一次 stat 开销可忽略。)
-        if Path(cached_path).exists():
+        #  所以只需防「已删除」这一种陈旧情形;HEAD 远比一次 GET+parse 便宜。)
+        if await asyncio.to_thread(object_store.object_exists, cached_key):
             return df
         _DF_CACHE.pop(key, None)
 
@@ -106,13 +107,14 @@ async def load_sheet_df(dataset_id: int, sheet_name: str) -> pd.DataFrame:
     if not parquet_file:
         raise ValueError(f"sheet '{sheet_name}' 缺 parquet_file 字段(schema 损坏?)")
 
-    path = Path(info["folder_path"]) / parquet_file
-    if not path.exists():
-        raise FileNotFoundError(f"parquet 文件不存在:{path}")
+    # folder_path 现在是对象前缀(如 ds_6),拼上文件名得到完整 object key
+    object_key = f"{info['folder_path']}/{parquet_file}"
+    if not await asyncio.to_thread(object_store.object_exists, object_key):
+        raise FileNotFoundError(f"parquet 对象不存在:{object_key}")
 
-    df = pd.read_parquet(path)
+    df = await asyncio.to_thread(object_store.read_df_parquet, object_key)
     try:
-        _DF_CACHE[key] = (df, str(path))
+        _DF_CACHE[key] = (df, object_key)
     except ValueError:
         # 单个 DataFrame 超过整个缓存预算 → 放弃缓存直接返回,
         # 避免 cachetools 因 value 大于 maxsize 抛错(宁可不缓存,也不能让查询失败)。
