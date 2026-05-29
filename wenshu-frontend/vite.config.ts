@@ -18,12 +18,19 @@ export default defineConfig({
     },
   },
   server: {
+    // 用正则 key:vite proxy 的字符串 key 是「前缀匹配」,'/dataset' 会顺带
+    // 把 SPA 路由 /datasets(列表页)也代理到后端导致刷新 404。
+    // '^/dataset(/|$)' 只匹配 /dataset 与 /dataset/...,放过 /datasets。
     proxy: {
-      '/agent': {
+      '^/agent(/|$)': {
         target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
-      '/dataset': {
+      '^/dataset(/|$)': {
+        target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '^/auth(/|$)': {
         target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
       },

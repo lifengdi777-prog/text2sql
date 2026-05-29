@@ -1,18 +1,33 @@
 import axios from 'axios'
 
 import type { DatasetSummary, DatasetDetail, UploadResult } from '@/types/dataset'
-import { getClientId } from '@/lib/clientId'
+import { getToken, redirectToLogin } from '@/lib/authToken'
 
 // 数据集 REST(非流式),跟 agent.ts 的 SSE 实例分开:这里用普通 JSON。
-// X-Client-Id 头 = 过渡期匿名身份,后端据此隔离 + 校验数据集归属。
+// 身份走 JWT(Authorization: Bearer),后端据此隔离 + 校验数据集归属。
 const datasetApi = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '',
-  headers: {
-    'X-Client-Id': getClientId(),
-  },
 })
 
-// 身份走 X-Client-Id 头,后端只返回当前用户自己的数据集,前端不再传 user_id。
+datasetApi.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+datasetApi.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      redirectToLogin()
+    }
+    return Promise.reject(error)
+  },
+)
+
+// 身份走 Bearer 头,后端只返回当前用户自己的数据集,前端不再传 user_id。
 export async function listDatasets(): Promise<DatasetSummary[]> {
   const { data } = await datasetApi.get<DatasetSummary[]>('/dataset')
   return data

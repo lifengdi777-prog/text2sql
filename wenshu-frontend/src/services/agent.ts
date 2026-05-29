@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 import type { AgentReplyMessage, ChartConfig, ResultRow } from '@/types/agent'
-import { getClientId } from '@/lib/clientId'
+import { getToken, redirectToLogin } from '@/lib/authToken'
 import { parseSseChunk, type AgentEvent, type AgentEventData, type AgentResultValue } from '@/lib/sse'
 
 const agentApi = axios.create({
@@ -9,11 +9,28 @@ const agentApi = axios.create({
   headers: {
     Accept: 'text/event-stream',
     'Content-Type': 'application/json',
-    // 过渡期匿名身份:后端据此识别调用者并校验数据集归属
-    'X-Client-Id': getClientId(),
   },
   responseType: 'text',
 })
+
+// 每个请求带上 JWT;token 失效(401)统一跳登录页。
+agentApi.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+agentApi.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      redirectToLogin()
+    }
+    return Promise.reject(error)
+  },
+)
 
 interface QueryOptions {
   signal?: AbortSignal
@@ -194,7 +211,7 @@ export async function streamAgentQuery(query: string, options: QueryOptions): Pr
   await runStream('/agent/query', { query }, options)
 }
 
-// 上传数据集(Excel)问答。身份走 X-Client-Id 头,不再随 body 传 user_id。
+// 上传数据集(Excel)问答。身份走 Authorization: Bearer 头,不再随 body 传 user_id。
 export async function streamDatasetQuery(
   datasetId: number,
   query: string,

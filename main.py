@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.agent_router import router as agent_router
 from api.upload_router import router as upload_router
 from api.dataset_query_router import router as dataset_query_router
+from api.auth_router import router as auth_router
 import uvicorn
 
 #FastAPI() 创建整个应用实例
@@ -18,6 +19,8 @@ app.add_middleware(
     allow_headers=["*"],# 允许所有请求头
 )
 
+#登录鉴权接口(POST /auth/register / POST /auth/login / GET /auth/me)
+app.include_router(auth_router)
 #把 agent_router 里定义的接口（如 POST /agent/query）挂载到应用上
 app.include_router(agent_router)
 # 数据集上传相关接口(POST /dataset/upload / GET /dataset / GET /dataset/{id} / DELETE /dataset/{id})

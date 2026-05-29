@@ -1,28 +1,34 @@
 """请求级身份与数据集归属校验。
 
-当前还没有登录系统,这里是「过渡期」实现:
-  身份 = 浏览器首次访问时在 localStorage 生成的匿名 UUID,经请求头 X-Client-Id 带上。
-
-把「获取当前用户」收敛成一个依赖 get_current_user,业务路由只依赖它。
-将来接入真鉴权(JWT / 企业 SSO / 网关)时,**只改本文件这一个函数**,
+身份认证(方案 B,JWT):前端登录后拿到 access_token,后续请求带
+  Authorization: Bearer <token>
+本文件把「获取当前用户」收敛成一个依赖 get_current_user,业务路由只依赖它。
+将来换鉴权方式(企业 SSO / 网关)时,**只改本文件这一个函数**,
 所有路由代码一行都不用动。
 
-⚠️ X-Client-Id 可被伪造,这不是真正的身份认证 —— 它的作用是:
-  1) 隔离不同浏览器的数据(各自只看到自己上传的数据集);
-  2) 把 ownership 校验的骨架先搭起来,为后续接入真鉴权铺路。
-缺该头时归入共享的 anonymous 桶(向后兼容 curl / 老前端)。
+返回值统一是 str(user.id),与 upload_datasets.user_id 存的值对齐,
+ownership 校验(require_owned_dataset)直接比对即可。
 """
 from fastapi import Header, HTTPException
 
 from models.upload import UploadDatasetMySQL
 from repositories.upload import UploadDatasetRepository
+from services.auth import decode_access_token
 from services.excel_ingest import get_session_factory
 
 
-async def get_current_user(x_client_id: str | None = Header(default=None)) -> str:
-    """从 X-Client-Id 请求头解析当前用户 id;缺失 → anonymous。"""
-    cid = (x_client_id or "").strip()
-    return cid or "anonymous"
+async def get_current_user(authorization: str | None = Header(default=None)) -> str:
+    """从 Authorization: Bearer <token> 解析当前用户 id(字符串)。
+
+    缺失 / 格式错误 / token 无效或过期 → 401(由 decode_access_token 抛)。
+    """
+    prefix = "Bearer "
+    if not authorization or not authorization.startswith(prefix):
+        raise HTTPException(status_code=401, detail="未登录,请先登录")
+    token = authorization[len(prefix):].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="未登录,请先登录")
+    return decode_access_token(token)
 
 
 async def require_owned_dataset(dataset_id: int, user_id: str) -> UploadDatasetMySQL:

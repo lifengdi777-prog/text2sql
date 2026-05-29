@@ -97,6 +97,19 @@ class S3Config(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class AuthConfig(BaseModel):
+    """登录鉴权配置(JWT)。不配置则用下面的默认值(仅适合本地开发)。
+
+    ⚠️ 生产环境务必在 app_config.yaml 里设一个随机的强 secret,
+    否则 token 可被伪造。改了 secret 会让已签发的 token 全部失效。
+    """
+    secret: str = "wenshu-dev-secret-change-me-in-production"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24 * 7   # 7 天
+
+    model_config = ConfigDict(from_attributes=True)
+
 class AppConfig(BaseModel):
     logging: LoggingConfig
     db_meta: DBConfig
@@ -110,6 +123,8 @@ class AppConfig(BaseModel):
     db_upload: UploadDBConfig | None = None
     # 对象存储,上传功能用;不配置不影响原 DW 路径(用到时才校验)
     s3: S3Config | None = None
+    # 登录鉴权(JWT)。不配置则用 AuthConfig 的默认值(本地开发够用)
+    auth: AuthConfig = AuthConfig()
 
 config_path = Path(__file__).parent / "app_config.yaml"
 #context就是从app_config.yaml文件中读取的配置数据。

@@ -1,8 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+
+// 启动时若已有 token,拉一次 /auth/me 校验是否仍有效(失效会自动登出)
+onMounted(() => {
+  void auth.refreshMe()
+})
+
+// 登录页用独立全屏布局,不套侧边栏外壳
+const isAuthPage = computed(() => route.name === 'login')
 
 // 数据集问答下的所有子路由(列表 / 对某数据集问数)都高亮"数据集问答"
 const isDatasetSection = computed(() => route.path.startsWith('/datasets'))
@@ -15,10 +27,18 @@ const navItems = [
 function isActive(key: string): boolean {
   return key === 'dataset' ? isDatasetSection.value : route.path.startsWith('/db')
 }
+
+async function logout() {
+  auth.logout()
+  await router.replace('/login')
+}
 </script>
 
 <template>
-  <div class="flex h-screen w-screen overflow-hidden bg-slate-100 text-[14px] text-slate-900">
+  <!-- 登录页:独立全屏,无侧边栏 -->
+  <router-view v-if="isAuthPage" />
+
+  <div v-else class="flex h-screen w-screen overflow-hidden bg-slate-100 text-[14px] text-slate-900">
     <aside
       class="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white/90 px-4 py-6 backdrop-blur"
     >
@@ -47,7 +67,30 @@ function isActive(key: string): boolean {
         </router-link>
       </nav>
 
-      <div class="mt-auto px-2 text-[11px] text-slate-400">Text2SQL · MVP</div>
+      <div class="mt-auto flex flex-col gap-3">
+        <div
+          v-if="auth.user"
+          class="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5"
+        >
+          <div class="flex min-w-0 items-center gap-2">
+            <span
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-sky-700"
+            >
+              {{ auth.user.username.charAt(0).toUpperCase() }}
+            </span>
+            <span class="truncate text-sm font-medium text-slate-700">{{ auth.user.username }}</span>
+          </div>
+          <button
+            type="button"
+            class="shrink-0 rounded-lg px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-200/70 hover:text-slate-600"
+            title="退出登录"
+            @click="logout"
+          >
+            退出
+          </button>
+        </div>
+        <div class="px-2 text-[11px] text-slate-400">Text2SQL · MVP</div>
+      </div>
     </aside>
 
     <main class="relative flex-1 overflow-hidden">
