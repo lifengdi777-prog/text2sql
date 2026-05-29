@@ -132,6 +132,20 @@ schema 里 `工厂` 是 4 值的小基数列,`产量` 是 numeric。
 }
 ```
 
+## 例 6:数值区间(between 用 values 复数数组)
+
+用户问 "金额在 500 到 1000 之间的订单数",`金额` 是 numeric 列。
+注意 `between` 用 **`values`**(数组,两个元素),不是 `value`。
+
+```json
+{
+  "sheet": "订单明细",
+  "filters": [{"col": "金额", "op": "between", "values": [500, 1000]}],
+  "aggregations": [{"col": "*", "func": "count", "alias": "订单数"}],
+  "reason": "金额在 [500,1000] 区间内的订单计数"
+}
+```
+
 # 输出要求
 
 - **严格输出 JSON 对象,不要 Markdown 包裹,不要解释文本**
