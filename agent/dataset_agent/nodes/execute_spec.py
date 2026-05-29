@@ -54,10 +54,13 @@ async def execute_spec(state: DatasetAgentState, runtime: Runtime[DatasetAgentCo
         return {"error": msg}
 
     logger.info(f"execute_spec 完成:dataset={state.dataset_id} sheet={spec.sheet} 返回 {len(rows)} 行")
+    # data=rows 数组 + finish=True:前端据此填充 message.result(表格视图 / 本地切换图表类型都依赖它)。
+    # 与主 DW execute_sql 一致 —— 否则只发统计 dict 会让前端拿不到原始行,表格空白而图表却有数据。
     writer(WSStepInfo(
         step="执行计算",
         status="success",
-        data={"row_count": len(rows), "sample": rows[:5]},
+        data=rows,
+        finish=True,
     ))
     # sql_result 是 WSAgentState 的字段,下游 chart_agent / interpret_result 直接读
     return {"sql_result": rows, "error": None}
