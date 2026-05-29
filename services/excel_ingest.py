@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import io
 import re
+import warnings
 from typing import Any
 
 import pandas as pd
@@ -98,6 +99,18 @@ def _drop_total_rows(df: pd.DataFrame) -> pd.DataFrame:
     return df[~df.apply(is_total, axis=1)]
 
 
+# 日期特征:含 2025-01 / 2025/1 / 2025年 / 时:分 之类才值得尝试日期解析
+_DATE_HINT_RE = r"\d{4}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}年|\d{1,2}:\d{2}"
+
+
+def _looks_date_like(stripped: pd.Series) -> bool:
+    """抽样判断这列像不像日期 —— 避免对纯文本列(品类/商品名)跑昂贵的逐元素 dateutil。"""
+    sample = stripped.head(20)
+    if sample.empty:
+        return False
+    return sample.str.contains(_DATE_HINT_RE, regex=True, na=False).mean() >= 0.5
+
+
 def _coerce_column(s: pd.Series) -> pd.Series:
     """对 object 列:去千分位/货币/百分号 → 试数值 → 试日期 → 否则保留字符串。"""
     if s.dtype != object:
@@ -112,9 +125,13 @@ def _coerce_column(s: pd.Series) -> pd.Series:
         full = s.astype(str).str.replace(r"[,¥$\s元]", "", regex=True).str.replace("%", "", regex=False)
         return pd.to_numeric(full, errors="coerce")
 
-    as_dt = pd.to_datetime(stripped, errors="coerce")
-    if as_dt.notna().mean() >= 0.8:
-        return pd.to_datetime(s, errors="coerce")
+    # 只对"看起来像日期"的列尝试解析:纯文本列直接跳过,既不刷 warning 也不跑慢速 dateutil
+    if _looks_date_like(stripped):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # 抑制 "Could not infer format" 噪音
+            as_dt = pd.to_datetime(stripped, errors="coerce")
+            if as_dt.notna().mean() >= 0.8:
+                return pd.to_datetime(s, errors="coerce")
 
     return s
 

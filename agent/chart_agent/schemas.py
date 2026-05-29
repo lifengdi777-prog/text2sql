@@ -61,8 +61,9 @@ class EChartsSpec(BaseModel):
     tooltip: dict[str, Any] | None = None
     legend: dict[str, Any] | None = None
     grid: dict[str, Any] | None = None
-    xAxis: dict[str, Any] | None = None
-    yAxis: dict[str, Any] | None = None
+    # xAxis/yAxis 允许是数组:ECharts 双轴/多轴图(如混量纲分组柱的双 Y 轴)用 [{...}, {...}]
+    xAxis: dict[str, Any] | list[dict[str, Any]] | None = None
+    yAxis: dict[str, Any] | list[dict[str, Any]] | None = None
     series: list[dict[str, Any]] = Field(default_factory=list)
     reason: str = ""
 
