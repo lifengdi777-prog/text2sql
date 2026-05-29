@@ -7,6 +7,7 @@ MVP 不调 LLM 扩词:直接用用户原 query → ES tokenize → 检索。
 """
 from langgraph.runtime import Runtime
 
+from agent.dataset_agent.nodes import latest_user_query
 from agent.dataset_agent.schemas import DatasetAgentContext, DatasetAgentState
 from agent.schemas import WSStepInfo
 from clients.es import es_client
@@ -24,7 +25,7 @@ async def recall_values(state: DatasetAgentState, runtime: Runtime[DatasetAgentC
     if state.dataset_id is None:
         return {"value_hits": []}
 
-    query = state.messages[0].content if state.messages else ""
+    query = latest_user_query(state.messages)
     if not query:
         writer(WSStepInfo(step="召回相关值", status="success", data={"hits": 0}))
         return {"value_hits": []}

@@ -1,7 +1,7 @@
 """LLM 出 ComputeSpec 的节点。
 
 输入(从 state 拼 prompt):
-  - 用户问题(state.messages[0])
+  - 用户问题(取 messages 中最后一条 HumanMessage)
   - 数据集 schema markdown(state.rendered_schema)
   - ES 召回的真实值(state.value_hits)
   - 业务指标定义(skills/business_metrics.md,进程级缓存)
@@ -16,6 +16,7 @@ from pathlib import Path
 from langchain.messages import HumanMessage, SystemMessage
 from langgraph.runtime import Runtime
 
+from agent.dataset_agent.nodes import latest_user_query
 from agent.dataset_agent.schemas import DatasetAgentContext, DatasetAgentState
 from agent.llm import llm
 from agent.prompts import load_prompt
@@ -76,7 +77,7 @@ async def generate_spec(state: DatasetAgentState, runtime: Runtime[DatasetAgentC
         # 前序步骤已出错,直接跳过
         return {}
 
-    query = state.messages[0].content if state.messages else ""
+    query = latest_user_query(state.messages)
     if not query:
         msg = "用户问题为空"
         writer(WSStepInfo(step="生成计算方案", status="error", data={"error": msg}))

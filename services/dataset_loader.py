@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 from cachetools import TTLCache
 
+from core.log import logger
 from repositories.upload import UploadDatasetRepository
 from services.excel_ingest import get_session_factory
 
@@ -23,10 +24,23 @@ from services.excel_ingest import get_session_factory
 # 缓存
 # ───────────────────────────────────────────
 
-# DataFrame 缓存:key = (dataset_id, sheet_name)
-_DF_CACHE: TTLCache = TTLCache(maxsize=200, ttl=1800)
+# DataFrame 缓存:key = (dataset_id, sheet_name),value = (df, parquet 绝对路径)
+# 按「总内存预算」限容,而不是按条目数:单表可能很大(上传上限 100MB),
+# 按条数限容会被几个大表撑爆内存。getsizeof 让 cachetools 按 DataFrame 实际
+# 内存占用累加,超预算自动淘汰最旧条目。
+_DF_CACHE_MAX_BYTES = 512 * 1024 * 1024   # 512MB 总预算
+_DF_TTL = 1800                            # 30 分钟
 
-# Schema 缓存:key = dataset_id,value = 完整 dataset 信息 dict
+
+def _df_entry_nbytes(entry: tuple) -> int:
+    """缓存条目大小 = DataFrame 深度内存占用(含 object 列里字符串的实际字节)。"""
+    df, _path = entry
+    return int(df.memory_usage(deep=True).sum())
+
+
+_DF_CACHE: TTLCache = TTLCache(maxsize=_DF_CACHE_MAX_BYTES, ttl=_DF_TTL, getsizeof=_df_entry_nbytes)
+
+# Schema 缓存:小对象,按条数限容即可
 _SCHEMA_CACHE: TTLCache = TTLCache(maxsize=100, ttl=300)
 
 
@@ -61,10 +75,20 @@ async def get_dataset_info(dataset_id: int) -> dict[str, Any] | None:
 
 
 async def load_sheet_df(dataset_id: int, sheet_name: str) -> pd.DataFrame:
-    """加载某 sheet 的 DataFrame(从 parquet),带 LRU 缓存。"""
+    """加载某 sheet 的 DataFrame(从 parquet),带内存预算缓存。"""
     key = (dataset_id, sheet_name)
-    if key in _DF_CACHE:
-        return _DF_CACHE[key]
+    cached = _DF_CACHE.get(key)
+    if cached is not None:
+        df, cached_path = cached
+        # 跨进程一致性兜底:invalidate_cache 只能清当前 worker 的缓存,
+        # 别的 worker 删了数据集后,本进程缓存仍可能命中旧 DataFrame。
+        # 删除会连带删掉 parquet 文件,这里 stat 一下源文件是否还在:
+        # 不在 → 说明已被删除,丢弃本地缓存,走下面的重新加载(会抛出删除后的错误)。
+        # (同一 dataset_id 的 parquet 内容不会原地变更——重传会分配新 id——
+        #  所以只需防「已删除」这一种陈旧情形,一次 stat 开销可忽略。)
+        if Path(cached_path).exists():
+            return df
+        _DF_CACHE.pop(key, None)
 
     info = await get_dataset_info(dataset_id)
     if info is None:
@@ -87,7 +111,15 @@ async def load_sheet_df(dataset_id: int, sheet_name: str) -> pd.DataFrame:
         raise FileNotFoundError(f"parquet 文件不存在:{path}")
 
     df = pd.read_parquet(path)
-    _DF_CACHE[key] = df
+    try:
+        _DF_CACHE[key] = (df, str(path))
+    except ValueError:
+        # 单个 DataFrame 超过整个缓存预算 → 放弃缓存直接返回,
+        # 避免 cachetools 因 value 大于 maxsize 抛错(宁可不缓存,也不能让查询失败)。
+        logger.warning(
+            f"DataFrame(dataset={dataset_id} sheet={sheet_name})超过缓存预算 "
+            f"{_DF_CACHE_MAX_BYTES} 字节,本次跳过缓存"
+        )
     return df
 
 
