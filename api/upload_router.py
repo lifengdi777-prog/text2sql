@@ -1,6 +1,11 @@
-"""数据集相关接口:上传 / 列表 / 详情 / 删除。"""
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+"""数据集相关接口:上传 / 列表 / 详情 / 删除。
 
+身份统一走 api.deps.get_current_user(过渡期 = X-Client-Id 头);
+所有按 dataset_id 的操作先经 require_owned_dataset 校验归属,杜绝越权访问。
+"""
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+from api.deps import get_current_user, require_owned_dataset
 from core.log import logger
 from repositories.upload import UploadDatasetRepository
 from services.excel_ingest import delete_dataset, get_session_factory, ingest_excel
@@ -14,9 +19,12 @@ _MAX_UPLOAD_BYTES = 100 * 1024 * 1024   # 100 MB
 @router.post("/upload")
 async def upload_dataset(
     file: UploadFile = File(...),
-    user_id: str = Form("anonymous"),
+    user_id: str = Depends(get_current_user),
 ):
-    """上传 Excel → 自动清洗 → 入 MySQL + parquet → 后台建 ES 值索引。"""
+    """上传 Excel → 自动清洗 → 入 MySQL + parquet → 后台建 ES 值索引。
+
+    数据集归属 = 当前调用者(X-Client-Id),不再由前端表单自报。
+    """
     filename = file.filename or "upload.xlsx"
     if not filename.lower().endswith(_ALLOWED_EXT):
         raise HTTPException(status_code=400, detail="仅支持 .xlsx / .xls 文件")
@@ -39,8 +47,8 @@ async def upload_dataset(
 
 
 @router.get("")
-async def list_datasets(user_id: str | None = None):
-    """列出数据集(可按 user_id 过滤)。"""
+async def list_datasets(user_id: str = Depends(get_current_user)):
+    """列出当前用户自己的数据集(只返回归属调用者的,避免串号)。"""
     Session = get_session_factory()
     async with Session() as session:
         repo = UploadDatasetRepository(session)
@@ -61,14 +69,9 @@ async def list_datasets(user_id: str | None = None):
 
 
 @router.get("/{dataset_id}")
-async def get_dataset(dataset_id: int):
-    """查看一个数据集的详细 schema。"""
-    Session = get_session_factory()
-    async with Session() as session:
-        repo = UploadDatasetRepository(session)
-        ds = await repo.get(dataset_id)
-        if ds is None:
-            raise HTTPException(status_code=404, detail=f"数据集 {dataset_id} 不存在")
+async def get_dataset(dataset_id: int, user_id: str = Depends(get_current_user)):
+    """查看一个数据集的详细 schema(仅限归属当前用户的数据集)。"""
+    ds = await require_owned_dataset(dataset_id, user_id)
     return {
         "dataset_id": ds.id,
         "user_id": ds.user_id,
@@ -84,8 +87,10 @@ async def get_dataset(dataset_id: int):
 
 
 @router.delete("/{dataset_id}")
-async def delete_dataset_endpoint(dataset_id: int):
-    """删数据集:同步清 MySQL 行 / parquet 文件夹 / ES 文档。"""
+async def delete_dataset_endpoint(dataset_id: int, user_id: str = Depends(get_current_user)):
+    """删数据集:同步清 MySQL 行 / parquet 文件夹 / ES 文档(仅限归属当前用户的数据集)。"""
+    # 先校验归属:不存在 / 不属于当前用户 → 404,绝不删别人的数据
+    await require_owned_dataset(dataset_id, user_id)
     ok = await delete_dataset(dataset_id)
     if not ok:
         raise HTTPException(status_code=404, detail=f"数据集 {dataset_id} 不存在")

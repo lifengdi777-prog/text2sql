@@ -68,7 +68,7 @@ async function submit() {
   notice.value = ''
   progress.value = 0
   try {
-    const result = await uploadDataset(file.value, 'anonymous', (p) => (progress.value = p))
+    const result = await uploadDataset(file.value, (p) => (progress.value = p))
     if (result.duplicated) {
       // 后端按 文件名 + 内容 SHA-256 去重命中,没有新建数据集
       notice.value = `「${result.name}」之前已上传过,已复用现有数据集,未重复创建。`

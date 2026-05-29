@@ -1,6 +1,7 @@
 import axios from 'axios'
 
 import type { AgentReplyMessage, ChartConfig, ResultRow } from '@/types/agent'
+import { getClientId } from '@/lib/clientId'
 import { parseSseChunk, type AgentEvent, type AgentEventData, type AgentResultValue } from '@/lib/sse'
 
 const agentApi = axios.create({
@@ -8,6 +9,8 @@ const agentApi = axios.create({
   headers: {
     Accept: 'text/event-stream',
     'Content-Type': 'application/json',
+    // 过渡期匿名身份:后端据此识别调用者并校验数据集归属
+    'X-Client-Id': getClientId(),
   },
   responseType: 'text',
 })
@@ -191,17 +194,13 @@ export async function streamAgentQuery(query: string, options: QueryOptions): Pr
   await runStream('/agent/query', { query }, options)
 }
 
-// 上传数据集(Excel)问答
+// 上传数据集(Excel)问答。身份走 X-Client-Id 头,不再随 body 传 user_id。
 export async function streamDatasetQuery(
   datasetId: number,
   query: string,
-  options: QueryOptions & { userId?: string },
+  options: QueryOptions,
 ): Promise<void> {
-  await runStream(
-    `/dataset/${datasetId}/query`,
-    { query, user_id: options.userId ?? 'anonymous' },
-    options,
-  )
+  await runStream(`/dataset/${datasetId}/query`, { query }, options)
 }
 
 export { toErrorMessage }
