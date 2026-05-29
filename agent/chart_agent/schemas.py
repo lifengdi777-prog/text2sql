@@ -38,6 +38,8 @@ class ColumnFeature(BaseModel):
     sample: list[Any]
     min_value: Optional[float] = None
     max_value: Optional[float] = None
+    # 数值列各行求和:用于判断饼图是否成立(真·占比会≈100,逐组比率不会)
+    sum_value: Optional[float] = None
 
 
 class DataShape(BaseModel):

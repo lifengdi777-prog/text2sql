@@ -85,12 +85,12 @@ def make_ecommerce_orders() -> Path:
     订单明细(300 行):
       - 时间维度:下单日期(temporal,测 between / min / max)+ 月份(测按月趋势)
       - 多维分组:地区 / 品类 / 支付方式 / 是否会员 / 订单状态(低基数 categorical)
-      - 高基数:商品名称(测 icontains / top_K)、客户ID(测 nunique 去重客户数)
-      - 数值:数量 / 单价 / 金额(测 sum / mean / max / min / median / between / gt)
-      - 空值:约 5% 支付方式留空(测 is_null / not_null)
+      - 高基数:商品名称(测 ILIKE 模糊匹配)、客户ID(测 COUNT(DISTINCT) 去重客户数)
+      - 数值:数量 / 单价 / 金额(测 SUM / AVG / MAX / MIN / MEDIAN / BETWEEN / >)
+      - 空值:约 5% 支付方式留空(测 IS NULL / IS NOT NULL)
     客户信息(60 行):
-      - 年龄(测区间 between)、会员等级(有序 categorical)、性别、城市
-    注意:两个 sheet 都有「客户ID」,但 ComputeSpec 不做 join —— 每个问题只在单 sheet 内回答。
+      - 年龄(测区间 BETWEEN)、会员等级(有序 categorical)、性别、城市
+    注意:两个 sheet 都有「客户ID」—— 现在用 DuckDB,可跨 sheet JOIN 关联两表。
     """
     import random
     from datetime import date, timedelta

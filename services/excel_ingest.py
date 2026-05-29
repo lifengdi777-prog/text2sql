@@ -35,7 +35,7 @@ from services import object_store
 # ───────── 常量 ─────────────────────────────────────────
 _TOTAL_KEYWORDS = {"小计", "合计", "总计", "汇总", "total", "subtotal", "sum"}
 _SMALL_CARD_THRESHOLD = 50         # 小基数列阈值,小于此则全枚举
-_TOP_K = 20                         # 大基数列保留 top-K 频繁值
+_TOP_K = 5                          # 高基数「分类」列保留的样例值个数(让 LLM 知道值长什么样)
 _ES_VALUE_LIMIT_PER_COL = 10000     # 单列最多入 ES 的 distinct 值
 _TEMPORAL_NAME_HINTS = ("date", "year", "month", "quarter", "day", "week", "time",
                         "时间", "日期", "年", "月", "日", "季度", "周")
@@ -136,18 +136,23 @@ def clean_sheet(df: pd.DataFrame) -> pd.DataFrame | None:
 # ───────── Profile ─────────────────────────────────────
 
 def _infer_semantic_type(col_name: str, series: pd.Series) -> str:
-    """temporal / categorical / numeric。优先看列名 hint,再看 dtype。"""
-    name_low = str(col_name).lower()
-    if any(h in name_low for h in _TEMPORAL_NAME_HINTS):
-        return "temporal"
-    if any(name_low.endswith(s) for s in _ID_NAME_SUFFIXES):
-        return "categorical"
+    """temporal / categorical / numeric。
+
+    **dtype 权威优先**:pandas 清洗后已解析出真实类型,先按 dtype 判,
+    避免列名误判(如「年龄」含「年」被当成时间)。只有 object/字符串列才用列名 hint 辅助。
+    """
     if pd.api.types.is_datetime64_any_dtype(series):
         return "temporal"
     if pd.api.types.is_bool_dtype(series):
         return "categorical"
     if pd.api.types.is_numeric_dtype(series):
         return "numeric"
+    # 到这里是 object/字符串列:用列名关键词辅助(date/月份/编号 等)
+    name_low = str(col_name).lower()
+    if any(h in name_low for h in _TEMPORAL_NAME_HINTS):
+        return "temporal"
+    if any(name_low.endswith(s) for s in _ID_NAME_SUFFIXES):
+        return "categorical"
     return "categorical"
 
 
@@ -198,11 +203,15 @@ def profile_columns(df: pd.DataFrame) -> list[dict[str, Any]]:
                 vals_sorted = list(distinct)
             p["values"] = [_jsonable(v) for v in vals_sorted]
             p["is_high_cardinality"] = False
-        else:
-            # 大基数(或数值列):top-K 频繁值
+        elif semantic_type == "categorical":
+            # 只有「高基数分类列」才存 top_k —— 让 LLM 知道值长什么样(写 ILIKE 模糊匹配)。
+            # 时间/数值列靠下面的 min/max(/mean)范围即可,不存 top_k(纯浪费,prompt 也不渲染)。
             top = s.value_counts(dropna=True).head(_TOP_K).index.tolist()
             p["top_k"] = [_jsonable(v) for v in top]
-            p["is_high_cardinality"] = semantic_type == "categorical"
+            p["is_high_cardinality"] = True
+        else:
+            # 高基数的 temporal / numeric:不存样例值,只标记(数值不算高基数)
+            p["is_high_cardinality"] = False
 
         # 数值/时间列加范围
         if semantic_type == "numeric":
@@ -260,15 +269,36 @@ def save_parquets(prefix: str, sheets: dict[str, pd.DataFrame]) -> dict[str, str
 
 # ───────── ES 值索引(后台 task)─────────────────────────
 
+# 标识/编号类列名:这类即使是高基数文本也不进 ES(自然语言查询极少出现原始 ID,纯噪音)
+_ES_ID_LIKE_SUFFIXES = ("_id", "id", "编号", "代码", "号", "code", "key")
+
+
+def _is_id_like_col(name: str) -> bool:
+    nl = str(name).lower()
+    return any(nl.endswith(s) for s in _ES_ID_LIKE_SUFFIXES)
+
+
 def _extract_distinct_values(sheets: dict[str, pd.DataFrame]) -> list[dict]:
-    """提取每个 categorical 列的 distinct 值,准备灌 ES。"""
+    """提取「高基数文本列」的 distinct 值灌 ES,供查询时的值召回。
+
+    只索引高基数自然文本列(商品名/客户姓名/地址…),因为:
+      - 小基数文本列(≤ _SMALL_CARD_THRESHOLD)已在 schema 里全枚举,LLM 直接能精确匹配,无需 ES;
+      - 标识/编号列(客户ID/订单号)自然语言查询用不上,纯噪音,跳过;
+      - 数值/日期列本就不进 ES(靠 min/max 范围)。
+    """
     docs: list[dict] = []
     for sheet_name, df in sheets.items():
         for col in df.columns:
-            # 只索引字符串列(数值/日期不进 ES)
+            # 只看字符串列(数值/日期不进 ES)
             if df[col].dtype != object:
                 continue
+            # 跳过标识/编号类列
+            if _is_id_like_col(col):
+                continue
             distinct = df[col].dropna().astype(str).unique()
+            # 小基数列已在 schema 全枚举,不必再进 ES
+            if len(distinct) <= _SMALL_CARD_THRESHOLD:
+                continue
             if len(distinct) > _ES_VALUE_LIMIT_PER_COL:
                 logger.warning(
                     f"sheet={sheet_name} col={col} 有 {len(distinct)} 个 distinct 值,"
@@ -378,9 +408,10 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
             schema = {"sheets": {}}
             total = 0
             for name, df in cleaned_sheets.items():
+                row_count = int(len(df))
                 profile = profile_columns(df)
                 schema["sheets"][name] = {
-                    "row_count": int(len(df)),
+                    "row_count": row_count,
                     "parquet_file": sheet_files[name],
                     "columns": profile,
                 }

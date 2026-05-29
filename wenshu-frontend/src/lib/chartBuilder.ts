@@ -5,6 +5,8 @@ import type { ChartConfig, ChartType, ResultRow } from '@/types/agent'
 export interface FieldMap {
   dimension?: string
   measure?: string
+  // 多指标分组柱:同量纲的多个数值列并排画(如 设备总数 + 维护设备数)
+  measures?: string[]
   series?: string
 }
 
@@ -58,17 +60,24 @@ export function buildChartOption(
     } as ChartConfig
   }
 
-  // 柱状图:按数值降序(排行)
+  // 柱状图:
+  //  - 单指标:按值降序(排行)
+  //  - 多指标(measures 有多列):并排分组柱,保持原始行顺序(排序会让多指标语义对不齐)
   if (type === 'bar') {
-    const sorted = [...rows].sort((a, b) => num(b[measure]) - num(a[measure]))
+    const measures = fm.measures && fm.measures.length > 0 ? fm.measures : measure ? [measure] : []
+    const multi = measures.length > 1
+    const sorted = multi ? [...rows] : [...rows].sort((a, b) => num(b[measure]) - num(a[measure]))
     const x = sorted.map((r) => r[dim])
     return {
       chart_type: 'bar',
       title: titleObj,
-      tooltip: { trigger: 'axis' },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      // 单系列时 ChartPanel.sanitizeOption 会自动删掉重复的图例;多系列时保留
+      legend: { data: measures, top: 'bottom', type: 'scroll' },
+      grid: { left: '3%', right: '4%', bottom: '12%', containLabel: true },
       xAxis: { type: 'category', data: x, name: dim, axisLabel: { interval: 0, rotate: x.length > 6 ? 30 : 0 } },
-      yAxis: { type: 'value', name: measure },
-      series: [{ name: measure, type: 'bar', data: sorted.map((r) => num(r[measure])) }],
+      yAxis: { type: 'value', name: multi ? '' : measure },
+      series: measures.map((m) => ({ name: m, type: 'bar', data: sorted.map((r) => num(r[m])) })),
     } as ChartConfig
   }
 

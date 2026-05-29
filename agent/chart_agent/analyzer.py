@@ -86,6 +86,7 @@ def analyze(rows: list[dict[str, Any]]) -> DataShape:
             sample=unique_values[:5],
             min_value=float(min(values)) if st == "numeric" and values else None,
             max_value=float(max(values)) if st == "numeric" and values else None,
+            sum_value=float(sum(values)) if st == "numeric" and values else None,
         ))
 
     return DataShape(
@@ -99,6 +100,46 @@ def analyze(rows: list[dict[str, Any]]) -> DataShape:
 _PIE_MAX_CARD = 10
 _BAR_MAX_CARD = 30
 _SERIES_MAX_CARD = 8   # 多系列(multi_line/stacked_bar)的系列数上限
+
+# 比率/均价类指标的列名特征:这类是「逐组各自的比率」,不是可加的份额
+_RATIO_NAME_HINTS = (
+    "率", "比例", "占比", "百分比", "均价", "单价", "客单价",
+    "rate", "ratio", "pct", "percent", "%", "arpu",
+)
+
+
+def _is_ratio_name(name: str) -> bool:
+    nl = str(name).lower()
+    return any(h in nl for h in _RATIO_NAME_HINTS)
+
+
+def _pick_measure(numeric: list[ColumnFeature]) -> ColumnFeature | None:
+    """从多个数值列里挑「主指标」。
+
+    SQL 结果常含中间量(总数/分子)+ 最终派生指标(比率)。用户问的通常是那个比率,
+    所以**优先选比率/均价类命名的列**;没有就退回第一个数值列。
+    """
+    if not numeric:
+        return None
+    for c in numeric:
+        if _is_ratio_name(c.name):
+            return c
+    return numeric[0]
+
+
+def _pie_meaningful(measure: ColumnFeature | None) -> bool:
+    """饼图是否成立:饼图表达「部分占整体、加起来=100%」。
+
+    - 可加指标(销售额/数量…)→ 各分类的份额有意义,成立;
+    - 比率/均价类(维护比例/不良率/客单价…)→ 逐组各自的比率,加起来无整体含义,
+      **除非** 各组之和≈100(真·占比列,如「销售额占比」)。
+    """
+    if measure is None:
+        return False
+    if not _is_ratio_name(measure.name):
+        return True
+    s = measure.sum_value
+    return s is not None and 95.0 <= s <= 105.0
 
 
 def compatible_chart_types(shape: DataShape | None) -> list[str]:
@@ -128,14 +169,16 @@ def compatible_chart_types(shape: DataShape | None) -> list[str]:
     types: list[str] = []
     dim_cols = temporal + categorical
 
-    # 1 维度 + ≥1 数值 → line/bar/pie 这组(多数值时用第一个做主指标,如带了占比列)
+    # 1 维度 + ≥1 数值 → line/bar/pie 这组(多数值时用 _pick_measure 选主指标)
     if len(dim_cols) == 1 and n_num >= 1:
         dim = dim_cols[0]
+        measure = _pick_measure(numeric)
         if dim.semantic_type == "temporal":
             types.append("line")
         if dim.cardinality <= _BAR_MAX_CARD:
             types.append("bar")
-        if dim.cardinality <= _PIE_MAX_CARD:
+        # 饼图:维度基数够小,且主指标确实是「可加份额/真·占比」(比率类不给饼图,避免误导)
+        if dim.cardinality <= _PIE_MAX_CARD and _pie_meaningful(measure):
             types.append("pie")
 
     # 多系列:需要透视
@@ -151,17 +194,25 @@ def compatible_chart_types(shape: DataShape | None) -> list[str]:
     return types
 
 
-def chart_field_map(shape: DataShape | None) -> dict[str, str]:
-    """给前端本地构图用的字段映射:dimension(X轴) / measure(数值) / series(分组,可选)。"""
+def chart_field_map(shape: DataShape | None) -> dict[str, Any]:
+    """给前端本地构图用的字段映射:dimension(X轴) / measure(主数值) / measures(多指标分组柱) / series。"""
     if shape is None:
         return {}
     temporal = [c.name for c in shape.columns if c.semantic_type == "temporal"]
     categorical = [c.name for c in shape.columns if c.semantic_type == "categorical"]
-    numeric = [c.name for c in shape.columns if c.semantic_type == "numeric"]
+    numeric = [c for c in shape.columns if c.semantic_type == "numeric"]
 
-    fm: dict[str, str] = {}
-    if numeric:
-        fm["measure"] = numeric[0]
+    fm: dict[str, Any] = {}
+    measure = _pick_measure(numeric)
+    if measure is not None:
+        # 主指标选比率/派生列(用户真正问的),而不是第一个数值列(常是中间量)
+        fm["measure"] = measure.name
+
+    # 多个「同量纲」数值指标(如 设备总数 + 维护设备数)→ 提供分组柱所需的指标列表,
+    # 前端柱状图据此并排画多组。带比率列时不分组(比率量纲不同,且它才是焦点)。
+    ratio_cols = [c for c in numeric if _is_ratio_name(c.name)]
+    if len(numeric) >= 2 and not ratio_cols:
+        fm["measures"] = [c.name for c in numeric]
 
     # 多系列:X 用时间(或第一个分类),series 用分组分类
     if temporal and categorical:

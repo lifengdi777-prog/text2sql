@@ -138,7 +138,7 @@ def invalidate_cache(dataset_id: int) -> None:
 # ───────────────────────────────────────────
 
 def _render_column_detail(col: dict[str, Any]) -> str:
-    """渲染单列的"详情"信息(给 LLM 看,影响它写 spec 的决策)。"""
+    """渲染单列的"详情"信息(给 LLM 看,影响它写 SQL 的决策)。"""
     parts: list[str] = []
     sem = col.get("semantic_type", "categorical")
     cardinality = col.get("cardinality", 0)
@@ -157,15 +157,15 @@ def _render_column_detail(col: dict[str, Any]) -> str:
     else:  # categorical
         if not col.get("is_high_cardinality") and "values" in col:
             vals = col["values"]
-            # 全枚举(小基数列,LLM 可以用 op=eq / op=in 精确匹配)
+            # 全枚举(小基数列,LLM 可以用 = / IN 精确匹配)
             vals_str = ", ".join(str(v) for v in vals)
             parts.append(f"{cardinality} 个值:[{vals_str}]")
         elif "top_k" in col:
-            top = col["top_k"][:10]
+            top = col["top_k"]   # 入库时已截到 _TOP_K(5)个,这里直接全展示
             top_str = ", ".join(str(v) for v in top)
             parts.append(
                 f"{cardinality} 个值(高基数)。"
-                f"top 10:[{top_str}]。**写 filter 优先用 op=icontains 或 op=all_tokens,不要 op=eq**"
+                f"样例:[{top_str}]。**精确值可能不在样例里 —— WHERE 用 ILIKE '%关键词%' 模糊匹配,不要用 =**"
             )
 
     if null_count > 0:
