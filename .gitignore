@@ -35,3 +35,6 @@ conf/app_config.yaml
 
 #chart_agent.md
 agent/chart_agent/README.md
+
+#test_data
+test_data/

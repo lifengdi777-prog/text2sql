@@ -32,6 +32,20 @@ class DBConfig(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class UploadDBConfig(BaseModel):
+    """上传专用 DB:database 字段是 catalog 库的名字(默认 'upload')。
+
+    动态建 up_xxx 库时不用 database 字段,直接连服务端 root。
+    """
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str = "upload"
+
+    model_config = ConfigDict(from_attributes=True)
+
 class QdrantConfig(BaseModel):
     host: str
     port: int
@@ -78,6 +92,8 @@ class AppConfig(BaseModel):
     embedding_fallback: EmbeddingFallbackConfig
     es: ESConfig
     llm: LLMConfig
+    # 上传功能用,不配置不影响原 DW 路径(用到时才校验)
+    db_upload: UploadDBConfig | None = None
 
 config_path = Path(__file__).parent / "app_config.yaml"
 #context就是从app_config.yaml文件中读取的配置数据。

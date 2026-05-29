@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from core.lifespan import lifespan
 from fastapi.middleware.cors import CORSMiddleware
 from api.agent_router import router as agent_router
+from api.upload_router import router as upload_router
+from api.dataset_query_router import router as dataset_query_router
 import uvicorn
 
 #FastAPI() 创建整个应用实例
@@ -18,6 +20,10 @@ app.add_middleware(
 
 #把 agent_router 里定义的接口（如 POST /agent/query）挂载到应用上
 app.include_router(agent_router)
+# 数据集上传相关接口(POST /dataset/upload / GET /dataset / GET /dataset/{id} / DELETE /dataset/{id})
+app.include_router(upload_router)
+# 数据集查询接口(POST /dataset/{id}/query) —— Excel 数据分析专用,跟主 DW 路径独立
+app.include_router(dataset_query_router)
 
 def main():
     print("Hello from wenshu!")
