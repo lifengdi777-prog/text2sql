@@ -16,11 +16,13 @@ const dragging = ref(false)
 const uploading = ref(false)
 const progress = ref(0)
 const error = ref('')
+const notice = ref('')
 
 const ALLOWED = ['.xlsx', '.xls']
 
 function pickFile(f: File | null | undefined) {
   error.value = ''
+  notice.value = ''
   if (!f) return
   const lower = f.name.toLowerCase()
   if (!ALLOWED.some((ext) => lower.endsWith(ext))) {
@@ -49,6 +51,7 @@ function reset() {
   file.value = null
   progress.value = 0
   error.value = ''
+  notice.value = ''
   uploading.value = false
 }
 
@@ -62,11 +65,17 @@ async function submit() {
   if (!file.value || uploading.value) return
   uploading.value = true
   error.value = ''
+  notice.value = ''
   progress.value = 0
   try {
     const result = await uploadDataset(file.value, 'anonymous', (p) => (progress.value = p))
-    emit('uploaded', result)
-    reset()
+    if (result.duplicated) {
+      // 后端按 文件名 + 内容 SHA-256 去重命中,没有新建数据集
+      notice.value = `「${result.name}」之前已上传过,已复用现有数据集,未重复创建。`
+    } else {
+      emit('uploaded', result)
+      reset()
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : '上传失败，请重试'
   } finally {
@@ -119,6 +128,12 @@ async function submit() {
       </div>
 
       <p v-if="error" class="mt-3 text-xs text-rose-500">{{ error }}</p>
+      <p
+        v-if="notice"
+        class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700"
+      >
+        {{ notice }}
+      </p>
 
       <div class="mt-6 flex justify-end gap-3">
         <button

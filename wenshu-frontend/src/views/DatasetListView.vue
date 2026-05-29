@@ -6,7 +6,7 @@ import DatasetCard from '@/components/DatasetCard.vue'
 import UploadDatasetModal from '@/components/UploadDatasetModal.vue'
 import DatasetPreviewModal from '@/components/DatasetPreviewModal.vue'
 import { deleteDataset, listDatasets } from '@/services/dataset'
-import type { DatasetSummary, UploadResult } from '@/types/dataset'
+import type { DatasetSummary } from '@/types/dataset'
 
 const router = useRouter()
 
@@ -72,11 +72,10 @@ async function onRemove(ds: DatasetSummary) {
   }
 }
 
-function onUploaded(result: UploadResult) {
+function onUploaded() {
+  // 上传成功后留在列表页(不再自动跳转到问数页),刷新出新卡片
   uploadOpen.value = false
   void reload()
-  // 上传成功直接进该数据集的问数页
-  if (result.ok) router.push(`/datasets/${result.dataset_id}/chat`)
 }
 
 onMounted(reload)
