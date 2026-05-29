@@ -1,6 +1,6 @@
 """生成两个测试 Excel 用于验证上传/清洗/入库链路。
 
-运行:uv run python -m scripts.make_test_excels
+运行:uv run python -m test.make_test_excels
 输出:
   test_data/normal_production.xlsx   正常表(表头第 0 行,2 个 sheet,含千分位/百分号/合计行)
   test_data/sales_with_dates.xlsx    带日期 + 高基数列(测时间维度 + top_K)
