@@ -23,6 +23,11 @@ class DatasetAgentState(WSAgentState):
     value_hits: list[dict[str, Any]] = []
     # generate_spec 节点填:LLM 出的 ComputeSpec(dict 形式,便于序列化)
     compute_spec: dict[str, Any] | None = None
+    # validate_spec 节点填:校验发现的、difflib 自动纠正不了的问题(空 = 通过)。
+    # 非空 → 路由到 correct_spec 让 LLM 重做;为空 → 直接执行。
+    spec_issues: list[str] = []
+    # correct_spec 每修一次 +1,达到 MAX_RETRY 不再重试 → 兜底直接执行(让 execute_spec 自然报错)
+    spec_retry_count: int = 0
     # execute_spec 写完后,继承字段 sql_result 装 rows,下游 chart_agent / interpret_result 原样读
 
 
