@@ -10,6 +10,8 @@
   "filters": [
     {"col": "<列名>", "op": "<操作>", "value": <单值> 或 "values": [<多值>]}
   ],
+  // 注意:in / not_in / between 用 "values"(复数,数组);其余 op 用 "value"(单数)。
+  // between 必须是恰好两个元素的数组 [下界, 上界],含两端。
   "groupby": ["<列名>", ...],
   "aggregations": [
     {"col": "<列名,或 '*' 表示计数全部>", "func": "<sum|mean|count|min|max|median|nunique|first|last>", "alias": "<结果列名,可选>"}

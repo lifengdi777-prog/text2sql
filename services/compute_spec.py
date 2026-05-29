@@ -9,7 +9,7 @@ import re
 from typing import Any, Literal
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ───────────────────────────────────────────────────────
@@ -27,6 +27,10 @@ FilterOp = Literal[
 AggFunc = Literal["sum", "mean", "count", "min", "max", "median", "nunique", "first", "last"]
 
 
+# 用 values(复数)的多值 op;其余都用 value(单数)
+_MULTI_VALUE_OPS = {"in", "not_in", "between"}
+
+
 class Filter(BaseModel):
     col: str
     op: FilterOp
@@ -34,6 +38,26 @@ class Filter(BaseModel):
     value: Any | None = None
     # 多值 op(in/not_in/between)
     values: list[Any] | None = None
+
+    @model_validator(mode="after")
+    def _normalize_value_fields(self) -> "Filter":
+        """LLM 常把 value(单数)/values(复数)搞混 —— 这里做确定性归一化兜底。
+
+        · 多值 op(in/not_in/between)却只填了 value → 迁移到 values
+          (value 本身是 list 就直接用,是标量就包成单元素 list);
+        · 单值 op 却只填了 values → 取第一个塞进 value。
+        这样执行器永远能从正确的字段拿到值,不依赖 LLM 填对。
+        """
+        if self.op in _MULTI_VALUE_OPS:
+            if not self.values and self.value is not None:
+                if isinstance(self.value, (list, tuple)):
+                    self.values = list(self.value)
+                else:
+                    self.values = [self.value]
+        else:
+            if self.value is None and self.values:
+                self.value = self.values[0]
+        return self
 
 
 class Aggregation(BaseModel):

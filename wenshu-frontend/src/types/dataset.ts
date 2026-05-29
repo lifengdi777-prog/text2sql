@@ -1,6 +1,7 @@
 // 上传数据集(Excel)相关类型,对齐后端 api/upload_router.py 的返回结构。
 
-export type DatasetStatus = 'cleaning' | 'ready' | 'failed' | 'deleting'
+// cleaning 清洗入库中 / indexing parquet 已就绪、ES 值索引后台建设中 / ready 全就绪 / failed / deleting
+export type DatasetStatus = 'cleaning' | 'indexing' | 'ready' | 'failed' | 'deleting'
 
 // GET /dataset 列表项
 export interface DatasetSummary {

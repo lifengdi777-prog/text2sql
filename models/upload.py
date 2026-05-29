@@ -7,7 +7,7 @@
     name          显示名
     original_filename
     folder_path   对象存储前缀 ds_{id}(原始 Excel + 各 sheet parquet 都在此前缀下)
-    status        cleaning / ready / failed / deleting
+    status        cleaning / indexing / ready / failed / deleting
     sheet_count
     total_rows
     schema_json   JSON 列,存每个 sheet 的列详情(类型/基数/枚举值/统计)
@@ -30,7 +30,7 @@ class UploadDatasetMySQL(Base):
     original_filename: Mapped[str | None] = mapped_column(String(255), comment="原始文件名")
     folder_path: Mapped[str | None] = mapped_column(String(255), comment="对象存储前缀 ds_{id}")
     status: Mapped[str] = mapped_column(String(32), default="cleaning",
-                                         comment="cleaning / ready / failed / deleting")
+                                         comment="cleaning / indexing / ready / failed / deleting")
     sheet_count: Mapped[int] = mapped_column(Integer, default=0)
     total_rows: Mapped[int] = mapped_column(Integer, default=0)
     # 文件内容 SHA-256(hex 64 chars)。配合 user_id + original_filename 做去重

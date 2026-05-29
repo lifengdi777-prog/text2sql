@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import type { DatasetSummary } from '@/types/dataset'
 
@@ -14,6 +14,11 @@ const emit = defineEmits<{
 const menuOpen = ref(false)
 
 const isReady = () => props.dataset.status === 'ready'
+
+// 清洗入库 / ES 值索引未完成 → 卡片只显示「索引创建中 + 进度条」,不暴露文件名与任何操作
+const isBuilding = computed(
+  () => props.dataset.status === 'cleaning' || props.dataset.status === 'indexing',
+)
 
 function onOpen() {
   if (isReady()) emit('open', props.dataset)
@@ -31,7 +36,24 @@ function chooseRemove() {
 </script>
 
 <template>
+  <!-- 建设中:仅展示「索引创建中」+ 不确定进度条,完成前不暴露文件名/操作 -->
   <div
+    v-if="isBuilding"
+    class="relative flex h-44 flex-col justify-center gap-4 rounded-2xl border border-slate-200 bg-white p-5"
+  >
+    <div class="flex items-center gap-2 text-sm font-medium text-slate-600">
+      <span class="h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-hidden="true" />
+      索引创建中
+    </div>
+    <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+      <div class="dataset-progress h-full w-1/3 rounded-full bg-sky-400" />
+    </div>
+    <p class="text-xs text-slate-400">完成后即可开始问数</p>
+  </div>
+
+  <!-- 已就绪 / 失败:正常卡片 -->
+  <div
+    v-else
     class="group relative flex h-44 cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-sky-300 hover:shadow-[0_12px_30px_rgba(148,163,184,0.18)]"
     @click="emit('preview', dataset)"
   >
@@ -50,15 +72,9 @@ function chooseRemove() {
         <p class="text-xs text-slate-400">Excel/CSV</p>
       </div>
 
-      <!-- 非 ready 状态角标 -->
+      <!-- 失败角标 -->
       <span
-        v-if="dataset.status === 'cleaning'"
-        class="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600"
-      >
-        处理中
-      </span>
-      <span
-        v-else-if="dataset.status === 'failed'"
+        v-if="dataset.status === 'failed'"
         class="ml-auto rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-600"
       >
         失败
@@ -124,3 +140,19 @@ function chooseRemove() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 不确定进度条:一小段高亮在轨道里来回滑动,表示「正在处理、无具体百分比」 */
+@keyframes dataset-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.dataset-progress {
+  animation: dataset-progress-slide 1.4s ease-in-out infinite;
+}
+</style>

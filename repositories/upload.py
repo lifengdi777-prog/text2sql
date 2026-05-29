@@ -70,7 +70,9 @@ class UploadDatasetRepository:
         ds.schema_json = schema_json
         ds.sheet_count = sheet_count
         ds.total_rows = total_rows
-        ds.status = "ready"
+        # parquet/schema 已就绪,但 ES 值索引还在后台建 → 先标 indexing,
+        # 等 build_es_index_background 结束(成功/无值/失败)再置 ready。
+        ds.status = "indexing"
 
     async def update_status(self, dataset_id: int, status: str) -> None:
         ds = await self.session.get(UploadDatasetMySQL, dataset_id)

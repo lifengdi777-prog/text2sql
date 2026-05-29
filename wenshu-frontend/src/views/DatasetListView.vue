@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import DatasetCard from '@/components/DatasetCard.vue'
@@ -40,12 +40,43 @@ function clampPage() {
   if (page.value < 1) page.value = 1
 }
 
+// 有卡片还在「清洗 / 索引」中 → 需要轮询直到全部就绪
+const POLL_MS = 3000
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+function hasPending() {
+  return datasets.value.some((d) => d.status === 'cleaning' || d.status === 'indexing')
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer)
+    pollTimer = null
+  }
+}
+
+// 静默刷新(不显示「加载中」,避免卡片闪烁);仍有未就绪卡片才继续排下一次
+function schedulePoll() {
+  stopPolling()
+  if (!hasPending()) return
+  pollTimer = setTimeout(async () => {
+    try {
+      datasets.value = await listDatasets()
+      clampPage()
+    } catch {
+      // 轮询失败静默处理,下次 reload 再纠正
+    }
+    schedulePoll()
+  }, POLL_MS)
+}
+
 async function reload() {
   loading.value = true
   loadError.value = ''
   try {
     datasets.value = await listDatasets()
     clampPage()
+    schedulePoll()
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : '加载数据集失败'
   } finally {
@@ -79,6 +110,7 @@ function onUploaded() {
 }
 
 onMounted(reload)
+onUnmounted(stopPolling)
 </script>
 
 <template>

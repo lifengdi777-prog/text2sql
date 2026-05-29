@@ -280,8 +280,24 @@ def _extract_distinct_values(sheets: dict[str, pd.DataFrame]) -> list[dict]:
     return docs
 
 
+async def _mark_dataset_ready(dataset_id: int) -> None:
+    """把数据集从 indexing 置为 ready。失败只 log——状态更新失败不该影响数据可用性。"""
+    try:
+        Session = get_session_factory()
+        async with Session() as session:
+            repo = UploadDatasetRepository(session)
+            await repo.update_status(dataset_id, "ready")
+            await session.commit()
+    except Exception as exc:
+        logger.exception(f"数据集 {dataset_id} 置 ready 失败:{exc}")
+
+
 async def build_es_index_background(dataset_id: int, sheets: dict[str, pd.DataFrame]) -> None:
-    """后台任务:把 distinct 值灌进 ES。失败只 log,不影响主流程。"""
+    """后台任务:把 distinct 值灌进 ES,结束后把数据集置为 ready。
+
+    ES 是「锦上添花」的值召回增强,即使建索引失败,parquet 数据本身也能正常问数,
+    所以无论成功/无值/失败,最后都把状态推进到 ready(否则卡片会永远停在「索引创建中」)。
+    """
     try:
         docs = _extract_distinct_values(sheets)
         if not docs:
@@ -292,6 +308,8 @@ async def build_es_index_background(dataset_id: int, sheets: dict[str, pd.DataFr
         logger.info(f"数据集 {dataset_id} ES 索引完成({len(docs)} 条值)")
     except Exception as exc:
         logger.exception(f"数据集 {dataset_id} ES 索引失败(不影响主流程):{exc}")
+    finally:
+        await _mark_dataset_ready(dataset_id)
 
 
 # ───────── 主编排 ──────────────────────────────────────
