@@ -4,14 +4,14 @@
 
 数据流(subgraph.py 里编排):
     analyze_data_shape
-      ├─ render_error / render_empty / render_metric   (deterministic)
-      └─ generate_spec → validate_spec ⇄ correct_spec  (LLM 直出 + 校验循环)
-                            ↓
-                       emit_chart_config / fallback_table → END
+      ├─ render_error / render_empty / render_metric / render_table  (deterministic)
+      └─ build_chart  (LLM 只选 chart_type → option_builder 用代码确定性构图)
+                ↓
+              END
 
 支持 9 种 chart_type:
-  - 正常图表(LLM 出 ECharts option): line / bar / pie / multi_line / stacked_bar / table
-  - 状态卡(规则分流):                metric / empty / error
+  - 正常图表(LLM 选型 + 代码构图): line / bar / pie / multi_line / stacked_bar / table
+  - 状态卡(规则分流):              metric / empty / error
 """
 
 def __getattr__(name: str):

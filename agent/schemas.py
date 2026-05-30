@@ -8,7 +8,7 @@ from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository, DWDBRepository
 from dtos.meta import ColumnInfo, MetricInfo, ValueInfo
 # Chart Agent 子图相关 schema(WSAgentState 里要嵌)
-from agent.chart_agent.schemas import DataShape, EChartsSpec
+from agent.chart_agent.schemas import DataShape
 
 class WSAgentTableInfoState(BaseModel):
     id: str
@@ -58,14 +58,6 @@ class WSAgentState(BaseModel):
     truncated: bool = False
     # analyzer 算出的数据形状摘要
     data_shape: DataShape | None = None
-    # LLM 直出的 ECharts spec(generator / corrector 写入)
-    chart_spec: EChartsSpec | None = None
-    # validator 写入的校验问题列表,非空时触发 corrector
-    chart_issues: list[str] | None = None
-    # corrector 重试次数,超 MAX_RETRY 则降级 table
-    chart_retry_count: int = 0
-    # chart_agent 内部记的临时错误信息(generator / corrector 异常时填)
-    chart_error: str | None = None
     # 最终 ECharts 配置(前端拿这个 setOption)
     chart_config: dict[str, Any] | None = None
     # interpret_result 节点产出的自然语言解读(与图表并行生成)

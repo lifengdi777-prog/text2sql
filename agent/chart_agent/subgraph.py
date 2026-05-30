@@ -5,14 +5,15 @@
         ├─ render_error      (state.error / sql_result is None)
         ├─ render_empty      (空结果)
         ├─ render_metric     (单行 numeric)
-        ├─ render_table      (行数 > CHART_MAX_ROWS:太多，全量喂不进 LLM，直接表格)
-        └─ generate_spec     (LLM 直出 ECharts option，此时 rows 已 ≤ CHART_MAX_ROWS，全量喂)
+        ├─ render_table      (行数 > CHART_MAX_ROWS:太多,降级表格)
+        └─ build_chart       (LLM 只选 chart_type → 代码确定性构 option → 直接 emit)
                 ↓
-            validate_spec
-              ├─ ok → END
-              └─ fail → correct_spec → validate_spec(最多重试 MAX_RETRY)
-                              ↓ 重试用尽
-                          fallback_table → END
+              END
+
+设计要点:
+- 透视长表→宽表、填 series.data 这类确定性变换全部用代码做(option_builder),
+  LLM 只从「兼容类型」里挑一个 chart_type(decider)。
+- 因为 option 由代码构造,结构天然合法,**不再需要 validate/correct 重试循环**。
 """
 from __future__ import annotations
 
@@ -22,19 +23,27 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
 from agent.chart_agent import analyzer
-from agent.chart_agent.corrector import MAX_RETRY, correct_spec
-from agent.chart_agent.generator import generate_spec
+from agent.chart_agent.analyzer import chart_field_map, compatible_chart_types
+from agent.chart_agent.decider import decide_chart_type
+from agent.chart_agent.option_builder import build_chart_option
 from agent.chart_agent.templates import empty as empty_tpl
 from agent.chart_agent.templates import error as error_tpl
 from agent.chart_agent.templates import metric as metric_tpl
-from agent.chart_agent.validator import validate_spec
 from agent.schemas import WSAgentContext, WSAgentState, WSStepInfo
+from core.log import logger
 
 
-# 行数超过此值就不喂 LLM 画图（采样会漏数据导致图表出错），直接降级 table。
-# 设 200 而非 50：长时间序列折线图（如半年日数据）也能保住，200 行喂 LLM 成本可忽略；
-# 柱图/饼图的可读性上限另由 validator 把关（pie ≤10、bar ≤30）。
+# 行数超过此值就不画图(数据量大,可读性差),直接降级 table 展示全量。
 CHART_MAX_ROWS = 200
+
+
+def _make_title(query: Any) -> str:
+    """标题:复用用户问题,去掉常见前缀动词,截断到 25 字。"""
+    t = str(query or "查询结果").strip()
+    for prefix in ("统计", "查询", "查一下", "查", "帮我", "请"):
+        if t.startswith(prefix):
+            t = t[len(prefix):]
+    return (t[:25] or "查询结果")
 
 
 def _build_table_config(rows: list[dict[str, Any]], title: str, reason: str) -> dict[str, Any]:
@@ -46,7 +55,6 @@ def _build_table_config(rows: list[dict[str, Any]], title: str, reason: str) -> 
         "columns": columns,
         "rows": [[r.get(c) for c in columns] for r in rows],
         "row_count": len(rows),
-        # 这两种 table 出口(大数据/重试兜底)数据本就不适合画图,不提供切换
         "compatible_types": ["table"],
         "_fallback_reason": reason,
     }
@@ -72,30 +80,54 @@ def _route_after_analyze(state: WSAgentState) -> str:
             return "render_metric"
         if all(c.semantic_type == "numeric" for c in shape.columns):
             return "render_metric"
-    # 数据量大：全量喂不进 LLM（采样会漏数据），直接降级 table
+    # 数据量大:不画图,直接降级 table
     if len(rows) > CHART_MAX_ROWS:
         return "render_table"
-    return "generate_spec"
+    return "build_chart"
 
 
-def _route_after_validate(state: WSAgentState) -> str:
-    """validate 后路由:无 issues → END;有 issues → correct(达上限则 fallback)。"""
-    if not state.chart_issues:
-        return END
-    if state.chart_retry_count >= MAX_RETRY:
-        return "fallback_table"
-    return "correct_spec"
+# ── 核心:LLM 选型 + 代码构图 ─────────────────────────────────────────
+async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
+    """LLM 只决定 chart_type,option 由 option_builder 用代码确定性构造。"""
+    writer = runtime.stream_writer
+    writer(WSStepInfo(step="生成图表", status="running"))
+
+    rows = state.sql_result or []
+    shape = state.data_shape
+    query = state.messages[0].content if state.messages else "查询结果"
+    title = _make_title(query)
+
+    # 兼容类型 + 字段映射:都由 analyzer 确定性算出(无 LLM)
+    compat = compatible_chart_types(shape)
+    field_map = chart_field_map(shape)
+    non_table = [t for t in compat if t != "table"]
+
+    # 选型:0 个可视化类型→table;唯一类型→直接定;多个→LLM 按用户意图挑
+    if not non_table:
+        chart_type, reason = "table", "数据形状只适合表格展示"
+    elif len(non_table) == 1:
+        chart_type, reason = non_table[0], "唯一兼容的可视化类型"
+    else:
+        chart_type, reason = await decide_chart_type(str(query), shape, compat)
+
+    # 构图
+    if chart_type == "table":
+        config = _build_table_config(rows, title, reason)
+    else:
+        config = build_chart_option(chart_type, rows, field_map, title)
+        config["compatible_types"] = compat
+        config["field_map"] = field_map
+
+    logger.info(f"图表生成(代码构图):type={chart_type}, reason={reason}")
+    writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
+    return {"chart_config": config}
 
 
 # ── 3 个状态卡(deterministic,不调 LLM)─────────────────────────────────
-
 async def render_error(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
-    config = error_tpl.render(
-        error_message=state.error or "未知错误",
-        original_sql=state.sql,
-    )
+    config = error_tpl.render(error_message=state.error or "未知错误", original_sql=state.sql)
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 
@@ -113,70 +145,32 @@ async def render_metric(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     writer(WSStepInfo(step="生成图表", status="running"))
     rows = state.sql_result or []
     query = state.messages[0].content if state.messages else ""
-    title = str(query)[:50] or (rows[0].keys() and list(rows[0].keys())[0]) or "结果"
+    title = str(query)[:50] or "结果"
     config = metric_tpl.render(title=title, rows=rows)
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 
 
-# ── 两种 table 出口:大数据直接降级 / LLM 重试用尽兜底 ──────────────────
-
 async def render_table(state: WSAgentState, runtime: Runtime[WSAgentContext]):
-    """行数 > CHART_MAX_ROWS:数据太多无法全量喂 LLM 画图,直接表格展示全量数据。"""
+    """行数 > CHART_MAX_ROWS:数据太多,直接表格展示全量数据。"""
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
-
     rows = state.sql_result or []
     query = state.messages[0].content if state.messages else "查询结果"
     config = _build_table_config(
-        rows,
-        title=str(query)[:50],
+        rows, title=str(query)[:50],
         reason=f"结果 {len(rows)} 行 > {CHART_MAX_ROWS},数据量大,降级为表格",
     )
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 
 
-async def fallback_table(state: WSAgentState, runtime: Runtime[WSAgentContext]):
-    """LLM 修正 MAX_RETRY 次仍不合法时的最终兜底:把 rows 拍成 table。"""
-    writer = runtime.stream_writer
-    writer(WSStepInfo(step="生成图表", status="running"))
-
-    rows = state.sql_result or []
-    query = state.messages[0].content if state.messages else "查询结果"
-    config = _build_table_config(
-        rows,
-        title=str(query)[:50],
-        reason=f"LLM 生成 spec 重试 {MAX_RETRY} 次未通过,降级为 table",
-    )
-    writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
-    return {"chart_config": config}
-
-
-# ── validate 通过后,把 chart_config 推流给前端 ─────────────────────────
-
-async def emit_chart_config(state: WSAgentState, runtime: Runtime[WSAgentContext]):
-    """validate 通过后:把 validator 写入的 chart_config 作为 finish 事件推给前端。"""
-    writer = runtime.stream_writer
-    writer(WSStepInfo(
-        step="生成图表",
-        status="success",
-        data=state.chart_config,
-        finish=True,
-    ))
-    return {}
-
-
 def _build():
     sg = StateGraph(state_schema=WSAgentState, context_schema=WSAgentContext)
 
     sg.add_node("analyze_data_shape", analyze_data_shape)
-    sg.add_node("generate_spec", generate_spec)
-    sg.add_node("validate_spec", validate_spec)
-    sg.add_node("correct_spec", correct_spec)
-    sg.add_node("fallback_table", fallback_table)
+    sg.add_node("build_chart", build_chart)
     sg.add_node("render_table", render_table)
-    sg.add_node("emit_chart_config", emit_chart_config)
     sg.add_node("render_error", render_error)
     sg.add_node("render_empty", render_empty)
     sg.add_node("render_metric", render_metric)
@@ -186,7 +180,7 @@ def _build():
         "analyze_data_shape",
         _route_after_analyze,
         {
-            "generate_spec": "generate_spec",
+            "build_chart": "build_chart",
             "render_error": "render_error",
             "render_empty": "render_empty",
             "render_metric": "render_metric",
@@ -194,22 +188,7 @@ def _build():
         },
     )
 
-    # 正常分支:generate → validate ⇄ correct → emit / fallback
-    sg.add_edge("generate_spec", "validate_spec")
-    sg.add_conditional_edges(
-        "validate_spec",
-        _route_after_validate,
-        {
-            END: "emit_chart_config",
-            "correct_spec": "correct_spec",
-            "fallback_table": "fallback_table",
-        },
-    )
-    sg.add_edge("correct_spec", "validate_spec")
-
-    # 所有终点
-    sg.add_edge("emit_chart_config", END)
-    sg.add_edge("fallback_table", END)
+    sg.add_edge("build_chart", END)
     sg.add_edge("render_table", END)
     sg.add_edge("render_error", END)
     sg.add_edge("render_empty", END)
