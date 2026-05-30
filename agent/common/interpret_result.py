@@ -100,7 +100,7 @@ async def interpret_result(state: WSAgentState, runtime: Runtime[WSAgentContext]
 
         # 结果被行数上限截断 → 末尾追加一句诚实提示(只在真截断时加)
         if state.truncated:
-            from agent.nodes.validate_sql import MAX_RESULT_ROWS
+            from agent.db_agent.nodes.validate_sql import MAX_RESULT_ROWS
             accumulated += f"\n\n(注:结果行数较多,仅展示并解读前 {MAX_RESULT_ROWS} 行。)"
 
         logger.info(f"数据解读：{accumulated}")

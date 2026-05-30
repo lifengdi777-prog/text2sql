@@ -1,6 +1,6 @@
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
-from agent.nodes.validate_sql import MAX_RESULT_ROWS
+from agent.db_agent.nodes.validate_sql import MAX_RESULT_ROWS
 from core.log import logger
 
 

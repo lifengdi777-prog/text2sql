@@ -38,7 +38,7 @@ from agent.dataset_agent.nodes.parse_intent import parse_intent
 from agent.dataset_agent.nodes.recall_values import recall_values
 from agent.dataset_agent.nodes.validate_sql import validate_sql
 from agent.dataset_agent.schemas import DatasetAgentContext, DatasetAgentState
-from agent.nodes.interpret_result import interpret_result
+from agent.common.interpret_result import interpret_result
 
 
 def _route_after_intent(state: DatasetAgentState):

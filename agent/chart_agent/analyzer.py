@@ -132,14 +132,17 @@ def _pie_meaningful(measure: ColumnFeature | None) -> bool:
 
     - 可加指标(销售额/数量…)→ 各分类的份额有意义,成立;
     - 比率/均价类(维护比例/不良率/客单价…)→ 逐组各自的比率,加起来无整体含义,
-      **除非** 各组之和≈100(真·占比列,如「销售额占比」)。
+      **除非** 各组之和构成一个整体:百分比刻度 ≈100,或小数刻度 ≈1.0(真·占比列,如「销售额占比」)。
     """
     if measure is None:
         return False
     if not _is_ratio_name(measure.name):
         return True
     s = measure.sum_value
-    return s is not None and 95.0 <= s <= 105.0
+    if s is None:
+        return False
+    # 占比列可能是 0~1 小数(和≈1)或百分数(和≈100),两种都算真·占比
+    return (0.95 <= s <= 1.05) or (95.0 <= s <= 105.0)
 
 
 def compatible_chart_types(shape: DataShape | None) -> list[str]:

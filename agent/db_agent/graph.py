@@ -1,21 +1,21 @@
 from langgraph.graph import StateGraph, START, END
 from agent.schemas import WSAgentState, WSAgentContext
-from agent.nodes.parse_query_intention import parse_query_intention
-from agent.nodes.extract_keywords import extract_keywords
-from agent.nodes.recall_columns import recall_columns
-from agent.nodes.recall_metrics import recall_metrics
-from agent.nodes.recall_values import recall_values
-from agent.nodes.merge_recalled_infos import merge_recalled_infos
-from agent.nodes.add_extra_context import add_extra_context
-from agent.nodes.extract_keywords import extract_keywords
-from agent.nodes.filter_metrics import filter_metrics
-from agent.nodes.filter_tables import filter_tables
-from agent.nodes.validate_sql import validate_sql
-from agent.nodes.generate_sql import generate_sql
-from agent.nodes.correct_sql import correct_sql
-from agent.nodes.execute_sql import execute_sql
-from agent.nodes.translate_columns import translate_columns  # 结果列名翻译(英文→中文)
-from agent.nodes.interpret_result import interpret_result  # 数据解读节点(与图表并行)
+from agent.db_agent.nodes.parse_query_intention import parse_query_intention
+from agent.db_agent.nodes.extract_keywords import extract_keywords
+from agent.db_agent.nodes.recall_columns import recall_columns
+from agent.db_agent.nodes.recall_metrics import recall_metrics
+from agent.db_agent.nodes.recall_values import recall_values
+from agent.db_agent.nodes.merge_recalled_infos import merge_recalled_infos
+from agent.db_agent.nodes.add_extra_context import add_extra_context
+from agent.db_agent.nodes.extract_keywords import extract_keywords
+from agent.db_agent.nodes.filter_metrics import filter_metrics
+from agent.db_agent.nodes.filter_tables import filter_tables
+from agent.db_agent.nodes.validate_sql import validate_sql
+from agent.db_agent.nodes.generate_sql import generate_sql
+from agent.db_agent.nodes.correct_sql import correct_sql
+from agent.db_agent.nodes.execute_sql import execute_sql
+from agent.db_agent.nodes.translate_columns import translate_columns  # 结果列名翻译(英文→中文)
+from agent.common.interpret_result import interpret_result  # 数据解读节点(共享,与图表并行)
 from agent.chart_agent import chart_subgraph  # 图表生成子图(以节点身份接入)
 from langchain.messages import HumanMessage
 from clients.mysql import dw_mysql_client, meta_mysql_client

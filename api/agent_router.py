@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from api.schemas import QueryInput
-from agent.graph import graph
+from agent.db_agent.graph import graph
 from clients.mysql import dw_mysql_client, meta_mysql_client
 from clients.es import es_client
 from clients.qdrant import qdrant_client

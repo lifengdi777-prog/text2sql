@@ -47,7 +47,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from agent.graph import graph  # noqa: E402
+from agent.db_agent.graph import graph  # noqa: E402
 from agent.schemas import WSAgentContext, WSAgentState  # noqa: E402
 from clients.es import es_client  # noqa: E402
 from clients.mysql import dw_mysql_client, meta_mysql_client  # noqa: E402
