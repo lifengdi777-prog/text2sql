@@ -7,6 +7,7 @@ import { toErrorMessage } from '@/services/agent'
 import {
   type ConversationBrief,
   type ConversationSource,
+  createConversation,
   deleteConversation,
   getConversationMessages,
   listConversations,
@@ -128,25 +129,97 @@ function newConversation() {
   inputValue.value = ''
 }
 
-async function renameConv(conv: ConversationBrief) {
-  const title = window.prompt('重命名会话', conv.title)?.trim()
-  if (!title || title === conv.title) return
+// 新建对话弹框:用户起名 → 后端立即建一个空白会话 → 切到它
+const showCreateModal = ref(false)
+const newTitle = ref('')
+const creating = ref(false)
+const createInput = ref<HTMLInputElement | null>(null)
+
+function openCreateModal() {
+  newTitle.value = ''
+  showCreateModal.value = true
+  nextTick(() => createInput.value?.focus())
+}
+function closeCreateModal() {
+  if (creating.value) return
+  showCreateModal.value = false
+}
+async function confirmCreate() {
+  if (creating.value) return
+  creating.value = true
   try {
-    await renameConversation(conv.id, title)
+    const conv = await createConversation(props.source, newTitle.value.trim() || '新对话', props.datasetId)
     await loadConversations()
-  } catch {
-    /* 忽略 */
+    // 切到这个新空白会话(清空对话区,后续提问会带上它的 id 续写)
+    newConversation()
+    activeConversationId.value = conv.id
+    showCreateModal.value = false
+  } catch (e) {
+    console.error('[新建对话] 创建失败:', e)
+  } finally {
+    creating.value = false
   }
 }
 
-async function removeConv(conv: ConversationBrief) {
-  if (!window.confirm(`确定删除会话「${conv.title}」？此操作不可恢复。`)) return
+// 重命名弹框
+const renameTarget = ref<ConversationBrief | null>(null)
+const renameTitle = ref('')
+const renaming = ref(false)
+const renameInput = ref<HTMLInputElement | null>(null)
+
+function renameConv(conv: ConversationBrief) {
+  renameTarget.value = conv
+  renameTitle.value = conv.title
+  nextTick(() => renameInput.value?.focus())
+}
+function closeRename() {
+  if (renaming.value) return
+  renameTarget.value = null
+}
+async function confirmRename() {
+  const conv = renameTarget.value
+  if (!conv || renaming.value) return
+  const title = renameTitle.value.trim()
+  if (!title || title === conv.title) {
+    renameTarget.value = null
+    return
+  }
+  renaming.value = true
+  try {
+    await renameConversation(conv.id, title)
+    await loadConversations()
+    renameTarget.value = null
+  } catch (e) {
+    console.error('[重命名] 失败:', e)
+  } finally {
+    renaming.value = false
+  }
+}
+
+// 删除确认弹框
+const deleteTarget = ref<ConversationBrief | null>(null)
+const deleting = ref(false)
+
+function removeConv(conv: ConversationBrief) {
+  deleteTarget.value = conv
+}
+function closeDelete() {
+  if (deleting.value) return
+  deleteTarget.value = null
+}
+async function confirmDelete() {
+  const conv = deleteTarget.value
+  if (!conv || deleting.value) return
+  deleting.value = true
   try {
     await deleteConversation(conv.id)
     if (activeConversationId.value === conv.id) newConversation()
     await loadConversations()
-  } catch {
-    /* 忽略 */
+    deleteTarget.value = null
+  } catch (e) {
+    console.error('[删除会话] 失败:', e)
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -320,8 +393,8 @@ onBeforeUnmount(() => {
       <div class="p-3">
         <button
           type="button"
-          class="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-100"
-          @click="newConversation"
+          class="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100"
+          @click="openCreateModal"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
             <circle cx="12" cy="12" r="9" />
@@ -348,7 +421,7 @@ onBeforeUnmount(() => {
             v-model="search"
             type="text"
             placeholder="搜索"
-            class="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-600 outline-none transition placeholder:text-slate-400 focus:border-emerald-300"
+            class="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-600 outline-none transition placeholder:text-slate-400 focus:border-sky-300"
           />
         </div>
       </div>
@@ -368,15 +441,19 @@ onBeforeUnmount(() => {
             <li
               v-for="conv in group.items"
               :key="conv.id"
-              class="group relative rounded-lg transition"
-              :class="conv.id === activeConversationId ? 'bg-white shadow-sm' : 'hover:bg-slate-100'"
+              class="group relative rounded-lg border transition"
+              :class="
+                conv.id === activeConversationId
+                  ? 'border-sky-300 bg-sky-50 shadow-[0_0_0_3px_rgba(186,230,253,0.7)]'
+                  : 'border-transparent hover:bg-slate-100'
+              "
             >
               <button
                 type="button"
                 class="block w-full truncate rounded-lg px-3 py-2.5 pr-14 text-left text-sm"
                 :class="
                   conv.id === activeConversationId
-                    ? 'font-medium text-slate-800'
+                    ? 'font-medium text-sky-700'
                     : 'text-slate-600'
                 "
                 :title="conv.title"
@@ -729,5 +806,131 @@ onBeforeUnmount(() => {
     </footer>
     </div>
     <!-- /聊天主区 -->
+
+    <!-- 新建对话弹框 -->
+    <div
+      v-if="showCreateModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="closeCreateModal"
+    >
+      <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+        <h3 class="text-base font-semibold text-slate-800">新建对话</h3>
+        <p class="mt-1 text-xs text-slate-400">给这个会话起个名字，方便日后查找</p>
+        <input
+          ref="createInput"
+          v-model="newTitle"
+          type="text"
+          maxlength="50"
+          placeholder="例如：Q1 各产线产量分析"
+          class="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-300"
+          @keydown.enter="confirmCreate"
+          @keydown.esc="closeCreateModal"
+        />
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            :disabled="creating"
+            @click="closeCreateModal"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
+            :disabled="creating"
+            @click="confirmCreate"
+          >
+            {{ creating ? '创建中…' : '创建' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 重命名弹框 -->
+    <div
+      v-if="renameTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="closeRename"
+    >
+      <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+        <h3 class="text-base font-semibold text-slate-800">重命名会话</h3>
+        <input
+          ref="renameInput"
+          v-model="renameTitle"
+          type="text"
+          maxlength="50"
+          class="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-300"
+          @keydown.enter="confirmRename"
+          @keydown.esc="closeRename"
+        />
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            :disabled="renaming"
+            @click="closeRename"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
+            :disabled="renaming"
+            @click="confirmRename"
+          >
+            {{ renaming ? '保存中…' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 删除确认弹框 -->
+    <div
+      v-if="deleteTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="closeDelete"
+    >
+      <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+        <div class="flex items-start gap-3">
+          <span
+            class="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-500"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+              <path
+                d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          <div class="min-w-0">
+            <h3 class="text-base font-semibold text-slate-800">删除会话</h3>
+            <p class="mt-1 break-words text-sm text-slate-500">
+              确定删除「<span class="font-medium text-slate-700">{{ deleteTarget.title }}</span
+              >」？此操作不可恢复。
+            </p>
+          </div>
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            :disabled="deleting"
+            @click="closeDelete"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
+            :disabled="deleting"
+            @click="confirmDelete"
+          >
+            {{ deleting ? '删除中…' : '删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

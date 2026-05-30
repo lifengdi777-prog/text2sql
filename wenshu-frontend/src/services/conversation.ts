@@ -49,6 +49,20 @@ interface ConversationDetail extends ConversationBrief {
   messages: StoredMessage[]
 }
 
+// 新建一个空白会话(用户起名);返回新会话
+export async function createConversation(
+  source: ConversationSource,
+  title: string,
+  datasetId?: number,
+): Promise<ConversationBrief> {
+  const { data } = await convApi.post<ConversationBrief>('/conversations', {
+    source,
+    title,
+    dataset_id: source === 'dataset' ? (datasetId ?? null) : null,
+  })
+  return data
+}
+
 // 列表:主图传 source='db';数据集传 source='dataset' + datasetId
 export async function listConversations(
   source: ConversationSource,

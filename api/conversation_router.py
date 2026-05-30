@@ -20,6 +20,12 @@ class RenameBody(BaseModel):
     title: str
 
 
+class CreateBody(BaseModel):
+    source: str = "db"
+    dataset_id: int | None = None
+    title: str = "新对话"
+
+
 def _conv_brief(conv) -> dict:
     return {
         "id": conv.id,
@@ -29,6 +35,27 @@ def _conv_brief(conv) -> dict:
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
         "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
     }
+
+
+@router.post("")
+async def create_conversation(body: CreateBody, user_id: str = Depends(get_current_user)):
+    """显式新建一个空白会话(用户先起名,首次提问再往里追加消息)。"""
+    if body.source not in ("db", "dataset"):
+        raise HTTPException(status_code=400, detail="source 只能是 db 或 dataset")
+    Session = get_session_factory()
+    async with Session() as session:
+        repo = ConversationRepository(session)
+        conv = await repo.create(
+            user_id,
+            source=body.source,
+            title=(body.title or "新对话"),
+            dataset_id=body.dataset_id,
+        )
+        await session.commit()
+        # created_at/updated_at 是 server_default,INSERT 后未加载;
+        # 在异步上下文里 refresh 读回,避免 _conv_brief 读取时触发同步延迟加载(MissingGreenlet)
+        await session.refresh(conv)
+        return _conv_brief(conv)
 
 
 @router.get("")
