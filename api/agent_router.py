@@ -1,6 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from api.schemas import QueryInput
+from api.deps import get_current_user
+from core.log import logger
 from agent.db_agent.graph import graph
 from clients.mysql import dw_mysql_client, meta_mysql_client
 from clients.es import es_client
@@ -53,7 +55,11 @@ async def query_graph(query: str):
 #           ↑ SSE 格式：每条消息以 "data: " 开头，以 "\n\n" 结尾
 
 @router.post("/query")
-async def query_data(data: QueryInput):
+async def query_data(data: QueryInput, user_id: str = Depends(get_current_user)):
+    # 只加「认证」(必须是登录用户),不加「归属校验」:
+    # MySQL 数仓是全员共享的同一份数据,无「谁的数据」之分,所有登录用户看到的内容一致。
+    # 未登录 / token 失效 → get_current_user 抛 401,前端 axios 拦截器会自动跳登录页。
     query = data.query
+    logger.info(f"[/agent/query] user_id={user_id} query={query!r}")  # 审计:记录谁问了什么
     return StreamingResponse(query_graph(query), media_type="text/event-stream")
     #       ↑ 把生成器包装成 SSE 流式响应返回给前端
