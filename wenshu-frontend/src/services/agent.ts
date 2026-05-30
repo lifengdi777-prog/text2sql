@@ -35,6 +35,10 @@ agentApi.interceptors.response.use(
 interface QueryOptions {
   signal?: AbortSignal
   onStep: (message: AgentReplyMessage) => void
+  // 续聊到已有会话;不传则后端新建
+  conversationId?: number | null
+  // 后端回传(新建或确认)的 conversation_id,通过首个 SSE 事件送达
+  onConversation?: (id: number) => void
 }
 
 function toErrorMessage(error: unknown): string {
@@ -183,6 +187,13 @@ async function runStream(
       rest = parsed.rest
 
       for (const event of parsed.events) {
+        // 首个事件 {conversation_id: N}:回传给上层,不当作步骤渲染
+        const convId = (event as { conversation_id?: unknown }).conversation_id
+        if (typeof convId === 'number') {
+          options.onConversation?.(convId)
+          continue
+        }
+
         const normalizedEvent = normalizeEvent(event)
         if (!normalizedEvent) {
           continue
@@ -211,7 +222,7 @@ async function runStream(
 
 // DW(MySQL 数仓)问答
 export async function streamAgentQuery(query: string, options: QueryOptions): Promise<void> {
-  await runStream('/agent/query', { query }, options)
+  await runStream('/agent/query', { query, conversation_id: options.conversationId ?? null }, options)
 }
 
 // 上传数据集(Excel)问答。身份走 Authorization: Bearer 头,不再随 body 传 user_id。
@@ -220,7 +231,11 @@ export async function streamDatasetQuery(
   query: string,
   options: QueryOptions,
 ): Promise<void> {
-  await runStream(`/dataset/${datasetId}/query`, { query }, options)
+  await runStream(
+    `/dataset/${datasetId}/query`,
+    { query, conversation_id: options.conversationId ?? null },
+    options,
+  )
 }
 
 export { toErrorMessage }

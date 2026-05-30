@@ -18,6 +18,7 @@ from models import Base
 # 必须 import 模型,把表注册到 Base.metadata
 from models.upload import UploadDatasetMySQL  # noqa: F401
 from models.user import UserMySQL  # noqa: F401
+from models.conversation import ConversationMySQL, MessageMySQL  # noqa: F401
 from repositories.es import UploadESRepository
 
 
@@ -54,7 +55,7 @@ async def _init_mysql() -> None:
                                  "(user_id, original_filename, content_hash)")
     finally:
         await engine.dispose()
-    print(f"[OK] 表 upload_datasets / users 已就绪")
+    print(f"[OK] 表 upload_datasets / users / conversations / messages 已就绪")
 
 
 async def _migrate_add_column(engine, table: str, column: str, ddl_type: str) -> None:

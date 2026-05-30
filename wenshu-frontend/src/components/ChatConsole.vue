@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { hasDisplayableResult } from '@/lib/result-display'
 import { exportRowsToCsv } from '@/lib/export'
 import { toErrorMessage } from '@/services/agent'
+import {
+  type ConversationBrief,
+  type ConversationSource,
+  deleteConversation,
+  getConversationMessages,
+  listConversations,
+  renameConversation,
+} from '@/services/conversation'
 import type { AgentReplyMessage, ChatMessage, ResultRow, StreamFn } from '@/types/agent'
 
 import MetricCard from '@/components/MetricCard.vue'
@@ -14,6 +22,9 @@ import ChartPanel from '@/components/ChartPanel.vue'
 const props = withDefaults(
   defineProps<{
     streamFn: StreamFn
+    // 会话历史归属:主图传 'db';数据集传 'dataset' + datasetId
+    source?: ConversationSource
+    datasetId?: number
     title?: string
     subtitle?: string
     placeholder?: string
@@ -21,6 +32,8 @@ const props = withDefaults(
     backTo?: string
   }>(),
   {
+    source: 'db',
+    datasetId: undefined,
     title: '智能数据分析工作台',
     subtitle: 'Text to SQL',
     placeholder: '请输入想查询的问题，例如：统计 2026 年各工厂的实际产量',
@@ -43,6 +56,101 @@ let activeController: AbortController | null = null
 
 const canSend = computed(() => inputValue.value.trim().length > 0)
 const emptyResultMessage = '没有查询到您想要的结果。'
+
+// ── 会话历史 ────────────────────────────────────────────
+const conversations = ref<ConversationBrief[]>([])
+const activeConversationId = ref<number | null>(null)
+const historyLoading = ref(false)
+const search = ref('')
+
+// 按标题搜索过滤(本地)
+const filteredConversations = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return conversations.value
+  return conversations.value.filter((c) => c.title.toLowerCase().includes(q))
+})
+
+// 按时间分组:今天 / 更早以前(后端已按 updated_at 倒序,组内保持顺序)
+const groupedConversations = computed(() => {
+  const today: ConversationBrief[] = []
+  const earlier: ConversationBrief[] = []
+  const now = new Date()
+  for (const c of filteredConversations.value) {
+    const t = c.updated_at ? new Date(c.updated_at) : null
+    const isToday =
+      !!t &&
+      t.getFullYear() === now.getFullYear() &&
+      t.getMonth() === now.getMonth() &&
+      t.getDate() === now.getDate()
+    ;(isToday ? today : earlier).push(c)
+  }
+  const groups: { label: string; items: ConversationBrief[] }[] = []
+  if (today.length) groups.push({ label: '今天', items: today })
+  if (earlier.length) groups.push({ label: '更早以前', items: earlier })
+  return groups
+})
+
+async function loadConversations() {
+  try {
+    conversations.value = await listConversations(props.source, props.datasetId)
+  } catch (e) {
+    // 历史列表加载失败不阻断主流程,但打到控制台便于排查(如开发代理未覆盖 /conversations)
+    console.error('[历史会话] 加载失败:', e)
+  }
+}
+
+// 切到某条历史会话:中止当前流,拉取消息回填
+async function selectConversation(id: number) {
+  if (id === activeConversationId.value) return
+  activeController?.abort()
+  activeController = null
+  isLoading.value = false
+  historyLoading.value = true
+  try {
+    const msgs = await getConversationMessages(id)
+    messages.value = msgs
+    activeConversationId.value = id
+    await scrollToBottom()
+  } catch {
+    /* 拉取失败保持原状 */
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+// 新建对话:清空当前会话(下次提问由后端建会话并回传 id)
+function newConversation() {
+  activeController?.abort()
+  activeController = null
+  isLoading.value = false
+  messages.value = []
+  activeConversationId.value = null
+  inputValue.value = ''
+}
+
+async function renameConv(conv: ConversationBrief) {
+  const title = window.prompt('重命名会话', conv.title)?.trim()
+  if (!title || title === conv.title) return
+  try {
+    await renameConversation(conv.id, title)
+    await loadConversations()
+  } catch {
+    /* 忽略 */
+  }
+}
+
+async function removeConv(conv: ConversationBrief) {
+  if (!window.confirm(`确定删除会话「${conv.title}」？此操作不可恢复。`)) return
+  try {
+    await deleteConversation(conv.id)
+    if (activeConversationId.value === conv.id) newConversation()
+    await loadConversations()
+  } catch {
+    /* 忽略 */
+  }
+}
+
+onMounted(loadConversations)
 
 function createReplyMessage(): AgentReplyMessage {
   return {
@@ -142,9 +250,17 @@ async function submitQuery() {
   const controller = new AbortController()
   activeController = controller
 
+  // 记录提问前是否为新会话:用于决定结束后是否刷新历史列表(新建/标题变化)
+  const wasNewConversation = activeConversationId.value === null
+
   try {
     await props.streamFn(query, {
       signal: controller.signal,
+      conversationId: activeConversationId.value,
+      onConversation: (id) => {
+        // 后端新建/确认的会话 id;后续同会话续聊都带它
+        activeConversationId.value = id
+      },
       onStep: (nextMessage) => {
         const index = messages.value.findIndex((item) => item.id === replyMessage.id)
         if (index === -1) return
@@ -175,6 +291,10 @@ async function submitQuery() {
       activeController = null
       isLoading.value = false
     }
+    // 新会话或标题可能已变 → 刷新历史列表;新会话置顶选中
+    if (wasNewConversation) {
+      await loadConversations()
+    }
     await scrollToBottom()
   }
 }
@@ -192,10 +312,117 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 全屏铺满:去掉圆角/外阴影/外边框,跟左侧侧栏的 border-r 自然分隔 -->
-  <div
-    class="flex h-full w-full flex-col overflow-hidden bg-white/82 backdrop-blur-xl"
-  >
+  <!-- 左右布局:左历史侧栏 + 右聊天主区 -->
+  <div class="flex h-full w-full overflow-hidden bg-white/82 backdrop-blur-xl">
+    <!-- 历史会话侧栏 -->
+    <aside class="flex h-full w-64 shrink-0 flex-col border-r border-slate-200/70 bg-slate-50/60">
+      <!-- 新建对话 -->
+      <div class="p-3">
+        <button
+          type="button"
+          class="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-100"
+          @click="newConversation"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v8M8 12h8" stroke-linecap="round" />
+          </svg>
+          新建对话
+        </button>
+      </div>
+
+      <!-- 搜索 -->
+      <div class="px-3 pb-2">
+        <div class="relative">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" stroke-linecap="round" />
+          </svg>
+          <input
+            v-model="search"
+            type="text"
+            placeholder="搜索"
+            class="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-600 outline-none transition placeholder:text-slate-400 focus:border-emerald-300"
+          />
+        </div>
+      </div>
+
+      <!-- 列表 -->
+      <div class="flex-1 overflow-y-auto px-2 pb-3">
+        <p
+          v-if="filteredConversations.length === 0"
+          class="px-3 py-6 text-center text-xs text-slate-400"
+        >
+          {{ search ? '没有匹配的会话' : '暂无历史，发起提问即可保存' }}
+        </p>
+
+        <div v-for="group in groupedConversations" :key="group.label" class="mb-2">
+          <p class="px-3 py-1.5 text-xs font-medium text-slate-400">{{ group.label }}</p>
+          <ul class="space-y-0.5">
+            <li
+              v-for="conv in group.items"
+              :key="conv.id"
+              class="group relative rounded-lg transition"
+              :class="conv.id === activeConversationId ? 'bg-white shadow-sm' : 'hover:bg-slate-100'"
+            >
+              <button
+                type="button"
+                class="block w-full truncate rounded-lg px-3 py-2.5 pr-14 text-left text-sm"
+                :class="
+                  conv.id === activeConversationId
+                    ? 'font-medium text-slate-800'
+                    : 'text-slate-600'
+                "
+                :title="conv.title"
+                @click="selectConversation(conv.id)"
+              >
+                {{ conv.title }}
+              </button>
+
+              <!-- 悬浮操作:重命名 / 删除 -->
+              <div
+                class="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex"
+              >
+                <button
+                  type="button"
+                  class="rounded-md p-1 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
+                  title="重命名"
+                  @click.stop="renameConv(conv)"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+                    <path d="M12 20h9" stroke-linecap="round" />
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" stroke-linejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md p-1 text-slate-400 transition hover:bg-rose-100 hover:text-rose-600"
+                  title="删除"
+                  @click.stop="removeConv(conv)"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
+                    <path
+                      d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 聊天主区 -->
+    <div class="flex h-full flex-1 flex-col overflow-hidden">
     <header class="border-b border-slate-200/70 px-6 py-3 sm:px-8">
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">
@@ -500,5 +727,7 @@ onBeforeUnmount(() => {
         </div>
       </form>
     </footer>
+    </div>
+    <!-- /聊天主区 -->
   </div>
 </template>

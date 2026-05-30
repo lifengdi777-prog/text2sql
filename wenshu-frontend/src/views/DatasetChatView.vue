@@ -61,6 +61,8 @@ onMounted(async () => {
   <ChatConsole
     v-else
     :stream-fn="streamFn"
+    source="dataset"
+    :dataset-id="datasetId"
     :title="datasetName || `数据集 #${datasetId}`"
     subtitle="Text to SQL · 数据集"
     placeholder="针对该数据集提问，例如：各工厂的产量合计是多少"

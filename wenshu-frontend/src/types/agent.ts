@@ -63,5 +63,10 @@ export type ChatMessage = UserMessage | AgentReplyMessage
 // 流式查询函数签名:DW 问答和数据集问答都符合,ChatConsole 据此通用化
 export type StreamFn = (
   query: string,
-  options: { signal?: AbortSignal; onStep: (message: AgentReplyMessage) => void },
+  options: {
+    signal?: AbortSignal
+    onStep: (message: AgentReplyMessage) => void
+    conversationId?: number | null
+    onConversation?: (id: number) => void
+  },
 ) => Promise<void>

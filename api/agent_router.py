@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from api.schemas import QueryInput
 from api.deps import get_current_user
 from core.log import logger
+from agent.common.history import stream_with_history
 from agent.db_agent.graph import graph
 from clients.mysql import dw_mysql_client, meta_mysql_client
 from clients.es import es_client
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/agent")
 
 
 async def query_graph(query: str):
+    # 产出 WSStepInfo chunk(不再自己格式化 SSE);由 stream_with_history 统一转发 + 落库
     async with (
         dw_mysql_client.session() as dw_session,
         meta_mysql_client.session() as meta_session
@@ -51,8 +53,7 @@ async def query_graph(query: str):
             stream_mode="custom",
             subgraphs=True,
         ):
-            yield f"data: {chunk.model_dump_json()}\n\n"
-#           ↑ SSE 格式：每条消息以 "data: " 开头，以 "\n\n" 结尾
+            yield chunk
 
 @router.post("/query")
 async def query_data(data: QueryInput, user_id: str = Depends(get_current_user)):
@@ -61,5 +62,14 @@ async def query_data(data: QueryInput, user_id: str = Depends(get_current_user))
     # 未登录 / token 失效 → get_current_user 抛 401,前端 axios 拦截器会自动跳登录页。
     query = data.query
     logger.info(f"[/agent/query] user_id={user_id} query={query!r}")  # 审计:记录谁问了什么
-    return StreamingResponse(query_graph(query), media_type="text/event-stream")
-    #       ↑ 把生成器包装成 SSE 流式响应返回给前端
+    # 用 stream_with_history 包一层:落库会话历史(归属当前用户),并回传 conversation_id
+    return StreamingResponse(
+        stream_with_history(
+            query_graph(query),
+            user_id=user_id,
+            source="db",
+            query=query,
+            conversation_id=data.conversation_id,
+        ),
+        media_type="text/event-stream",
+    )

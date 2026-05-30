@@ -6,6 +6,7 @@ import { streamAgentQuery } from '@/services/agent'
 <template>
   <ChatConsole
     :stream-fn="streamAgentQuery"
+    source="db"
     title="智能数据分析工作台"
     subtitle="Text to SQL · 数据库"
     placeholder="请输入想查询的生产数据问题，例如：统计 2026 年各工厂的实际产量"
