@@ -91,5 +91,8 @@ class WSStepInfo(BaseModel):
     data: Any | None = None
     #可选的用户指导性查询语句，用于帮助用户继续进行交互。
     guide_queries: list[str] | None = None
+    #执行节点带上「真正执行的那条 SQL」(主图=LIMIT 截断后的 state.sql,数据集=generated_sql),
+    #供前端「查看 SQL」展示。专用字段,不复用 data(避免和结果数组/图表对象的类型分发冲突)。
+    sql: str | None = None
     #整个的图，agent的状态
     finish: bool = False

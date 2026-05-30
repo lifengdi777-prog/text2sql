@@ -18,6 +18,8 @@ export interface AgentEvent {
   data: AgentEventData
   finish: boolean
   guide_queries?: string[] | null
+  // 执行节点带上的「真正执行的那条 SQL」,供前端「查看 SQL」展示
+  sql?: string | null
 }
 
 export interface SseChunkParseResult {

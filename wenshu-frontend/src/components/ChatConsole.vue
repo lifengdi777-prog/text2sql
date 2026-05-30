@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 
 import { hasDisplayableResult } from '@/lib/result-display'
+import { exportRowsToCsv } from '@/lib/export'
 import { toErrorMessage } from '@/services/agent'
 import type { AgentReplyMessage, ChatMessage, ResultRow, StreamFn } from '@/types/agent'
 
@@ -51,6 +52,7 @@ function createReplyMessage(): AgentReplyMessage {
     result: [],
     chartConfig: null,
     interpretation: null,
+    sql: null,
     guideQueries: [],
     status: 'streaming',
   }
@@ -66,6 +68,38 @@ function shouldShowResult(rows: ResultRow[]): boolean {
 
 function applyGuideQuery(query: string) {
   inputValue.value = query
+}
+
+// ── 查看 SQL / 复制 / 导出 ──────────────────────────────
+// 每条回复的「查看 SQL」展开状态(默认折叠)
+const sqlExpanded = ref<Record<string, boolean>>({})
+function isSqlExpanded(message: AgentReplyMessage): boolean {
+  return sqlExpanded.value[message.id] ?? false
+}
+function toggleSql(message: AgentReplyMessage) {
+  sqlExpanded.value = { ...sqlExpanded.value, [message.id]: !isSqlExpanded(message) }
+}
+
+// 复制 SQL,短暂显示「已复制」
+const copiedId = ref<string | null>(null)
+async function copySql(message: AgentReplyMessage) {
+  if (!message.sql) return
+  try {
+    await navigator.clipboard.writeText(message.sql)
+    copiedId.value = message.id
+    window.setTimeout(() => {
+      if (copiedId.value === message.id) copiedId.value = null
+    }, 1500)
+  } catch {
+    /* 剪贴板不可用(非 https / 权限)时静默 */
+  }
+}
+
+// 导出当前回复的结果为 CSV(文件名带时间戳,避免重名覆盖)
+function exportCsv(message: AgentReplyMessage) {
+  if (!shouldShowResult(message.result)) return
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')
+  exportRowsToCsv(message.result, `query_result_${stamp}.csv`)
 }
 
 // 执行链路折叠:执行完成(success)后默认折叠,用户可点击展开/再折叠。
@@ -359,6 +393,51 @@ onBeforeUnmount(() => {
               {{ message.interpretation }}
             </p>
           </section>
+
+          <!-- 操作栏:查看 SQL / 导出 CSV(成功且有 SQL 或有结果行时显示) -->
+          <div
+            v-if="message.status === 'success' && (message.sql || shouldShowResult(message.result))"
+            class="mt-6 flex flex-wrap items-center gap-2"
+          >
+            <button
+              v-if="message.sql"
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+              @click="toggleSql(message)"
+            >
+              查看 SQL
+              <span class="text-[10px]" aria-hidden="true">{{ isSqlExpanded(message) ? '▲' : '▼' }}</span>
+            </button>
+
+            <button
+              v-if="shouldShowResult(message.result)"
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700"
+              @click="exportCsv(message)"
+            >
+              
+              导出表格
+              <span aria-hidden="true">⬇</span>
+            </button>
+          </div>
+
+          <!-- SQL 展开区:等宽显示真正执行的 SQL + 复制按钮 -->
+          <div
+            v-if="message.status === 'success' && message.sql && isSqlExpanded(message)"
+            class="mt-3 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900"
+          >
+            <div class="flex items-center justify-between border-b border-slate-700 px-4 py-2">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">SQL</span>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-200 transition hover:border-sky-500 hover:text-sky-300"
+                @click="copySql(message)"
+              >
+                {{ copiedId === message.id ? '已复制' : '复制' }}
+              </button>
+            </div>
+            <pre class="overflow-x-auto px-4 py-3 text-xs leading-6 text-slate-100"><code>{{ message.sql }}</code></pre>
+          </div>
 
           <MetricCard
             v-if="message.status === 'success' && message.chartConfig?.chart_type === 'metric'"

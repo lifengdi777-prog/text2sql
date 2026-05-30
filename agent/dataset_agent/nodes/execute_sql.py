@@ -37,5 +37,6 @@ async def execute_sql(state: DatasetAgentState, runtime: Runtime[DatasetAgentCon
 
     logger.info(f"execute_sql 完成:dataset={state.dataset_id} 返回 {len(rows)} 行")
     # data=rows + finish=True:前端据此填 message.result(表格视图 / 本地切图都依赖原始行)
-    writer(WSStepInfo(step="执行查询", status="success", data=rows, finish=True))
+    # sql=sql:带上真正执行的那条 SQL,供前端「查看 SQL」展示
+    writer(WSStepInfo(step="执行查询", status="success", data=rows, sql=sql, finish=True))
     return {"sql_result": rows, "error": None}

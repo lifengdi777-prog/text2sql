@@ -96,6 +96,8 @@ function mergeReplyMessage(
     result: isResultEvent ? (event.data as ResultRow[]) : current.result,
     chartConfig: isChartEvent ? (event.data as ChartConfig) : current.chartConfig,
     interpretation: isInterpretationEvent ? (event.data as string) : current.interpretation,
+    // 执行成功事件带上的真正执行 SQL;后续事件没有 sql 时保留已存的
+    sql: event.sql ?? current.sql,
     guideQueries: event.finish && event.guide_queries && event.guide_queries.length > 0
       ? event.guide_queries
       : current.guideQueries,
@@ -160,6 +162,7 @@ async function runStream(
     result: [],
     chartConfig: null,
     interpretation: null,
+    sql: null,
     guideQueries: [],
     status: 'streaming',
   }

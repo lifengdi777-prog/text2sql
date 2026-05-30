@@ -46,6 +46,7 @@ export interface AgentReplyMessage {
   result: ResultRow[]
   chartConfig: ChartConfig | null   // 由 chart_agent 子图最后一个 finish 事件填充
   interpretation: string | null     // 由 interpret_result 节点产出的自然语言解读
+  sql: string | null                // 真正执行的那条 SQL(执行成功事件带上),供「查看 SQL」展示
   guideQueries: string[]
   status: 'streaming' | 'success' | 'error'
   errorMessage?: string
