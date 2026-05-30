@@ -9,6 +9,36 @@ class SQLValidationError(ValueError):
     pass
 
 
+# 结果行数上限:防 LLM 写出无 LIMIT 的全表查询把整张表拉进内存/推给前端。
+MAX_RESULT_ROWS = 1000
+
+
+def cap_limit(sql: str, cap: int = MAX_RESULT_ROWS, dialect: str = "mysql") -> str:
+    """给 SQL 注入/收紧 LIMIT 到 cap+1(用 +1 让执行环节能判断"是否还有更多 → 截断")。
+
+    · 无 LIMIT 或 LIMIT 比上限大 → 设成 cap+1;
+    · 用户已写了更小的 LIMIT(如 top 5)→ 保留,不动。
+    用 sqlglot 在顶层语句上设 LIMIT(保留内层 ORDER BY,不像"包子查询"那样在 MySQL 丢排序)。
+    """
+    try:
+        stmt = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return sql
+    if not isinstance(stmt, (exp.Select, exp.Union)):
+        return sql
+    target = cap + 1
+    lim = stmt.args.get("limit")
+    cur: int | None = None
+    if lim is not None and lim.expression is not None:
+        try:
+            cur = int(lim.expression.this)
+        except (TypeError, ValueError):
+            cur = None
+    if cur is None or cur > target:
+        stmt = stmt.limit(target)
+    return stmt.sql(dialect=dialect)
+
+
 def validate_readonly_sql(sql: str, dialect: str = "mysql") -> None:
     #首先检查SQL字符串是否为空或仅包含空白字符
     if not sql or not sql.strip():
@@ -47,10 +77,14 @@ async def validate_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         validate_readonly_sql(sql, dialect="mysql")
         #第二步再做语法校验
         await dw_db_repo.validate_sql(sql)
+        #第三步:注入/收紧 LIMIT,防无界全表查询(写回 state.sql,执行用规范化后的)
+        capped = cap_limit(sql)
+        if capped != sql:
+            logger.info(f"SQL 注入行数上限:{capped}")
         writer(WSStepInfo(step="校验SQL语句", status="success"))
         logger.info("sql校验成功！")
-        #没有错误就清空error字段，继续执行SQL；
-        return {"error": None}
+        #没有错误就清空error字段,带着规范化后的 SQL 继续执行;
+        return {"error": None, "sql": capped}
     except Exception as e:
         logger.info(f"sql校验失败！错误信息：{e}")
         writer(WSStepInfo(step="校验SQL语句", status="error"))

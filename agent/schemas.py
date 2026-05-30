@@ -51,6 +51,8 @@ class WSAgentState(BaseModel):
     # ── 以下字段由 chart_agent 子图使用 ───────────────────────────────
     # execute_sql 跑完后的结果集(成功时是 list[dict],出错时为 None)
     sql_result: list[dict[str, Any]] | None = None
+    # 结果是否被行数上限截断(>MAX_RESULT_ROWS),供解读环节提示用户"仅展示前 N 行"
+    truncated: bool = False
     # analyzer 算出的数据形状摘要
     data_shape: DataShape | None = None
     # LLM 直出的 ECharts spec(generator / corrector 写入)
