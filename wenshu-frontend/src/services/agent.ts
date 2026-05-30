@@ -94,20 +94,30 @@ function mergeReplyMessage(
   // interpret_result 节点的事件:step="数据解读",data 是纯文本(不带 finish)
   const isInterpretationEvent = event.step === '数据解读' && typeof event.data === 'string'
 
+  const nextChartConfig = isChartEvent ? (event.data as ChartConfig) : current.chartConfig
+
+  // 「生成图表」与「数据解读」是并行分支,执行链路要等两者都完成才折叠:
+  //  - 图表完成:收到 chart_agent 的 finish 事件(chartConfig 落定)
+  //  - 解读完成:数据解读步骤进入终态(success/error)
+  // 数据解读是流式的(running 阶段就带累计文本),所以必须按步骤终态判断,不能只看 interpretation 是否非空。
+  // 错误/空结果场景不产生数据解读事件,这里不会置 success,改由 ChatConsole 流结束后的兜底逻辑置 success。
+  const chartDone = nextChartConfig !== null
+  const interpretSettled = nextSteps.some(
+    (s) => s.step === '数据解读' && (s.status === 'success' || s.status === 'error'),
+  )
+
   return {
     ...current,
     steps: nextSteps,
     result: isResultEvent ? (event.data as ResultRow[]) : current.result,
-    chartConfig: isChartEvent ? (event.data as ChartConfig) : current.chartConfig,
+    chartConfig: nextChartConfig,
     interpretation: isInterpretationEvent ? (event.data as string) : current.interpretation,
     // 执行成功事件带上的真正执行 SQL;后续事件没有 sql 时保留已存的
     sql: event.sql ?? current.sql,
     guideQueries: event.finish && event.guide_queries && event.guide_queries.length > 0
       ? event.guide_queries
       : current.guideQueries,
-    // 只有 chart_agent 的 finish 事件才标记流真正结束(它是子图最后一步)
-    // 如果只收到 result 事件没收到 chart 事件,仍保持 streaming(防止 UI 闪烁"已完成"后又有进度)
-    status: isChartEvent ? 'success' : current.status,
+    status: chartDone && interpretSettled ? 'success' : current.status,
   }
 }
 

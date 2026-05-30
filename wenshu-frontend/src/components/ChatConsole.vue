@@ -55,7 +55,8 @@ const scrollContainer = ref<HTMLElement | null>(null)
 
 let activeController: AbortController | null = null
 
-const canSend = computed(() => inputValue.value.trim().length > 0)
+// 有输入内容 且 上一轮已结束(非加载中)才能发送 —— 上一轮回答完毕前禁止新提问
+const canSend = computed(() => inputValue.value.trim().length > 0 && !isLoading.value)
 const emptyResultMessage = '没有查询到您想要的结果。'
 
 // ── 会话历史 ────────────────────────────────────────────
@@ -306,11 +307,8 @@ async function scrollToBottom() {
 async function submitQuery() {
   const query = inputValue.value.trim()
   if (!query) return
-
-  if (activeController) {
-    activeController.abort()
-    activeController = null
-  }
+  // 上一轮还在执行时,禁止发起新提问:必须等本轮(数据解读 + 图表)全部完成
+  if (isLoading.value) return
 
   const userMessage = { id: crypto.randomUUID(), role: 'user' as const, content: query }
   const replyMessage = createReplyMessage()
@@ -333,6 +331,11 @@ async function submitQuery() {
       onConversation: (id) => {
         // 后端新建/确认的会话 id;后续同会话续聊都带它
         activeConversationId.value = id
+        // 新会话:后端在发出此事件前已建好并提交,这里立刻刷新侧栏,
+        // 让历史记录在「提问瞬间」就出现并选中,不必等整轮执行结束。
+        if (wasNewConversation) {
+          void loadConversations()
+        }
       },
       onStep: (nextMessage) => {
         const index = messages.value.findIndex((item) => item.id === replyMessage.id)
@@ -799,7 +802,7 @@ onBeforeUnmount(() => {
             class="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-6 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:min-w-[112px] sm:text-sm"
             :disabled="!canSend"
           >
-            {{ isLoading ? '重新提问' : '发送查询' }}
+            {{ isLoading ? '回答中…' : '发送查询' }}
           </button>
         </div>
       </form>
