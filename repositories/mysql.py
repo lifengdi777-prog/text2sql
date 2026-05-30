@@ -1,8 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
-from models.meta import ColumnInfoMySQL, MetricInfoMySQL, TableInfoMySQL, ColumnMetricMySQL
-from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric
-from sqlalchemy import text, and_
+from models.meta import ColumnInfoMySQL, MetricInfoMySQL, TableInfoMySQL, ColumnMetricMySQL, JoinRelationMySQL
+from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric, JoinRelation
+from sqlalchemy import text, and_, or_
 from typing import Any
 
 # MetaDBRepository类用于操作元数据库中的表格和指标信息。
@@ -15,6 +15,28 @@ class MetaDBRepository:
         await self.session.execute(delete(MetricInfoMySQL))
         await self.session.execute(delete(ColumnInfoMySQL))
         await self.session.execute(delete(TableInfoMySQL))
+        await self.session.execute(delete(JoinRelationMySQL))
+
+    async def clear_join_relations(self):
+        await self.session.execute(delete(JoinRelationMySQL))
+
+    # 批量写入表间 JOIN 关系(来自 DW 真实外键)
+    async def add_join_relations(self, join_relations: list[JoinRelation]):
+        self.session.add_all([JoinRelationMySQL(**jr.model_dump()) for jr in join_relations])
+
+    # 取出连接给定表集合所需的 JOIN 关系：只返回两端都在 table_ids 内的边。
+    # 星型模型下,这恰好就是"事实表 ↔ 已选维表"那几条边,路径唯一无歧义。
+    async def get_join_relations_by_table_ids(self, table_ids: list[str]) -> list[JoinRelation]:
+        if not table_ids:
+            return []
+        stmt = select(JoinRelationMySQL).where(
+            and_(
+                JoinRelationMySQL.source_table.in_(table_ids),
+                JoinRelationMySQL.target_table.in_(table_ids),
+            )
+        )
+        rows = await self.session.scalars(stmt)
+        return [JoinRelation.model_validate(row) for row in rows]
 
 #以下方法用于将ColumnInfo、TableInfo、MetricInfo和ColumnMetric对象添加到数据库中。
 # 每个方法都接受一个包含相应对象的列表，并将这些对象转换为对应的MySQL模型实例，
@@ -131,6 +153,19 @@ class DWDBRepository:
     #    例如 distinct(gender, city) 后，gender 这一列仍可能得到 ["男", "女", "女", "男"]。
     # 所以如果这个方法的目标是给每一列提供“候选枚举值”，通常还需要在这里再按列去重；
     # 如果目标是保留原始采样结果或频次特征，则不应该去重。
+
+    # 从 information_schema 读取当前库的真实外键约束,作为表间 JOIN 关系的权威来源。
+    # 返回 (source_table, source_column, target_table, target_column) 四元组列表。
+    async def get_foreign_keys(self) -> list[tuple[str, str, str, str]]:
+        sql = """
+            SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            ORDER BY TABLE_NAME, COLUMN_NAME
+        """
+        result = await self.session.execute(text(sql))
+        return [(row[0], row[1], row[2], row[3]) for row in result.fetchall()]
 
     async def get_db_info(self):
         """

@@ -42,3 +42,14 @@ class ValueInfo(BaseModel):
     value: str
     column_id: str
     model_config = ConfigDict(from_attributes=True)
+
+
+class JoinRelation(BaseModel):
+    # 源表(外键所在表)→目标表(被引用表)的一条 JOIN 边
+    source_table: str
+    source_column: str
+    target_table: str
+    target_column: str
+    join_type: Literal['inner', 'left'] = 'inner'
+    description: str = ''
+    model_config = ConfigDict(from_attributes=True)

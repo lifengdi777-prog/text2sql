@@ -43,3 +43,16 @@ class ColumnMetricMySQL(Base):
 
     column_id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="列编号")
     metric_id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="指标编号")
+
+
+# 表与表之间的 JOIN 关系。来源于 DW 业务库的真实外键约束(information_schema),
+# 在 init 阶段抽取并落库,运行时供 plan_joins 节点规划 join path 用。
+class JoinRelationMySQL(Base):
+    __tablename__ = "join_relation"
+
+    source_table: Mapped[str] = mapped_column(String(64),primary_key=True,comment="源表编号(外键所在表)")
+    source_column: Mapped[str] = mapped_column(String(128),primary_key=True,comment="源表外键列名")
+    target_table: Mapped[str] = mapped_column(String(64),primary_key=True,comment="目标表编号(被引用表)")
+    target_column: Mapped[str] = mapped_column(String(128),primary_key=True,comment="目标表被引用列名")
+    join_type: Mapped[str | None] = mapped_column(String(16),comment="JOIN 类型(inner/left)")
+    description: Mapped[str | None] = mapped_column(Text,comment="关系描述")

@@ -20,20 +20,23 @@ async def generate_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     date_info = state.date_info
     #当前数据库信息
     db_info = state.db_info
+    #plan_joins 规划出的 JOIN 子句(强约束)；为空时给出占位说明，让模型按需自行连接。
+    join_clauses = state.join_clauses or "（本次查询无预设 JOIN 关系，如涉及多表请根据字段主外键角色合理连接）"
 
 
     prompt = await load_prompt("generate_sql")
     #定义提示词模板，指定输入变量列表。这个模板会被用来生成最终的提示词文本，输入变量会被替换成实际的值。
-    prompt_template = PromptTemplate(template=prompt, input_variables=['query', "table_infos", 'metric_infos', 'date_info', 'db_info'])
+    prompt_template = PromptTemplate(template=prompt, input_variables=['query', "table_infos", 'metric_infos', 'date_info', 'db_info', 'join_clauses'])
     chain = prompt_template | llm | StrOutputParser()
     #异步执行整条 LangChain 链，把所有需要的数据一次性传入，获取最终结果。
     result = await chain.ainvoke({
-        "query": query, 
+        "query": query,
         #把组 Pydantic 对象转换成字典列表，然后传入提示词模板。因为提示词模板只能处理基本数据类型，不能直接处理复杂对象。
         "table_infos": [table_info.model_dump() for table_info in table_infos],
         "metric_infos": [metric_info.model_dump() for metric_info in metric_infos],
         "date_info": date_info,
-        "db_info": db_info
+        "db_info": db_info,
+        "join_clauses": join_clauses
     })
     writer(WSStepInfo(step="生成SQL语句", status="success"))
 
