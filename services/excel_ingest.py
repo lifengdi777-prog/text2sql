@@ -21,7 +21,7 @@ import hashlib
 import io
 import re
 import warnings
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -32,6 +32,7 @@ from core.log import logger
 from repositories.es import UploadESRepository
 from repositories.upload import UploadDatasetRepository
 from services import object_store
+from services.header_detect import SheetHeader, detect_headers, read_sheet_previews
 
 # ───────── 常量 ─────────────────────────────────────────
 _TOTAL_KEYWORDS = {"小计", "合计", "总计", "汇总", "total", "subtotal", "sum"}
@@ -64,11 +65,32 @@ def get_session_factory() -> async_sessionmaker:
 
 # ───────── 清洗 ─────────────────────────────────────────
 
-def parse_workbook(file_bytes: bytes) -> dict[str, pd.DataFrame]:
-    """读 Excel 所有 sheet,header=0 默认表头在第 1 行(MVP 简单做法)。"""
+def parse_workbook(
+    file_bytes: bytes,
+    headers: dict[str, SheetHeader] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """读 Excel 所有 sheet。
+
+    若传入 headers(LLM 检测结果):跳过表头上方的标题/空行,从 data_start_row 起读数据,
+    并用检测到的列名;列数对不上或没检测结果 → 回退 header=0(旧行为,安全兜底)。
+    """
+    headers = headers or {}
     xls = pd.ExcelFile(io.BytesIO(file_bytes), engine="openpyxl")
-    return {s: pd.read_excel(xls, sheet_name=s, header=0, dtype=object)
-            for s in xls.sheet_names}
+    out: dict[str, pd.DataFrame] = {}
+    for s in xls.sheet_names:
+        spec = headers.get(s)
+        if spec is not None:
+            df = pd.read_excel(xls, sheet_name=s, header=None, dtype=object,
+                               skiprows=spec.data_start_row)
+            if df.shape[1] == len(spec.columns):
+                df.columns = spec.columns
+                out[s] = df
+                continue
+            logger.warning(
+                f"sheet「{s}」列数({df.shape[1]})与检测列名({len(spec.columns)})不符,回退 header=0"
+            )
+        out[s] = pd.read_excel(xls, sheet_name=s, header=0, dtype=object)
+    return out
 
 
 def _normalize_columns(cols: list[Any]) -> list[str]:
@@ -361,11 +383,21 @@ async def build_es_index_background(dataset_id: int, sheets: dict[str, pd.DataFr
 
 # ───────── 主编排 ──────────────────────────────────────
 
-async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[str, Any]:
+async def ingest_excel(
+    user_id: str,
+    filename: str,
+    file_bytes: bytes,
+    on_step: Callable[[str, str], None] | None = None,
+) -> dict[str, Any]:
     """主入口:Excel → 清洗 → 入库 → 后台建 ES 索引。返回数据集摘要。
 
     去重:同 user_id + 同文件名 + 同 SHA-256 → 直接返回已有 dataset_id,跳过处理。
+    on_step(step, status):可选回调,用于上传时把各阶段进度推给前端(SSE)。
     """
+    def _s(step: str, status: str) -> None:
+        if on_step:
+            on_step(step, status)
+
     Session = get_session_factory()
 
     # 0. 算 hash + 查重(纯 IO + 一次 MySQL 索引查询,毫秒级)
@@ -384,9 +416,15 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
             "duplicated": True,                # ← 告诉前端这次是去重命中
         }
 
-    # 1. parse + clean(纯 pandas,放线程池跑)
+    # 1. LLM 检测表头(读前几行原始网格 → 定位 data_start_row + 列名;失败则回退 header=0)
+    _s("AI 识别表头", "running")
+    previews = await asyncio.to_thread(read_sheet_previews, file_bytes)
+    header_specs = await detect_headers(previews)
+    _s("AI 识别表头", "success")
+
+    # 2. parse + clean(纯 pandas,放线程池跑)
     def _parse_and_clean() -> dict[str, pd.DataFrame]:
-        raw = parse_workbook(file_bytes)
+        raw = parse_workbook(file_bytes, header_specs)
         cleaned: dict[str, pd.DataFrame] = {}
         for name, df in raw.items():
             c = clean_sheet(df)
@@ -394,9 +432,11 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
                 cleaned[name] = c
         return cleaned
 
+    _s("清洗字段", "running")
     cleaned_sheets = await asyncio.to_thread(_parse_and_clean)
     if not cleaned_sheets:
         raise ValueError("文件中没有解析出任何有效数据(可能是空表或格式不支持)")
+    _s("清洗字段", "success")
 
     # 2. 先插一行 MySQL 拿 dataset_id(带 hash,方便未来再查重)
     async with Session() as session:
@@ -407,6 +447,7 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
         await session.commit()
 
     try:
+        _s("写入存储", "running")
         # 3. 写 parquet 到对象存储(folder_path 存对象前缀,不再是本地路径)
         prefix = f"ds_{dataset_id}"
         sheet_files = await asyncio.to_thread(save_parquets, prefix, cleaned_sheets)
@@ -448,6 +489,7 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
                 total_rows=total_rows,
             )
             await session.commit()
+        _s("写入存储", "success")
 
         # 6. 后台异步建 ES 值索引(不阻塞返回)
         asyncio.create_task(build_es_index_background(dataset_id, cleaned_sheets))
