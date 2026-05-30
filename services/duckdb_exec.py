@@ -1,10 +1,9 @@
-"""DuckDB 执行层:让 DuckDB **直接读 parquet**,不再把整表 load 进 pandas、也不缓存 DataFrame。
+"""DuckDB 执行层:让 DuckDB **直接读 parquet**
 
 做法:每个 sheet 的 parquet 从对象存储下到一个临时文件,给 DuckDB 建一个
 `read_parquet(本地文件)` 的视图;LLM 的 SQL 按视图名查,DuckDB 做列裁剪/谓词下推,
 只解析用到的数据。查询结束删临时目录。
 
-为什么不缓存 DataFrame:整表物化进进程内存(旧 _DF_CACHE)既占内存、命中也要反序列化;
 交给 DuckDB 直读 parquet 更省内存、更贴近列存查询引擎的用法。
 
 安全:

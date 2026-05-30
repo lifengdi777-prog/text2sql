@@ -4,10 +4,6 @@
   - 用户上传的原始 Excel:  ds_{id}/original/{文件名}
   - 各 sheet 清洗后的 parquet: ds_{id}/{sheet}.parquet
 
-为什么 parquet 也放对象存储而不是本地磁盘:
-  - 多 worker / 多机部署时,本地磁盘各写各的,查询节点读不到上传节点写的文件。
-  - 对象存储是唯一权威副本,所有节点都从这里读,天然支持横向扩展。
-
 boto3 连 MinIO 的关键点:
   - signature_version=s3v4:MinIO 只认 v4 签名。
   - addressing_style=path:用 http://host:9000/bucket/key 形式;
