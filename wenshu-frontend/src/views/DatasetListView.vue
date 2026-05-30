@@ -22,6 +22,10 @@ const uploadOpen = ref(false)
 const previewId = ref<number | null>(null)
 const previewOpen = ref(false)
 
+// 删除确认弹框(自定义,替代浏览器原生 confirm,与会话删除弹框风格统一)
+const deleteTarget = ref<DatasetSummary | null>(null)
+const deleting = ref(false)
+
 const filtered = computed(() => {
   const kw = search.value.trim().toLowerCase()
   if (!kw) return datasets.value
@@ -93,13 +97,27 @@ function openPreview(ds: DatasetSummary) {
   previewOpen.value = true
 }
 
-async function onRemove(ds: DatasetSummary) {
-  if (!window.confirm(`确定删除数据集「${ds.name}」吗？此操作不可恢复。`)) return
+function onRemove(ds: DatasetSummary) {
+  deleteTarget.value = ds
+}
+
+function closeDelete() {
+  if (deleting.value) return
+  deleteTarget.value = null
+}
+
+async function confirmDelete() {
+  const ds = deleteTarget.value
+  if (!ds || deleting.value) return
+  deleting.value = true
   try {
     await deleteDataset(ds.dataset_id)
+    deleteTarget.value = null
     await reload()
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : '删除失败'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -201,5 +219,53 @@ onUnmounted(stopPolling)
       @close="previewOpen = false"
       @open-chat="(id) => router.push(`/datasets/${id}/chat`)"
     />
+
+    <!-- 删除确认弹框(与会话删除弹框风格统一) -->
+    <div
+      v-if="deleteTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="closeDelete"
+    >
+      <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+        <div class="flex items-start gap-3">
+          <span
+            class="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-500"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+              <path
+                d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          <div class="min-w-0">
+            <h3 class="text-base font-semibold text-slate-800">删除数据集</h3>
+            <p class="mt-1 break-words text-sm text-slate-500">
+              确定删除「<span class="font-medium text-slate-700">{{ deleteTarget.name }}</span
+              >」？此操作不可恢复。
+            </p>
+          </div>
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            :disabled="deleting"
+            @click="closeDelete"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-300"
+            :disabled="deleting"
+            @click="confirmDelete"
+          >
+            {{ deleting ? '删除中…' : '删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
