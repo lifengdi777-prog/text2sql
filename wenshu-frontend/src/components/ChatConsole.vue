@@ -202,7 +202,7 @@ onBeforeUnmount(() => {
       <div
         v-for="message in messages"
         :key="message.id"
-        class="mx-auto flex w-full max-w-4xl"
+        class="mx-auto flex w-full max-w-5xl"
         :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
       >
         <article
@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
 
         <article
           v-else
-          class="w-full max-w-3xl rounded-[28px] rounded-bl-md border border-white/75 bg-white/92 px-5 py-5 shadow-[0_18px_40px_rgba(148,163,184,0.16)] sm:px-6"
+          class="w-full max-w-full rounded-[28px] rounded-bl-md border border-white/75 bg-white/92 px-5 py-5 shadow-[0_18px_40px_rgba(148,163,184,0.16)] sm:px-6"
         >
           <div class="mb-4 flex items-center justify-between gap-4">
             <div>
