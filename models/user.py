@@ -18,4 +18,5 @@ class UserMySQL(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True, comment="登录名(唯一)")
     # bcrypt 哈希(含盐),固定 60 字符,留宽到 255 兼容未来换算法
     password_hash: Mapped[str] = mapped_column(String(255), comment="bcrypt 密码哈希")
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 本地时间,与全项目 datetime.now() 统一;server_default 仅作兜底
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())

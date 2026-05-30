@@ -23,6 +23,7 @@ class ConversationRepository:
         title: str,
         dataset_id: int | None = None,
     ) -> ConversationMySQL:
+        # created_at/updated_at 由模型层 default=datetime.now(本地时间)自动填充,无需在此显式赋值。
         conv = ConversationMySQL(
             user_id=user_id,
             source=source,

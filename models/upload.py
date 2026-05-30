@@ -37,11 +37,13 @@ class UploadDatasetMySQL(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="SHA-256 of original file")
     # 嵌套的 schema profile 直接放 JSON 列(MySQL 8+ 原生 JSON 类型)
     schema_json: Mapped[dict | None] = mapped_column(JSON, comment="所有 sheet 的列详情")
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 本地时间(Python 端 default/onupdate),与全项目 datetime.now() 统一;server_default 仅作兜底
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
+        default=datetime.now,
         server_default=func.now(),
-        onupdate=func.now(),
+        onupdate=datetime.now,
     )
 
     # 联合索引,加速"同用户 + 同名 + 同 hash"查重

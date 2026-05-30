@@ -35,11 +35,15 @@ class ConversationMySQL(Base):
     source: Mapped[str] = mapped_column(String(16), default="db", comment="db / dataset")
     dataset_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="数据集会话才有,指向 upload_datasets")
     title: Mapped[str] = mapped_column(String(255), default="新对话", comment="会话标题")
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 用 Python 端 default/onupdate(本地时间)而非仅 server_default(DB 端,容器多为 UTC),
+    # 避免新建/更新时间与全项目 datetime.now() 不一致,导致前端按本地日期分组错位。
+    # server_default 保留,仅作建表 DDL / 裸 SQL 插入的兜底。
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
+        default=datetime.now,
         server_default=func.now(),
-        onupdate=func.now(),
+        onupdate=datetime.now,
     )
 
     # 列表查询:按 (user_id, source, dataset_id) 过滤后按时间倒序,加联合索引
@@ -58,4 +62,5 @@ class MessageMySQL(Base):
     content: Mapped[str | None] = mapped_column(Text, nullable=True, comment="用户问题文本")
     # 助手回复的完整渲染结构(MySQL 8+ 原生 JSON)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="助手回复渲染数据")
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 同上:本地时间,与 conversations 保持一致
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())
