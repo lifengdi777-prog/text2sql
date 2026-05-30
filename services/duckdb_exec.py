@@ -1,49 +1,67 @@
-"""DuckDB 执行层:把数据集每个 sheet 的 DataFrame 注册成 DuckDB 视图,
-对 LLM 生成的 SELECT 做「绑定校验(EXPLAIN)」与「执行取数(query)」。
+"""DuckDB 执行层:让 DuckDB **直接读 parquet**,不再把整表 load 进 pandas、也不缓存 DataFrame。
 
-安全模型(为什么这样比裸 exec pandas 代码安全):
-  - 只跑 SQL,没有 Python 逃逸,搞不出 os.system / 读文件 / 连网络;
-  - 连接是 :memory:,只 register 内存里的 DataFrame —— **不碰文件系统、不碰 MinIO 密钥**,
-    worst case 只是一条作用在用户自己数据上的查询;
-  - 额外 SET enable_external_access=false 再关死外部访问;
-  - 配合 validate_sql 的 sqlglot「单条 SELECT」校验 + 强制 LIMIT,边界基本关闭。
+做法:每个 sheet 的 parquet 从对象存储下到一个临时文件,给 DuckDB 建一个
+`read_parquet(本地文件)` 的视图;LLM 的 SQL 按视图名查,DuckDB 做列裁剪/谓词下推,
+只解析用到的数据。查询结束删临时目录。
+
+为什么不缓存 DataFrame:整表物化进进程内存(旧 _DF_CACHE)既占内存、命中也要反序列化;
+交给 DuckDB 直读 parquet 更省内存、更贴近列存查询引擎的用法。
+
+安全:
+  - 必须允许 DuckDB 读本地文件(默认即开)。为防 LLM 的 SQL 自己去读任意文件,
+    validate_sql 里已禁掉 read_parquet/read_csv/glob 等读文件函数 —— LLM 只能用我们建好的视图;
+  - 视图里的 read_parquet 路径由服务端用 schema 的 parquet_file 拼本地临时路径,不含用户输入。
 """
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
+import tempfile
 from typing import Any
 
 import duckdb
 import pandas as pd
 
-from services.dataset_loader import get_dataset_info, load_sheet_df
+from services import object_store
+from services.dataset_loader import get_dataset_info
 
-# 单次查询返回上限(防 LLM 写出无 LIMIT 的全表查询撑爆前端/内存)
+# 单次查询返回上限(防 LLM 写出无 LIMIT 的全表查询)
 ROW_LIMIT = 1000
 
 
-async def _load_sheet_dfs(dataset_id: int) -> dict[str, pd.DataFrame]:
-    """加载数据集所有 sheet 的 DataFrame(带 dataset_loader 的缓存)。"""
+async def _materialize_sheets(dataset_id: int) -> tuple[dict[str, str], str]:
+    """把数据集各 sheet 的 parquet 下到一个临时目录。返回 ({sheet: 本地路径}, tmpdir)。"""
     info = await get_dataset_info(dataset_id)
-    if not info or not info.get("schema"):
-        raise ValueError(f"数据集 {dataset_id} schema 不可用")
-    sheet_names = list((info["schema"].get("sheets") or {}).keys())
-    dfs: dict[str, pd.DataFrame] = {}
-    for name in sheet_names:
-        dfs[name] = await load_sheet_df(dataset_id, name)
-    return dfs
+    if not info or not info.get("schema") or not info.get("folder_path"):
+        raise ValueError(f"数据集 {dataset_id} schema/folder 不可用")
+    folder = info["folder_path"]
+    sheets = info["schema"].get("sheets") or {}
+
+    tmpdir = tempfile.mkdtemp(prefix=f"wenshu_ds{dataset_id}_")
+    paths: dict[str, str] = {}
+    for i, (name, sinfo) in enumerate(sheets.items()):
+        pq = sinfo.get("parquet_file")
+        if not pq:
+            continue
+        raw = await asyncio.to_thread(object_store.get_bytes, f"{folder}/{pq}")
+        local = os.path.join(tmpdir, f"sheet_{i}.parquet")
+        with open(local, "wb") as f:
+            f.write(raw)
+        paths[name] = local
+    if not paths:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise ValueError(f"数据集 {dataset_id} 没有可用的 parquet")
+    return paths, tmpdir
 
 
-def _new_con(dfs: dict[str, pd.DataFrame]) -> duckdb.DuckDBPyConnection:
-    """内存连接 + 关外部访问 + 把每个 sheet 注册成同名视图。"""
+def _new_con(paths: dict[str, str]) -> duckdb.DuckDBPyConnection:
+    """内存连接,每个 sheet 建一个指向其 parquet 的视图。"""
     con = duckdb.connect(database=":memory:")
-    try:
-        con.execute("SET enable_external_access=false")
-    except Exception:
-        # 个别版本不支持该参数 —— 不致命,register-only 模式本身已不碰外部
-        pass
-    for name, df in dfs.items():
-        con.register(name, df)
+    for name, local in paths.items():
+        view = name.replace('"', '""')
+        safe_path = local.replace("\\", "/").replace("'", "''")
+        con.execute(f'CREATE VIEW "{view}" AS SELECT * FROM read_parquet(\'{safe_path}\')')
     return con
 
 
@@ -72,29 +90,35 @@ def _df_to_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 async def explain_sql(dataset_id: int, sql: str) -> None:
-    """绑定校验:语法 / 表名 / 列名错误会抛异常(EXPLAIN 不真正执行)。"""
-    dfs = await _load_sheet_dfs(dataset_id)
+    """绑定校验:语法 / 表名 / 列名错误会抛异常(EXPLAIN 不真正取数)。"""
+    paths, tmpdir = await _materialize_sheets(dataset_id)
 
     def _run() -> None:
-        con = _new_con(dfs)
+        con = _new_con(paths)
         try:
             con.execute(f"EXPLAIN {sql}")
         finally:
             con.close()
 
-    await asyncio.to_thread(_run)
+    try:
+        await asyncio.to_thread(_run)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 async def query_sql(dataset_id: int, sql: str) -> list[dict[str, Any]]:
     """执行 SELECT,返回 rows(list[dict])。"""
-    dfs = await _load_sheet_dfs(dataset_id)
+    paths, tmpdir = await _materialize_sheets(dataset_id)
 
     def _run() -> pd.DataFrame:
-        con = _new_con(dfs)
+        con = _new_con(paths)
         try:
             return con.execute(sql).fetch_df()
         finally:
             con.close()
 
-    df = await asyncio.to_thread(_run)
+    try:
+        df = await asyncio.to_thread(_run)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
     return _df_to_rows(df)

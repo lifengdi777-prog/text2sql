@@ -20,6 +20,15 @@ from core.log import logger
 from services.duckdb_exec import ROW_LIMIT, explain_sql
 
 
+# 禁止 LLM 的 SQL 直接调"读文件/读 URL"类函数 —— 它只能查我们建好的视图,
+# 不能用 read_parquet 等去读任意本地文件/对象存储路径(DuckDB 现在开了文件访问以直读 parquet)。
+_BLOCKED_FUNCS = {
+    "read_parquet", "parquet_scan", "read_csv", "read_csv_auto", "csv_scan",
+    "read_json", "read_json_auto", "read_json_objects", "read_ndjson",
+    "read_text", "read_blob", "glob", "parquet_metadata", "parquet_schema",
+}
+
+
 def _safe_select(sql: str) -> tuple[bool, str, str | None]:
     """返回 (是否安全, 原因, 规范化后的SQL)。规范化 = 重新序列化 + 外层强制 LIMIT。"""
     try:
@@ -31,6 +40,13 @@ def _safe_select(sql: str) -> tuple[bool, str, str | None]:
     stmt = statements[0]
     if not isinstance(stmt, (exp.Select, exp.Union)):
         return False, f"只允许 SELECT 查询,检测到:{type(stmt).__name__}", None
+    # 禁读文件函数:read_parquet / read_csv / glob …(防越权读任意文件)。
+    # 注意:read_parquet/read_csv 在 sqlglot 里是专有节点(用 sql_name() 取名),
+    # glob/read_json_auto 等是 Anonymous(用 .name 取名),两者都要查。
+    for fn in stmt.find_all(exp.Func):
+        name = (fn.name if isinstance(fn, exp.Anonymous) else fn.sql_name()).lower()
+        if name in _BLOCKED_FUNCS:
+            return False, f"不允许调用读文件函数:{name}", None
     inner = stmt.sql(dialect="duckdb")
     normalized = f'SELECT * FROM (\n{inner}\n) AS "_wrapped" LIMIT {ROW_LIMIT}'
     return True, "", normalized

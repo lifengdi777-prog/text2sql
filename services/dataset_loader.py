@@ -1,47 +1,19 @@
-"""数据集加载层:从 MySQL 拿 schema,从 parquet 拿 DataFrame,都带 TTL 缓存。
+"""数据集加载层:从 MySQL 拿 schema(带短期缓存),并把 schema_json 渲染成给 LLM 看的 markdown。
 
-缓存策略:
-  - Schema(MySQL 行,小):TTL 300s,最多 100 个
-  - DataFrame(parquet,大):TTL 1800s(30 分钟),最多 200 个 (dataset, sheet)
-  - 单次 LLM 请求会反复读 schema + 至少一个 DF,缓存命中能省一次 MySQL+parquet IO
-
-Schema 渲染:把 schema_json 转成给 LLM 看的 markdown(列名/类型/详情)。
+数据本体不再在这里加载/缓存 —— 查询时由 DuckDB 直接读 parquet(见 services/duckdb_exec.py),
+不把整表 load 进进程内存,也不缓存 DataFrame(更省内存、更贴近列存引擎用法)。
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
-import pandas as pd
 from cachetools import TTLCache
 
-from core.log import logger
 from repositories.upload import UploadDatasetRepository
-from services import object_store
 from services.excel_ingest import get_session_factory
 
 
-# ───────────────────────────────────────────
-# 缓存
-# ───────────────────────────────────────────
-
-# DataFrame 缓存:key = (dataset_id, sheet_name),value = (df, parquet object key)
-# 按「总内存预算」限容,而不是按条目数:单表可能很大(上传上限 100MB),
-# 按条数限容会被几个大表撑爆内存。getsizeof 让 cachetools 按 DataFrame 实际
-# 内存占用累加,超预算自动淘汰最旧条目。
-_DF_CACHE_MAX_BYTES = 512 * 1024 * 1024   # 512MB 总预算
-_DF_TTL = 1800                            # 30 分钟
-
-
-def _df_entry_nbytes(entry: tuple) -> int:
-    """缓存条目大小 = DataFrame 深度内存占用(含 object 列里字符串的实际字节)。"""
-    df, _path = entry
-    return int(df.memory_usage(deep=True).sum())
-
-
-_DF_CACHE: TTLCache = TTLCache(maxsize=_DF_CACHE_MAX_BYTES, ttl=_DF_TTL, getsizeof=_df_entry_nbytes)
-
-# Schema 缓存:小对象,按条数限容即可
+# Schema 缓存:小对象(一行元信息 + schema_json),按条数限容;TTL 短,避免读到旧 status
 _SCHEMA_CACHE: TTLCache = TTLCache(maxsize=100, ttl=300)
 
 
@@ -75,62 +47,9 @@ async def get_dataset_info(dataset_id: int) -> dict[str, Any] | None:
     return info
 
 
-async def load_sheet_df(dataset_id: int, sheet_name: str) -> pd.DataFrame:
-    """加载某 sheet 的 DataFrame(从 parquet),带内存预算缓存。"""
-    key = (dataset_id, sheet_name)
-    cached = _DF_CACHE.get(key)
-    if cached is not None:
-        df, cached_key = cached
-        # 跨进程一致性兜底:invalidate_cache 只能清当前 worker 的缓存,
-        # 别的 worker 删了数据集后,本进程缓存仍可能命中旧 DataFrame。
-        # 删除会连带删掉对象存储里的 parquet,这里 HEAD 一下对象是否还在:
-        # 不在 → 说明已被删除,丢弃本地缓存,走下面的重新加载(会抛出删除后的错误)。
-        # (同一 dataset_id 的 parquet 内容不会原地变更——重传会分配新 id——
-        #  所以只需防「已删除」这一种陈旧情形;HEAD 远比一次 GET+parse 便宜。)
-        if await asyncio.to_thread(object_store.object_exists, cached_key):
-            return df
-        _DF_CACHE.pop(key, None)
-
-    info = await get_dataset_info(dataset_id)
-    if info is None:
-        raise ValueError(f"数据集 {dataset_id} 不存在")
-    if info["status"] != "ready":
-        raise ValueError(f"数据集 {dataset_id} 状态={info['status']},不可查询")
-
-    schema = info["schema"] or {}
-    sheets = schema.get("sheets", {})
-    if sheet_name not in sheets:
-        available = list(sheets.keys())
-        raise ValueError(f"sheet '{sheet_name}' 不存在于数据集 {dataset_id}(可选:{available})")
-
-    parquet_file = sheets[sheet_name].get("parquet_file")
-    if not parquet_file:
-        raise ValueError(f"sheet '{sheet_name}' 缺 parquet_file 字段(schema 损坏?)")
-
-    # folder_path 现在是对象前缀(如 ds_6),拼上文件名得到完整 object key
-    object_key = f"{info['folder_path']}/{parquet_file}"
-    if not await asyncio.to_thread(object_store.object_exists, object_key):
-        raise FileNotFoundError(f"parquet 对象不存在:{object_key}")
-
-    df = await asyncio.to_thread(object_store.read_df_parquet, object_key)
-    try:
-        _DF_CACHE[key] = (df, object_key)
-    except ValueError:
-        # 单个 DataFrame 超过整个缓存预算 → 放弃缓存直接返回,
-        # 避免 cachetools 因 value 大于 maxsize 抛错(宁可不缓存,也不能让查询失败)。
-        logger.warning(
-            f"DataFrame(dataset={dataset_id} sheet={sheet_name})超过缓存预算 "
-            f"{_DF_CACHE_MAX_BYTES} 字节,本次跳过缓存"
-        )
-    return df
-
-
 def invalidate_cache(dataset_id: int) -> None:
-    """删除/更新数据集时调,清掉对应缓存防止陈旧。"""
+    """删除/更新数据集时调,清掉 schema 缓存防止陈旧。"""
     _SCHEMA_CACHE.pop(dataset_id, None)
-    stale_keys = [k for k in _DF_CACHE.keys() if k[0] == dataset_id]
-    for k in stale_keys:
-        _DF_CACHE.pop(k, None)
 
 
 # ───────────────────────────────────────────
