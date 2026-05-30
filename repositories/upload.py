@@ -79,6 +79,13 @@ class UploadDatasetRepository:
         if ds is not None:
             ds.status = status
 
+    async def mark_failed(self, dataset_id: int, error: str) -> None:
+        """后台处理失败:置 failed,并把错误信息存进 schema_json._error(不覆盖已有 schema),供卡片提示。"""
+        ds = await self.session.get(UploadDatasetMySQL, dataset_id)
+        if ds is not None:
+            ds.status = "failed"
+            ds.schema_json = {**(ds.schema_json or {}), "_error": str(error)[:500]}
+
     async def get(self, dataset_id: int) -> UploadDatasetMySQL | None:
         return await self.session.get(UploadDatasetMySQL, dataset_id)
 

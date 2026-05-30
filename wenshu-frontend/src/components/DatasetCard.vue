@@ -43,12 +43,12 @@ function chooseRemove() {
   >
     <div class="flex items-center gap-2 text-sm font-medium text-slate-600">
       <span class="h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-hidden="true" />
-      索引创建中
+      解析处理中
     </div>
     <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
       <div class="dataset-progress h-full w-1/3 rounded-full bg-sky-400" />
     </div>
-    <p class="text-xs text-slate-400">完成后即可开始问数</p>
+    <p class="text-xs text-slate-400">AI 解析中,完成后即可开始问数</p>
   </div>
 
   <!-- 已就绪 / 失败:正常卡片 -->
@@ -81,9 +81,16 @@ function chooseRemove() {
       </span>
     </div>
 
-    <!-- 底部:表数量 + hover 操作 -->
-    <div class="mt-auto flex items-center justify-between">
-      <span class="inline-flex items-center gap-1.5 text-xs text-slate-500">
+    <!-- 底部:表数量 / 失败原因 + hover 操作 -->
+    <div class="mt-auto flex items-center justify-between gap-2">
+      <span
+        v-if="dataset.status === 'failed'"
+        class="truncate text-xs text-rose-500"
+        :title="dataset.error_message || '处理失败'"
+      >
+        {{ dataset.error_message || '处理失败,请重试' }}
+      </span>
+      <span v-else class="inline-flex items-center gap-1.5 text-xs text-slate-500">
         <span aria-hidden="true">▦</span>
         {{ dataset.sheet_count }} 个表 · {{ dataset.total_rows }} 行
       </span>

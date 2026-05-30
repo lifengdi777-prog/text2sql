@@ -13,6 +13,8 @@ export interface DatasetSummary {
   sheet_count: number
   total_rows: number
   created_at: string | null
+  // 后台处理失败时的原因(status=failed 时有值),卡片用来提示
+  error_message?: string | null
 }
 
 // schema_json 里单列的 profile(excel_ingest.profile_columns 产出)
@@ -49,18 +51,14 @@ export interface DatasetDetail extends DatasetSummary {
   schema: DatasetSchema | null
 }
 
-// POST /dataset/upload 返回
+// POST /dataset/upload 返回(非阻塞:只确认已建行,后续状态靠列表轮询)
 export interface UploadResult {
   ok: boolean
   dataset_id: number
   name: string
-  folder_path: string
+  status?: DatasetStatus
   sheet_count: number
   total_rows: number
   duplicated: boolean
-  sheets?: Array<{
-    sheet: string
-    row_count: number
-    columns: string[]
-  }>
+  folder_path?: string
 }

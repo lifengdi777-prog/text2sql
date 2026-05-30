@@ -17,9 +17,34 @@ from pydantic import BaseModel
 from core.log import logger
 
 _PREVIEW_ROWS = 15          # 喂给 LLM 的预览行数
-_DETECT_TIMEOUT = 60        # LLM 超时(秒)
+_DETECT_TIMEOUT = 30        # 单次 LLM 超时(秒)
+_DETECT_ATTEMPTS = 2        # 超时/失败重试次数(LLM 偶发卡顿,重来一次基本就好)
+_DETECT_BACKOFF = 2.0       # 重试前的退避(秒):贴着重试多半还在限流窗口里,等一下再来
 _PROMPT_REL = Path("agent/dataset_agent/prompts/detect_header.md")
 _PROMPT_CACHE: str | None = None
+
+# 表头检测专用的快模型客户端(独立于问数用的主 llm),懒加载单例。
+# 用 app_config.llm.fast_model_name(默认 deepseek-v4-flash),复用同一 api_key / base_url。
+_DETECT_LLM = None
+
+
+def _get_detect_llm():
+    global _DETECT_LLM
+    if _DETECT_LLM is None:
+        from langchain_openai import ChatOpenAI
+        from pydantic import SecretStr
+
+        from conf.app_config import app_config
+
+        _DETECT_LLM = ChatOpenAI(
+            model=app_config.llm.fast_model_name,
+            api_key=SecretStr(app_config.llm.api_key),
+            base_url=app_config.llm.base_url,
+            temperature=0,
+            timeout=_DETECT_TIMEOUT,
+            max_retries=1,
+        )
+    return _DETECT_LLM
 
 
 def _get_prompt() -> str:
@@ -80,10 +105,7 @@ async def detect_headers(previews: dict[str, list[list[str]]]) -> dict[str, Shee
     if not previews:
         return {}
 
-    # 延迟导入,避免 services ← agent 循环依赖
     from langchain.messages import HumanMessage, SystemMessage
-
-    from agent.llm import llm
 
     widths = {s: _grid_width(g) for s, g in previews.items()}
     blocks = [
@@ -92,17 +114,26 @@ async def detect_headers(previews: dict[str, list[list[str]]]) -> dict[str, Shee
     ]
     user = "\n\n".join(blocks) + "\n\n请按要求输出每个 sheet 的表头检测 JSON。"
 
-    try:
-        structured = llm.with_structured_output(WorkbookHeaders, method="json_mode")
-        result: WorkbookHeaders = await asyncio.wait_for(
-            structured.ainvoke([  # type: ignore
-                SystemMessage(content=_get_prompt()),
-                HumanMessage(content=user),
-            ]),
-            timeout=_DETECT_TIMEOUT,
-        )
-    except Exception as exc:
-        logger.warning(f"LLM 表头检测失败,全部回退 header=0:{exc}")
+    structured = _get_detect_llm().with_structured_output(WorkbookHeaders, method="json_mode")
+    messages = [SystemMessage(content=_get_prompt()), HumanMessage(content=user)]
+
+    result: WorkbookHeaders | None = None
+    for attempt in range(1, _DETECT_ATTEMPTS + 1):
+        try:
+            result = await asyncio.wait_for(
+                structured.ainvoke(messages),  # type: ignore
+                timeout=_DETECT_TIMEOUT,
+            )
+            break
+        except Exception as exc:
+            # LLM 偶发卡顿/限流/超时 → 退避后重试;全失败才回退 header=0
+            logger.warning(
+                f"LLM 表头检测第 {attempt}/{_DETECT_ATTEMPTS} 次失败:{type(exc).__name__}: {exc}"
+            )
+            if attempt < _DETECT_ATTEMPTS:
+                await asyncio.sleep(_DETECT_BACKOFF)
+    if result is None:
+        logger.warning("LLM 表头检测全部重试失败,全部回退 header=0")
         return {}
 
     out: dict[str, SheetHeader] = {}

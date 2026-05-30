@@ -18,17 +18,6 @@ const progress = ref(0)
 const error = ref('')
 const notice = ref('')
 
-// 服务端处理阶段(由后端 SSE 实时推送,真实进度)
-const processing = ref(false) // 已进入服务端处理(收到首个阶段事件 / 字节已传完)
-const currentStep = ref('')   // 当前阶段展示文案
-
-// 后端阶段名 → 友好展示文案
-const STEP_LABEL: Record<string, string> = {
-  'AI 识别表头': '🤖 AI 正在解析文件…',
-  清洗字段: '清洗字段、推断类型…',
-  写入存储: '写入存储…',
-}
-
 const ALLOWED = ['.xlsx', '.xls']
 
 function pickFile(f: File | null | undefined) {
@@ -61,8 +50,6 @@ function formatSize(bytes: number): string {
 function reset() {
   file.value = null
   progress.value = 0
-  currentStep.value = ''
-  processing.value = false
   error.value = ''
   notice.value = ''
   uploading.value = false
@@ -80,24 +67,11 @@ async function submit() {
   error.value = ''
   notice.value = ''
   progress.value = 0
-  currentStep.value = ''
-  processing.value = false
   try {
-    const result = await uploadDataset(file.value, {
-      onProgress: (p) => {
-        progress.value = p
-        if (p >= 100 && !processing.value) {
-          processing.value = true
-          currentStep.value = '处理中…'
-        }
-      },
-      onStep: (step, status) => {
-        processing.value = true
-        if (status === 'running') currentStep.value = STEP_LABEL[step] ?? `${step}…`
-      },
-    })
+    // 上传是非阻塞的:后端秒建卡片(status=cleaning)立即返回,AI 解析在后台跑。
+    // 这里只反映"字节上传"进度;返回后立刻关闭弹窗,处理进度交给列表里的卡片显示。
+    const result = await uploadDataset(file.value, (p) => (progress.value = p))
     if (result.duplicated) {
-      // 后端按 文件名 + 内容 SHA-256 去重命中,没有新建数据集
       notice.value = `「${result.name}」之前已上传过,已复用现有数据集,未重复创建。`
     } else {
       emit('uploaded', result)
@@ -106,7 +80,6 @@ async function submit() {
   } catch (e) {
     error.value = e instanceof Error ? e.message : '上传失败，请重试'
   } finally {
-    processing.value = false
     uploading.value = false
   }
 }
@@ -148,19 +121,10 @@ async function submit() {
 
       <div v-if="uploading" class="mt-4">
         <div class="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-          <!-- 字节上传:真实进度;服务端处理:不确定流动条 -->
-          <div
-            v-if="!processing"
-            class="h-full rounded-full bg-sky-500 transition-all"
-            :style="{ width: `${progress}%` }"
-          />
-          <div v-else class="indeterminate-bar h-full rounded-full bg-sky-500" />
+          <div class="h-full rounded-full bg-sky-500 transition-all" :style="{ width: `${progress}%` }" />
         </div>
-        <p class="mt-1.5 text-xs font-medium text-slate-600">
-          {{ processing ? currentStep : `上传中 ${progress}%` }}
-        </p>
-        <p v-if="processing" class="mt-0.5 text-[11px] text-slate-400">
-          正在解析(含 AI 表头识别),请稍候…
+        <p class="mt-1.5 text-xs text-slate-500">
+          {{ progress < 100 ? `上传中 ${progress}%` : '提交中…' }}
         </p>
       </div>
 
@@ -187,25 +151,9 @@ async function submit() {
           :disabled="!file || uploading"
           @click="submit"
         >
-          {{ uploading ? '处理中…' : '上传' }}
+          {{ uploading ? '上传中…' : '上传' }}
         </button>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-/* 服务端处理阶段的不确定进度条:一段在轨道里来回滑动,表示"还在干活" */
-.indeterminate-bar {
-  width: 40%;
-  animation: indeterminate-slide 1.1s ease-in-out infinite;
-}
-@keyframes indeterminate-slide {
-  0% {
-    margin-left: -40%;
-  }
-  100% {
-    margin-left: 100%;
-  }
-}
-</style>

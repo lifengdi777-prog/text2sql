@@ -21,7 +21,7 @@ import hashlib
 import io
 import re
 import warnings
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -155,7 +155,13 @@ def _coerce_column(s: pd.Series) -> pd.Series:
             if as_dt.notna().mean() >= 0.8:
                 return pd.to_datetime(s, errors="coerce")
 
-    return s
+    # 否则按字符串列处理:**统一转成 str(NaN→None)**,并强制回 object dtype。
+    # · 字符串化:object 列若混入 int/float(表头识别失败、表头行被当数据)会让 to_parquet 崩
+    #   (pyarrow 不接受一列 str+int 混排),统一字符串保证一定能写 parquet;
+    # · astype(object):pandas 会把全字符串列推断成 StringDtype,而下游(ES 值索引等)
+    #   用 `dtype == object` 识别字符串列,这里固定回 object 保持一致。
+    cleaned = s.map(lambda v: None if v is None or (isinstance(v, float) and pd.isna(v)) else str(v))
+    return cleaned.astype(object)
 
 
 def clean_sheet(df: pd.DataFrame) -> pd.DataFrame | None:
@@ -381,26 +387,37 @@ async def build_es_index_background(dataset_id: int, sheets: dict[str, pd.DataFr
         await _mark_dataset_ready(dataset_id)
 
 
+# ───────── 表头错位检测(兜底用)──────────────────────────
+
+_PLACEHOLDER_COL_RE = re.compile(r"^列\d+$")
+
+
+def _looks_like_misread_header(df: pd.DataFrame) -> bool:
+    """判断一个 sheet 的表头是不是"没对齐"(真表头没在第一行 → 列名大多是 列N 占位)。
+
+    出现在:LLM 表头识别失败/超时 → 回退 header=0 套在脏表上时。
+    判据:占位列名(列N / Unnamed)≥2 个 且 占比 ≥ 50%。
+    """
+    cols = [str(c) for c in df.columns]
+    if not cols:
+        return False
+    placeholders = sum(
+        1 for c in cols if _PLACEHOLDER_COL_RE.match(c) or c.startswith("Unnamed")
+    )
+    return placeholders >= 2 and placeholders / len(cols) >= 0.5
+
+
 # ───────── 主编排 ──────────────────────────────────────
 
-async def ingest_excel(
-    user_id: str,
-    filename: str,
-    file_bytes: bytes,
-    on_step: Callable[[str, str], None] | None = None,
-) -> dict[str, Any]:
-    """主入口:Excel → 清洗 → 入库 → 后台建 ES 索引。返回数据集摘要。
+async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[str, Any]:
+    """上传主入口(**非阻塞**):查重 → 立刻建一行(status=cleaning)拿 dataset_id → 秒返回;
+    重活(AI 表头识别 / 清洗 / parquet / schema / ES 索引)全部丢后台,完成后状态推到 ready/failed。
 
-    去重:同 user_id + 同文件名 + 同 SHA-256 → 直接返回已有 dataset_id,跳过处理。
-    on_step(step, status):可选回调,用于上传时把各阶段进度推给前端(SSE)。
+    这样上传请求秒回,前端卡片立刻出现并显示「处理中」,用户可继续操作,无需等 AI 解析完。
     """
-    def _s(step: str, status: str) -> None:
-        if on_step:
-            on_step(step, status)
-
     Session = get_session_factory()
 
-    # 0. 算 hash + 查重(纯 IO + 一次 MySQL 索引查询,毫秒级)
+    # 0. 算 hash + 查重(毫秒级)
     content_hash = hashlib.sha256(file_bytes).hexdigest()
     async with Session() as session:
         repo = UploadDatasetRepository(session)
@@ -408,37 +425,12 @@ async def ingest_excel(
     if existing is not None:
         logger.info(f"上传去重命中:user={user_id} file={filename} → 复用 dataset_id={existing.id}")
         return {
-            "dataset_id": existing.id,
-            "name": existing.name,
-            "folder_path": existing.folder_path,
-            "sheet_count": existing.sheet_count,
-            "total_rows": existing.total_rows,
-            "duplicated": True,                # ← 告诉前端这次是去重命中
+            "dataset_id": existing.id, "name": existing.name, "status": existing.status,
+            "sheet_count": existing.sheet_count, "total_rows": existing.total_rows,
+            "duplicated": True,
         }
 
-    # 1. LLM 检测表头(读前几行原始网格 → 定位 data_start_row + 列名;失败则回退 header=0)
-    _s("AI 识别表头", "running")
-    previews = await asyncio.to_thread(read_sheet_previews, file_bytes)
-    header_specs = await detect_headers(previews)
-    _s("AI 识别表头", "success")
-
-    # 2. parse + clean(纯 pandas,放线程池跑)
-    def _parse_and_clean() -> dict[str, pd.DataFrame]:
-        raw = parse_workbook(file_bytes, header_specs)
-        cleaned: dict[str, pd.DataFrame] = {}
-        for name, df in raw.items():
-            c = clean_sheet(df)
-            if c is not None and not c.empty:
-                cleaned[name] = c
-        return cleaned
-
-    _s("清洗字段", "running")
-    cleaned_sheets = await asyncio.to_thread(_parse_and_clean)
-    if not cleaned_sheets:
-        raise ValueError("文件中没有解析出任何有效数据(可能是空表或格式不支持)")
-    _s("清洗字段", "success")
-
-    # 2. 先插一行 MySQL 拿 dataset_id(带 hash,方便未来再查重)
+    # 1. 立刻建一行(status=cleaning)拿 dataset_id —— 卡片马上能显示「处理中」
     async with Session() as session:
         repo = UploadDatasetRepository(session)
         ds = await repo.create(user_id=user_id, name=filename, original_filename=filename,
@@ -446,81 +438,93 @@ async def ingest_excel(
         dataset_id = ds.id
         await session.commit()
 
+    # 2. 重活丢后台,立即返回(前端靠轮询 status 等卡片变 ready/failed)
+    asyncio.create_task(_process_dataset(dataset_id, filename, file_bytes))
+
+    return {
+        "dataset_id": dataset_id, "name": filename, "status": "cleaning",
+        "sheet_count": 0, "total_rows": 0, "duplicated": False,
+    }
+
+
+async def _process_dataset(dataset_id: int, filename: str, file_bytes: bytes) -> None:
+    """后台处理:AI 表头识别 → 清洗 → parquet → schema → finalize(indexing)→ ES → ready。
+    任一步失败 → status=failed + 错误信息(供卡片提示)。
+    """
+    Session = get_session_factory()
     try:
-        _s("写入存储", "running")
-        # 3. 写 parquet 到对象存储(folder_path 存对象前缀,不再是本地路径)
+        # AI 表头识别(失败/超时回退 header=0)
+        previews = await asyncio.to_thread(read_sheet_previews, file_bytes)
+        header_specs = await detect_headers(previews)
+
+        # 解析 + 清洗
+        def _parse_and_clean() -> dict[str, pd.DataFrame]:
+            raw = parse_workbook(file_bytes, header_specs)
+            cleaned: dict[str, pd.DataFrame] = {}
+            for name, df in raw.items():
+                c = clean_sheet(df)
+                if c is not None and not c.empty:
+                    cleaned[name] = c
+            return cleaned
+
+        cleaned_sheets = await asyncio.to_thread(_parse_and_clean)
+        if not cleaned_sheets:
+            raise ValueError("文件中没有解析出任何有效数据(可能是空表或格式不支持)")
+
+        # 表头错位兜底:回退 header=0 后若列大多是占位名,说明真表头没在第一行 → 明确失败
+        misread = [name for name, df in cleaned_sheets.items() if _looks_like_misread_header(df)]
+        if misread:
+            raise ValueError(
+                f"表头识别异常,以下表的表头似乎没对齐(疑似有标题行/合并表头):{'、'.join(misread)}。"
+                f"请重试上传,或把表头整理到第一行后重传。"
+            )
+
+        # 写 parquet + 原始 Excel 留档
         prefix = f"ds_{dataset_id}"
         sheet_files = await asyncio.to_thread(save_parquets, prefix, cleaned_sheets)
-
-        # 3b. 原始 Excel 留档(供下载/重新处理),放 {prefix}/original/{文件名}
         original_key = f"{prefix}/original/{_safe_filename(filename, 'upload.xlsx')}"
         await asyncio.to_thread(
-            object_store.put_bytes,
-            original_key,
-            file_bytes,
+            object_store.put_bytes, original_key, file_bytes,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-        # 4. profile 每个 sheet
+        # profile schema
         def _build_schema() -> tuple[dict, int]:
             schema = {"sheets": {}}
             total = 0
             for name, df in cleaned_sheets.items():
                 row_count = int(len(df))
-                profile = profile_columns(df)
                 schema["sheets"][name] = {
                     "row_count": row_count,
                     "parquet_file": sheet_files[name],
-                    "columns": profile,
+                    "columns": profile_columns(df),
                 }
                 total += len(df)
             return schema, total
 
         schema_json, total_rows = await asyncio.to_thread(_build_schema)
 
-        # 5. finalize MySQL 行(填 folder_path + schema + status=ready)
+        # finalize → status=indexing
         async with Session() as session:
             repo = UploadDatasetRepository(session)
-            await repo.finalize(
-                dataset_id=dataset_id,
-                folder_path=prefix,
-                schema_json=schema_json,
-                sheet_count=len(cleaned_sheets),
-                total_rows=total_rows,
-            )
+            await repo.finalize(dataset_id=dataset_id, folder_path=prefix,
+                                schema_json=schema_json, sheet_count=len(cleaned_sheets),
+                                total_rows=total_rows)
             await session.commit()
-        _s("写入存储", "success")
+        logger.info(f"数据集 {dataset_id}({filename})解析完成:{len(cleaned_sheets)} sheet,{total_rows} 行")
 
-        # 6. 后台异步建 ES 值索引(不阻塞返回)
-        asyncio.create_task(build_es_index_background(dataset_id, cleaned_sheets))
-
-        logger.info(f"数据集 {dataset_id}({filename})入库完成:"
-                    f"{len(cleaned_sheets)} sheet,{total_rows} 行")
-        return {
-            "dataset_id": dataset_id,
-            "name": filename,
-            "folder_path": prefix,
-            "sheet_count": len(cleaned_sheets),
-            "total_rows": total_rows,
-            "duplicated": False,
-            "sheets": [
-                {
-                    "sheet": name,
-                    "row_count": int(len(df)),
-                    "columns": list(df.columns),
-                }
-                for name, df in cleaned_sheets.items()
-            ],
-        }
+        # ES 值索引 → status=ready(沿用现有后台函数,内部 finally 会置 ready)
+        await build_es_index_background(dataset_id, cleaned_sheets)
 
     except Exception as exc:
-        logger.exception(f"数据集 {dataset_id} 入库失败:{exc}")
-        # 出错时标 failed,已上传对象保留供 debug,catalog 行不删
-        async with Session() as session:
-            repo = UploadDatasetRepository(session)
-            await repo.update_status(dataset_id, "failed")
-            await session.commit()
-        raise
+        logger.exception(f"数据集 {dataset_id} 后台处理失败:{exc}")
+        try:
+            async with Session() as session:
+                repo = UploadDatasetRepository(session)
+                await repo.mark_failed(dataset_id, str(exc))
+                await session.commit()
+        except Exception:
+            logger.exception(f"数据集 {dataset_id} 标记 failed 也失败")
 
 
 # ───────── 删除 ────────────────────────────────────────

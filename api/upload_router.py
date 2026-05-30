@@ -3,12 +3,7 @@
 身份统一走 api.deps.get_current_user(过渡期 = X-Client-Id 头);
 所有按 dataset_id 的操作先经 require_owned_dataset 校验归属,杜绝越权访问。
 """
-import asyncio
-import json
-from typing import Any
-
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
 
 from api.deps import get_current_user, require_owned_dataset
 from core.log import logger
@@ -21,19 +16,13 @@ _ALLOWED_EXT = (".xlsx", ".xls")
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024   # 100 MB
 
 
-def _sse(payload: dict[str, Any]) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
 @router.post("/upload")
 async def upload_dataset(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
 ):
-    """上传 Excel → 自动清洗 → 入 MySQL + parquet → 后台建 ES 值索引。
-
-    返回 **SSE 流**:实时推送各处理阶段(AI 识别表头 / 清洗字段 / 写入存储),
-    最后一条 finish=true 携带数据集摘要(或错误)。校验类错误在流开始前直接 4xx。
+    """上传 Excel:**秒建一行(status=cleaning)立即返回**,重活(AI 表头识别 / 清洗 / parquet /
+    ES 索引)全部丢后台。前端拿到 dataset_id 后靠轮询 status 等卡片变 ready/failed,不被阻塞。
     """
     filename = file.filename or "upload.xlsx"
     if not filename.lower().endswith(_ALLOWED_EXT):
@@ -46,38 +35,14 @@ async def upload_dataset(
         mb = _MAX_UPLOAD_BYTES // (1024 * 1024)
         raise HTTPException(status_code=413, detail=f"文件超过 {mb}MB 限制")
 
-    async def stream():
-        queue: asyncio.Queue = asyncio.Queue()
-
-        # on_step 在 ingest 内部各阶段被调用(同步),这里塞进队列由下面的循环转成 SSE
-        def on_step(step: str, status: str) -> None:
-            queue.put_nowait({"step": step, "status": status, "data": None, "finish": False})
-
-        async def run():
-            try:
-                result = await ingest_excel(
-                    user_id=user_id, filename=filename, file_bytes=file_bytes, on_step=on_step,
-                )
-                queue.put_nowait({"step": "完成", "status": "success", "data": {"ok": True, **result}, "finish": True})
-            except ValueError as exc:
-                queue.put_nowait({"step": "失败", "status": "error", "data": {"error": str(exc)}, "finish": True})
-            except Exception as exc:
-                logger.exception(f"上传失败:{exc}")
-                queue.put_nowait({"step": "失败", "status": "error", "data": {"error": f"入库失败:{exc}"}, "finish": True})
-            finally:
-                queue.put_nowait(None)  # 结束哨兵
-
-        task = asyncio.create_task(run())
-        try:
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                yield _sse(item)
-        finally:
-            await task
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    try:
+        result = await ingest_excel(user_id=user_id, filename=filename, file_bytes=file_bytes)
+        return {"ok": True, **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception(f"上传失败:{exc}")
+        raise HTTPException(status_code=500, detail=f"入库失败:{exc}")
 
 
 @router.get("")
@@ -97,6 +62,8 @@ async def list_datasets(user_id: str = Depends(get_current_user)):
             "sheet_count": r.sheet_count,
             "total_rows": r.total_rows,
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            # 失败时把后台记录的原因带给前端,卡片可提示(如"表头没对齐,请重传")
+            "error_message": (r.schema_json or {}).get("_error") if r.status == "failed" else None,
         }
         for r in rows
     ]

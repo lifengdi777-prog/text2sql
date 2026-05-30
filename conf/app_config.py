@@ -80,6 +80,9 @@ class LLMConfig(BaseModel):
     model_name: str
     api_key: str
     base_url: str
+    # 表头检测等"简单结构化小任务"用的快模型(独立请求,不跟问数抢同一额度/限流桶)。
+    # 不配则用 model_name;默认走 deepseek-v4-flash。
+    fast_model_name: str = "deepseek-v4-flash"
 
     model_config = ConfigDict(from_attributes=True)
 
