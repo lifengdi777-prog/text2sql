@@ -87,6 +87,20 @@ def _route_after_analyze(state: WSAgentState) -> str:
     return "build_chart"
 
 
+# 切换项过滤:只保留"用同一份字段映射、在事实上确实画得出"的类型。
+# 判定方式 = 跑一遍 enforce_limits,没被降级(返回原类型)才算这份数据能切到该类型。
+# 例:工厂×产品类别(32 行)交叉表,pie/单维度图会被 enforce_limits 降级 → 不进切换菜单。
+def _filter_compatible(types: list[str], field_map: dict, shape) -> list[str]:
+    kept: list[str] = []
+    for t in dict.fromkeys(types):  # 去重保序
+        if t == "table":
+            continue  # table 最后统一补
+        final, _ = enforce_limits(t, field_map, shape)
+        if final == t:
+            kept.append(t)
+    return kept
+
+
 # 只采纳 LLM 给的、且在真实列里的映射;无效/缺失的字段不补规则(交给 enforce_limits 兜底降 table)。
 def _resolve_field_map(decision, shape) -> dict:
     valid = {c.name for c in shape.columns} if shape else set()
@@ -140,8 +154,10 @@ async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
                 config = _build_table_config(rows, title, reason)
             else:
                 config = build_chart_option(chart_type, rows, field_map, title)
-                # 可切换类型由 LLM 给(过滤为支持类型),保证含当前类型 + table 兜底
+                # 可切换类型:LLM 给的 → 过滤为支持类型 → 再用 enforce_limits 滤掉这份数据画不出的,
+                # 保证含当前类型 + table 兜底。避免给出"切过去就是一坨"的选项(如交叉表切饼图)。
                 compat = [t for t in (decision.compatible_types or []) if t in SUPPORTED_CHART_TYPES]
+                compat = _filter_compatible(compat, field_map, shape)
                 if chart_type not in compat:
                     compat = [chart_type] + compat
                 if "table" not in compat:

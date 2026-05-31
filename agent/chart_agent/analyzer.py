@@ -146,6 +146,18 @@ def enforce_limits(chart_type: str, field_map: dict[str, Any], shape: DataShape 
     if chart_type in ("multi_line", "stacked_bar") and series and card.get(series, 0) > _SERIES_MAX_CARD:
         return "table", f"分组列「{series}」有 {card[series]} 个值 > {_SERIES_MAX_CARD},降级为表格"
 
+    # 3.5 单维度图(line/bar/pie)要求"一行一个维度值":若行数 > 维度基数,
+    #     说明还有未透视的第二维(如 工厂×产品类别),单维度图会按行错画(扇区/柱子重复)。
+    #     → 有分组列走多系列(stacked_bar/multi_line),否则降表格。
+    if chart_type in ("line", "bar", "pie"):
+        dim_card = card.get(dim, 0)
+        if dim_card and shape.row_count > dim_card:
+            if series and card.get(series, 0) <= _SERIES_MAX_CARD:
+                fallback = "multi_line" if chart_type == "line" else "stacked_bar"
+                return fallback, (f"每个「{dim}」对应多行(行数 {shape.row_count} > 基数 {dim_card}),"
+                                  f"存在第二维度,改用 {fallback}")
+            return "table", f"每个「{dim}」对应多行(行数 {shape.row_count} > 基数 {dim_card}),单维度图会错画,降级为表格"
+
     # 4. 柱图横轴类别过多 → 表格
     if chart_type in ("bar", "stacked_bar") and card.get(dim, 0) > _BAR_MAX_CARD:
         return "table", f"横轴「{dim}」有 {card[dim]} 类 > {_BAR_MAX_CARD},降级为表格"
