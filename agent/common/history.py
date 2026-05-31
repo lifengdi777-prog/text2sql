@@ -69,10 +69,28 @@ async def stream_with_history(
     yield f"data: {json.dumps({'conversation_id': conversation_id})}\n\n"
 
     # 3) 转发 + 累加
+    # 整段包 try:图执行/流式过程中任何异常都不让它冒出去把 SSE 连接冲断,
+    # 而是发一张 error 卡(finish=True)优雅收尾,前端正常渲染错误、流正常结束。
     acc = ReplyAccumulator()
-    async for chunk in chunks:
-        acc.feed(chunk)
-        yield f"data: {chunk.model_dump_json()}\n\n"
+    try:
+        async for chunk in chunks:
+            acc.feed(chunk)
+            yield f"data: {chunk.model_dump_json()}\n\n"
+    except Exception as exc:
+        logger.exception(f"流式执行异常(conversation_id={conversation_id}):{exc}")
+        err_step = WSStepInfo(
+            step="生成图表",
+            status="error",
+            data={
+                "chart_type": "error",
+                "title": "查询失败",
+                "message": "服务处理异常,请稍后重试",
+                "hint": "请稍后重试,或换一种问法",
+            },
+            finish=True,
+        )
+        acc.feed(err_step)  # 让历史落库也带上这张 error 卡
+        yield f"data: {err_step.model_dump_json()}\n\n"
 
     # 4) 落库 assistant 消息 + 刷新会话时间
     try:
