@@ -10,10 +10,9 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
     writer = runtime.stream_writer
     writer(WSStepInfo(step="添加额外信息", status="running"))
 
-    dw_db_repo = runtime.context.dw_db_repo
-
-    # 获取数据库信息
-    db_infos = await dw_db_repo.get_db_info()
+    # 短会话:只在读 db_info 时占用连接,用完即还
+    async with runtime.context.dw_repo() as dw_db_repo:
+        db_infos = await dw_db_repo.get_db_info()
     db_info = f"当前数据库类型：{db_infos['dialect']}，编码：{db_infos['charset']}，版本号：{db_infos['version']}"
 
     # 获取当前时间

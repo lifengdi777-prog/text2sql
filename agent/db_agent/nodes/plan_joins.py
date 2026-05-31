@@ -19,7 +19,6 @@ async def plan_joins(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     writer = runtime.stream_writer
     writer(WSStepInfo(step="规划JOIN路径", status="running"))
 
-    meta_db_repo = runtime.context.meta_db_repo
     table_infos = state.table_infos or []
     table_ids = [t.id for t in table_infos]
 
@@ -29,7 +28,9 @@ async def plan_joins(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         logger.info("plan_joins: 单表/无表，无需 JOIN")
         return {"join_clauses": None}
 
-    relations = await meta_db_repo.get_join_relations_by_table_ids(table_ids)
+    # 短会话:只在查 JOIN 关系时占用连接
+    async with runtime.context.meta_repo() as meta_db_repo:
+        relations = await meta_db_repo.get_join_relations_by_table_ids(table_ids)
 
     if not relations:
         # 选了多张表却查不到关系：交回给 LLM 兜底，不强行造 JOIN

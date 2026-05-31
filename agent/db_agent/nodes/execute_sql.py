@@ -9,10 +9,11 @@ async def execute_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     writer(WSStepInfo(step="执行SQL语句", status="running"))
 
     sql = state.sql or ""
-    dw_db_repo = runtime.context.dw_db_repo
 
     try:
-        result = await dw_db_repo.execute_sql(sql)
+        # 短会话:只在跑这条 SELECT 时占用连接
+        async with runtime.context.dw_repo() as dw_db_repo:
+            result = await dw_db_repo.execute_sql(sql)
         # validate_sql 注入了 LIMIT MAX_RESULT_ROWS+1:这里若拿到 >上限,说明结果被截断,
         # 截到上限并标记,供解读环节提示用户"仅展示前 N 行"。
         truncated = len(result) > MAX_RESULT_ROWS

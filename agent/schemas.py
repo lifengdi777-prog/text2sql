@@ -1,8 +1,10 @@
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, ConfigDict
 from langgraph.graph import MessagesState, add_messages
 from typing import Annotated, Any
 from langchain.messages import AnyMessage
 from typing import Optional, Literal
+from clients.mysql import MySQLClient
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository, DWDBRepository
@@ -65,15 +67,30 @@ class WSAgentState(BaseModel):
 
 
 #WSAgentContext是一个Pydantic模型，定义了在整个图的执行过程中共享的上下文信息。
-class WSAgentContext(BaseModel):    
+class WSAgentContext(BaseModel):
     column_qdrant_repo: ColumnQdrantRepository
     metric_qdrant_repo: MetricQdrantRepository
     es_repo: ESRepository
-    meta_db_repo: MetaDBRepository
-    dw_db_repo: DWDBRepository
+    # 不再持有"贯穿整条流"的长生命周期 DB 会话,改持有客户端(连接池工厂)。
+    # 节点用下面的 meta_repo()/dw_repo() 上下文管理器,只在真正查库的那一小段开/关会话;
+    # LLM 调用等待期间不占用任何 MySQL 连接 —— 同样的连接池能支撑高得多的并发。
+    meta_db_client: MySQLClient
+    dw_db_client: MySQLClient
     #全是自定义类，所以需要在模型配置中设置arbitrary_types_allowed=True，
     #允许使用任意类型的字段。
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @asynccontextmanager
+    async def meta_repo(self):
+        """开一个短生命周期的 meta 库会话 + repo,用完即还连接。"""
+        async with self.meta_db_client.session() as session:
+            yield MetaDBRepository(session)
+
+    @asynccontextmanager
+    async def dw_repo(self):
+        """开一个短生命周期的 dw 库会话 + repo,用完即还连接。"""
+        async with self.dw_db_client.session() as session:
+            yield DWDBRepository(session)
 
 
 #实现到了每个步骤都要返回信息给前端

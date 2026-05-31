@@ -70,13 +70,12 @@ async def validate_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
     sql = state.sql or ""
 
-    dw_db_repo = runtime.context.dw_db_repo
-
     try:
         #第一步先做安全校验
         validate_readonly_sql(sql, dialect="mysql")
-        #第二步再做语法校验
-        await dw_db_repo.validate_sql(sql)
+        #第二步再做语法校验(短会话:只在 EXPLAIN 绑定校验时占用连接)
+        async with runtime.context.dw_repo() as dw_db_repo:
+            await dw_db_repo.validate_sql(sql)
         #第三步:注入/收紧 LIMIT,防无界全表查询(写回 state.sql,执行用规范化后的)
         capped = cap_limit(sql)
         if capped != sql:
