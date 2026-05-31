@@ -28,4 +28,5 @@ dependencies = [
     "pyjwt>=2.9.0",
     "bcrypt>=4.2.0",
     "duckdb>=1.5.3",
+    "langfuse>=3",
 ]

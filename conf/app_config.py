@@ -113,6 +113,17 @@ class AuthConfig(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class LangfuseConfig(BaseModel):
+    """Langfuse 可观测(自托管/云)。enabled=false 或缺 key → 不追踪,全链路零侵入。"""
+    enabled: bool = False
+    public_key: str = ""
+    secret_key: str = ""
+    host: str = "http://localhost:3000"   # 自托管默认;Langfuse 云为 https://cloud.langfuse.com
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AppConfig(BaseModel):
     logging: LoggingConfig
     db_meta: DBConfig
@@ -128,6 +139,8 @@ class AppConfig(BaseModel):
     s3: S3Config | None = None
     # 登录鉴权(JWT)。不配置则用 AuthConfig 的默认值(本地开发够用)
     auth: AuthConfig = AuthConfig()
+    # Langfuse 可观测。不配置/enabled=false 则不追踪(本地开发默认关)
+    langfuse: LangfuseConfig = LangfuseConfig()
 
 config_path = Path(__file__).parent / "app_config.yaml"
 #context就是从app_config.yaml文件中读取的配置数据。
