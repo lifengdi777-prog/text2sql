@@ -24,12 +24,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
 from agent.chart_agent import analyzer
-from agent.chart_agent.analyzer import (
-    SUPPORTED_CHART_TYPES,
-    chart_field_map,
-    compatible_chart_types,
-    enforce_limits,
-)
+from agent.chart_agent.analyzer import SUPPORTED_CHART_TYPES, enforce_limits
 from agent.chart_agent.decider import decide_chart_type
 from agent.chart_agent.option_builder import build_chart_option
 from agent.chart_agent.templates import empty as empty_tpl
@@ -92,29 +87,20 @@ def _route_after_analyze(state: WSAgentState) -> str:
     return "build_chart"
 
 
-# LLM 给的字段映射列名要校验:无效/缺失的字段逐个用规则映射兜底,
-# 防止 LLM 编造列名导致 option_builder 取不到数据、画出空图。
+# 只采纳 LLM 给的、且在真实列里的映射;无效/缺失的字段不补规则(交给 enforce_limits 兜底降 table)。
 def _resolve_field_map(decision, shape) -> dict:
     valid = {c.name for c in shape.columns} if shape else set()
-    rule_fm = chart_field_map(shape)  # 规则兜底映射
-
     fm: dict = {}
-    dim = decision.x_field if decision.x_field in valid else rule_fm.get("dimension")
-    if dim:
-        fm["dimension"] = dim
-    measure = decision.value_field if decision.value_field in valid else rule_fm.get("measure")
-    if measure:
-        fm["measure"] = measure
-    series = decision.series_field if decision.series_field in valid else rule_fm.get("series")
-    if series:
-        fm["series"] = series
-    # 多指标分组柱:优先 LLM 给的(过滤掉无效列名),否则用规则
+    if decision.x_field in valid:
+        fm["dimension"] = decision.x_field
+    if decision.value_field in valid:
+        fm["measure"] = decision.value_field
+    if decision.series_field in valid:
+        fm["series"] = decision.series_field
     if decision.value_fields:
         vf = [f for f in decision.value_fields if f in valid]
         if vf:
             fm["measures"] = vf
-    elif rule_fm.get("measures"):
-        fm["measures"] = rule_fm["measures"]
     return fm
 
 
@@ -129,39 +115,46 @@ async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     query = state.messages[0].content if state.messages else "查询结果"
     title = _make_title(query)
 
-    # LLM 看"事实清单 + 样本数据",自己判断每列含义,从全部支持类型里选型 + 给映射。
-    # 不再用规则预筛菜单去卡它(规则语义判错会传导成错菜单)。
-    decision = await decide_chart_type(str(query), shape, rows[:8], SUPPORTED_CHART_TYPES)
-    if decision is None:
-        # LLM 调用失败 → 此时才用规则兜底(规则菜单首项 + 规则映射)
-        compat = compatible_chart_types(shape)
-        non_table = [t for t in compat if t != "table"]
-        chart_type = non_table[0] if non_table else "table"
-        field_map = chart_field_map(shape)
-        reason = "LLM 选型失败,回退规则"
-    else:
-        chart_type = decision.chart_type if decision.chart_type in SUPPORTED_CHART_TYPES else "table"
-        field_map = _resolve_field_map(decision, shape)
-        reason = decision.reason
+    # 整段构图包一层 try/except:任何意外异常都不让它冒出去断流,
+    # 一律兜底成表格,保证图表分支永远能给前端一个可渲染的结果。
+    try:
+        # LLM 看"事实清单 + 样本数据",自己判断每列含义,从全部支持类型里选型 + 给映射 + 给可切换类型。
+        decision = await decide_chart_type(str(query), shape, rows[:8], SUPPORTED_CHART_TYPES)
 
-    # 代码兜底校验:用真实基数查硬限制(扇区/柱子/系列数上限、必需映射齐不齐),违反则降级。
-    # 只查精确事实,不做语义猜测,所以不会把好图错杀成语义判断问题。
-    chart_type, limit_reason = enforce_limits(chart_type, field_map, shape)
-    if limit_reason:
-        reason = f"{reason}｜{limit_reason}"
+        if decision is None:
+            # LLM 调用失败 → 直接降级表格(不再用规则兜底)
+            config = _build_table_config(rows, title, "LLM 选型失败,降级为表格")
+            chart_type, reason = "table", "LLM 选型失败"
+        else:
+            chart_type = decision.chart_type if decision.chart_type in SUPPORTED_CHART_TYPES else "table"
+            field_map = _resolve_field_map(decision, shape)
+            reason = decision.reason
 
-    if chart_type == "table":
-        config = _build_table_config(rows, title, reason)
-    else:
-        config = build_chart_option(chart_type, rows, field_map, title)
-        # compatible_types 仅供前端切换菜单(规则建议的备选,低风险),不再用于限制 LLM 选型
-        compat = compatible_chart_types(shape)
-        if chart_type not in compat:
-            compat = [chart_type] + compat
-        config["compatible_types"] = compat
-        config["field_map"] = field_map
+            # 代码兜底校验:用真实基数查硬限制(扇区/柱子/系列数上限、必需映射齐不齐),违反则降级(可能降到 table)。
+            # 只查精确事实,不做语义猜测。LLM 映射无效/缺失时,这里也会因"缺必需映射"降级表格。
+            chart_type, limit_reason = enforce_limits(chart_type, field_map, shape)
+            if limit_reason:
+                reason = f"{reason}｜{limit_reason}"
 
-    logger.info(f"图表生成(LLM 判列+选型+映射, 代码填数据+校验):type={chart_type}, reason={reason}")
+            if chart_type == "table":
+                config = _build_table_config(rows, title, reason)
+            else:
+                config = build_chart_option(chart_type, rows, field_map, title)
+                # 可切换类型由 LLM 给(过滤为支持类型),保证含当前类型 + table 兜底
+                compat = [t for t in (decision.compatible_types or []) if t in SUPPORTED_CHART_TYPES]
+                if chart_type not in compat:
+                    compat = [chart_type] + compat
+                if "table" not in compat:
+                    compat.append("table")
+                config["compatible_types"] = compat
+                config["field_map"] = field_map
+
+        logger.info(f"图表生成(LLM 判列+选型+映射+切换项, 代码填数据+校验):type={chart_type}, reason={reason}")
+    except Exception as exc:
+        # 选型/校验/构图任意环节的意外异常 → 兜底表格(_build_table_config 是纯代码,安全)
+        logger.exception(f"build_chart 异常,兜底表格:{exc}")
+        config = _build_table_config(rows, title, f"图表生成异常,降级为表格:{exc}")
+
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 

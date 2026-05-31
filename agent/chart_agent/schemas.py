@@ -32,6 +32,8 @@ class ChartTypeDecision(BaseModel):
     value_field: str | None = None          # 主数值列
     series_field: str | None = None         # 多系列分组列(multi_line / stacked_bar 用)
     value_fields: list[str] | None = None    # 多指标分组柱:同量纲的多个数值列
+    # 这份数据还适合切换成哪些图表类型(供前端手动切换按钮用);应是支持类型的子集,含当前 chart_type
+    compatible_types: list[str] = []
     reason: str = ""
 
 
