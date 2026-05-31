@@ -86,9 +86,35 @@ def _route_after_analyze(state: WSAgentState) -> str:
     return "build_chart"
 
 
-# ── 核心:LLM 选型 + 代码构图 ─────────────────────────────────────────
+# LLM 给的字段映射列名要校验:无效/缺失的字段逐个用规则映射兜底,
+# 防止 LLM 编造列名导致 option_builder 取不到数据、画出空图。
+def _resolve_field_map(decision, shape) -> dict:
+    valid = {c.name for c in shape.columns} if shape else set()
+    rule_fm = chart_field_map(shape)  # 规则兜底映射
+
+    fm: dict = {}
+    dim = decision.x_field if decision.x_field in valid else rule_fm.get("dimension")
+    if dim:
+        fm["dimension"] = dim
+    measure = decision.value_field if decision.value_field in valid else rule_fm.get("measure")
+    if measure:
+        fm["measure"] = measure
+    series = decision.series_field if decision.series_field in valid else rule_fm.get("series")
+    if series:
+        fm["series"] = series
+    # 多指标分组柱:优先 LLM 给的(过滤掉无效列名),否则用规则
+    if decision.value_fields:
+        vf = [f for f in decision.value_fields if f in valid]
+        if vf:
+            fm["measures"] = vf
+    elif rule_fm.get("measures"):
+        fm["measures"] = rule_fm["measures"]
+    return fm
+
+
+# ── 核心:LLM 选型 + 给字段映射,option 由代码按映射构造 ─────────────────
 async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
-    """LLM 只决定 chart_type,option 由 option_builder 用代码确定性构造。"""
+    """LLM 决定 chart_type + 字段映射;option_builder 按映射用代码透视、填数据。"""
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
 
@@ -97,28 +123,35 @@ async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     query = state.messages[0].content if state.messages else "查询结果"
     title = _make_title(query)
 
-    # 兼容类型 + 字段映射:都由 analyzer 确定性算出(无 LLM)
-    compat = compatible_chart_types(shape)
-    field_map = chart_field_map(shape)
+    compat = compatible_chart_types(shape)  # 兼容类型集:确定性算出(无 LLM)
     non_table = [t for t in compat if t != "table"]
 
-    # 选型:0 个可视化类型→table;唯一类型→直接定;多个→LLM 按用户意图挑
     if not non_table:
+        # 没有可视化类型 → 表格,无需 LLM、无需字段映射
         chart_type, reason = "table", "数据形状只适合表格展示"
-    elif len(non_table) == 1:
-        chart_type, reason = non_table[0], "唯一兼容的可视化类型"
-    else:
-        chart_type, reason = await decide_chart_type(str(query), shape, compat)
-
-    # 构图
-    if chart_type == "table":
         config = _build_table_config(rows, title, reason)
     else:
-        config = build_chart_option(chart_type, rows, field_map, title)
-        config["compatible_types"] = compat
-        config["field_map"] = field_map
+        # 有可画的图 → LLM 选型 + 给字段映射
+        decision = await decide_chart_type(str(query), shape, compat)
+        if decision is None:
+            # LLM 失败兜底:兼容集首项 + 规则映射
+            chart_type = non_table[0]
+            field_map = chart_field_map(shape)
+            reason = "选型调用失败,回退兼容集首项 + 规则映射"
+        else:
+            # chart_type 越界则回退;字段映射逐项校验 + 规则兜底
+            chart_type = decision.chart_type if decision.chart_type in compat else non_table[0]
+            field_map = _resolve_field_map(decision, shape)
+            reason = decision.reason
 
-    logger.info(f"图表生成(代码构图):type={chart_type}, reason={reason}")
+        if chart_type == "table":
+            config = _build_table_config(rows, title, reason)
+        else:
+            config = build_chart_option(chart_type, rows, field_map, title)
+            config["compatible_types"] = compat
+            config["field_map"] = field_map
+
+    logger.info(f"图表生成(LLM 选型+映射, 代码填数据):type={chart_type}, reason={reason}")
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 

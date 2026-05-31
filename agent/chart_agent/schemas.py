@@ -21,12 +21,17 @@ SemanticType = Literal["temporal", "categorical", "numeric"]
 
 
 class ChartTypeDecision(BaseModel):
-    """LLM 的唯一职责:从兼容类型里挑一个最贴合用户意图的 chart_type。
+    """LLM 的职责:选 chart_type + 指出字段映射(哪列当横轴/分组/数值)。
 
-    不再让 LLM 产出完整 ECharts option(透视/填数据交给 option_builder 用代码做),
-    所以这个结构极小、生成快、几乎不会出错。
+    LLM 只做"判断"(选型 + 映射),不碰数据本身——
+    透视长表、排序、填 series.data 等体力活由 option_builder 用代码做。
+    字段映射的值必须是数据列名;LLM 给空或给了不存在的列名时,上层会用规则映射兜底。
     """
     chart_type: ChartType
+    x_field: str | None = None              # 横轴 / 分类维度列
+    value_field: str | None = None          # 主数值列
+    series_field: str | None = None         # 多系列分组列(multi_line / stacked_bar 用)
+    value_fields: list[str] | None = None    # 多指标分组柱:同量纲的多个数值列
     reason: str = ""
 
 
