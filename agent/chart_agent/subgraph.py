@@ -6,14 +6,15 @@
         ├─ render_empty      (空结果)
         ├─ render_metric     (单行 numeric)
         ├─ render_table      (行数 > CHART_MAX_ROWS:太多,降级表格)
-        └─ build_chart       (LLM 只选 chart_type → 代码确定性构 option → 直接 emit)
+        └─ build_chart       (LLM 判列+选型+映射 → enforce_limits 校验 → 代码构 option → emit)
                 ↓
               END
 
-设计要点:
-- 透视长表→宽表、填 series.data 这类确定性变换全部用代码做(option_builder),
-  LLM 只从「兼容类型」里挑一个 chart_type(decider)。
-- 因为 option 由代码构造,结构天然合法,**不再需要 validate/correct 重试循环**。
+设计分工:
+- 代码(analyzer)只算事实:基数/求和/行数/样本(LLM 看不到全量,算不准)。
+- LLM(decider)看事实+样本,自己判断每列含义,选 chart_type + 给字段映射。
+- 代码(enforce_limits)用真实基数查可读性红线,违规降级;option_builder 按映射透视填数据。
+- 因为 option 由代码构造、且有事实校验兜底,结构天然合法,无需 validate/correct 重试循环。
 """
 from __future__ import annotations
 
@@ -23,7 +24,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
 from agent.chart_agent import analyzer
-from agent.chart_agent.analyzer import chart_field_map, compatible_chart_types
+from agent.chart_agent.analyzer import (
+    SUPPORTED_CHART_TYPES,
+    chart_field_map,
+    compatible_chart_types,
+    enforce_limits,
+)
 from agent.chart_agent.decider import decide_chart_type
 from agent.chart_agent.option_builder import build_chart_option
 from agent.chart_agent.templates import empty as empty_tpl
@@ -123,35 +129,39 @@ async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     query = state.messages[0].content if state.messages else "查询结果"
     title = _make_title(query)
 
-    compat = compatible_chart_types(shape)  # 兼容类型集:确定性算出(无 LLM)
-    non_table = [t for t in compat if t != "table"]
+    # LLM 看"事实清单 + 样本数据",自己判断每列含义,从全部支持类型里选型 + 给映射。
+    # 不再用规则预筛菜单去卡它(规则语义判错会传导成错菜单)。
+    decision = await decide_chart_type(str(query), shape, rows[:8], SUPPORTED_CHART_TYPES)
+    if decision is None:
+        # LLM 调用失败 → 此时才用规则兜底(规则菜单首项 + 规则映射)
+        compat = compatible_chart_types(shape)
+        non_table = [t for t in compat if t != "table"]
+        chart_type = non_table[0] if non_table else "table"
+        field_map = chart_field_map(shape)
+        reason = "LLM 选型失败,回退规则"
+    else:
+        chart_type = decision.chart_type if decision.chart_type in SUPPORTED_CHART_TYPES else "table"
+        field_map = _resolve_field_map(decision, shape)
+        reason = decision.reason
 
-    if not non_table:
-        # 没有可视化类型 → 表格,无需 LLM、无需字段映射
-        chart_type, reason = "table", "数据形状只适合表格展示"
+    # 代码兜底校验:用真实基数查硬限制(扇区/柱子/系列数上限、必需映射齐不齐),违反则降级。
+    # 只查精确事实,不做语义猜测,所以不会把好图错杀成语义判断问题。
+    chart_type, limit_reason = enforce_limits(chart_type, field_map, shape)
+    if limit_reason:
+        reason = f"{reason}｜{limit_reason}"
+
+    if chart_type == "table":
         config = _build_table_config(rows, title, reason)
     else:
-        # 有可画的图 → LLM 选型 + 给字段映射
-        decision = await decide_chart_type(str(query), shape, compat)
-        if decision is None:
-            # LLM 失败兜底:兼容集首项 + 规则映射
-            chart_type = non_table[0]
-            field_map = chart_field_map(shape)
-            reason = "选型调用失败,回退兼容集首项 + 规则映射"
-        else:
-            # chart_type 越界则回退;字段映射逐项校验 + 规则兜底
-            chart_type = decision.chart_type if decision.chart_type in compat else non_table[0]
-            field_map = _resolve_field_map(decision, shape)
-            reason = decision.reason
+        config = build_chart_option(chart_type, rows, field_map, title)
+        # compatible_types 仅供前端切换菜单(规则建议的备选,低风险),不再用于限制 LLM 选型
+        compat = compatible_chart_types(shape)
+        if chart_type not in compat:
+            compat = [chart_type] + compat
+        config["compatible_types"] = compat
+        config["field_map"] = field_map
 
-        if chart_type == "table":
-            config = _build_table_config(rows, title, reason)
-        else:
-            config = build_chart_option(chart_type, rows, field_map, title)
-            config["compatible_types"] = compat
-            config["field_map"] = field_map
-
-    logger.info(f"图表生成(LLM 选型+映射, 代码填数据):type={chart_type}, reason={reason}")
+    logger.info(f"图表生成(LLM 判列+选型+映射, 代码填数据+校验):type={chart_type}, reason={reason}")
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 

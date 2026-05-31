@@ -50,4 +50,3 @@ class ColumnFeature(BaseModel):
 class DataShape(BaseModel):
     row_count: int
     columns: list[ColumnFeature]
-    shape_pattern: str

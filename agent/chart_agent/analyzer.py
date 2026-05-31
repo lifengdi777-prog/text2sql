@@ -36,28 +36,6 @@ def _infer_semantic_type(col_name: str, values: list[Any]) -> SemanticType:
     return "categorical"
 
 
-def _infer_pattern(cols: list[ColumnFeature]) -> str:
-    n_temp = sum(c.semantic_type == "temporal" for c in cols)
-    n_cat = sum(c.semantic_type == "categorical" for c in cols)
-    n_num = sum(c.semantic_type == "numeric" for c in cols)
-
-    if n_temp >= 1 and n_cat >= 1 and n_num >= 1:
-        return "time_series_with_dim"
-    if n_temp >= 1 and n_num >= 1:
-        return "time_series"
-    if n_cat >= 2 and n_num >= 1:
-        return "cross_dim"
-    if n_cat == 1 and n_num >= 2:
-        return "cat_multi_metric"
-    if n_cat == 1 and n_num == 1:
-        return "cat_metric"
-    if n_num == 1 and n_cat == 0 and n_temp == 0:
-        return "single_value"
-    if len(cols) >= 4:
-        return "detail"
-    return "unknown"
-
-
 def _to_hashable(v: Any) -> Any:
     if isinstance(v, (list, tuple)):
         return tuple(v)
@@ -68,7 +46,7 @@ def _to_hashable(v: Any) -> Any:
 
 def analyze(rows: list[dict[str, Any]]) -> DataShape:
     if not rows:
-        return DataShape(row_count=0, columns=[], shape_pattern="empty")
+        return DataShape(row_count=0, columns=[])
 
     col_names = list(rows[0].keys())
     features: list[ColumnFeature] = []
@@ -92,11 +70,14 @@ def analyze(rows: list[dict[str, Any]]) -> DataShape:
     return DataShape(
         row_count=len(rows),
         columns=features,
-        shape_pattern=_infer_pattern(features),
     )
 
 
-# 与 validator 保持一致的可读性上限
+# 前端 ECharts 已注册、可渲染的图表类型(LLM 选型时的全集)。
+# 加新类型时:前端注册对应图表族 + option_builder 支持 + 在此登记。
+SUPPORTED_CHART_TYPES = ["line", "multi_line", "bar", "stacked_bar", "pie", "table"]
+
+# 可读性硬上限(enforce_limits 用真实基数事后校验)
 _PIE_MAX_CARD = 10
 _BAR_MAX_CARD = 30
 _SERIES_MAX_CARD = 8   # 多系列(multi_line/stacked_bar)的系列数上限
@@ -229,3 +210,52 @@ def chart_field_map(shape: DataShape | None) -> dict[str, Any]:
     elif categorical:
         fm["dimension"] = categorical[0]
     return fm
+
+
+def enforce_limits(chart_type: str, field_map: dict[str, Any], shape: DataShape | None) -> tuple[str, str]:
+    """LLM 选完图后,用**真实基数**做硬限制兜底校验,违反则降级。返回 (chart_type, 降级原因)。
+
+    它只查精确事实(基数够不够小、必需的映射列齐不齐),**不做任何语义猜测**,
+    所以不会犯"时间/分类判错"那类错误 —— 这是规则唯一仍该把守的红线。
+    """
+    if chart_type == "table" or shape is None:
+        return chart_type, ""
+
+    card = {c.name: c.cardinality for c in shape.columns}
+    dim = field_map.get("dimension")
+    series = field_map.get("series")
+    measure = field_map.get("measure")
+    measures = field_map.get("measures")
+
+    # 1. 缺必需映射 → 画不了,降级表格
+    if not dim:
+        return "table", "缺少横轴/分类列映射,降级为表格"
+    if chart_type == "bar":
+        if not (measure or measures):
+            return "table", "柱图缺少数值列,降级为表格"
+    elif not measure:
+        return "table", f"{chart_type} 缺少数值列,降级为表格"
+
+    # 2. 多系列却没指定分组列 → 退回单系列
+    if chart_type == "multi_line" and not series:
+        return "line", "未指定分组列,降级为单线 line"
+    if chart_type == "stacked_bar" and not series:
+        return "bar", "未指定分组列,降级为普通 bar"
+
+    # 3. 多系列分组过多 → 表格(线/堆叠段太多看不清)
+    if chart_type in ("multi_line", "stacked_bar") and series and card.get(series, 0) > _SERIES_MAX_CARD:
+        return "table", f"分组列「{series}」有 {card[series]} 个值 > {_SERIES_MAX_CARD},降级为表格"
+
+    # 4. 柱图横轴类别过多 → 表格
+    if chart_type in ("bar", "stacked_bar") and card.get(dim, 0) > _BAR_MAX_CARD:
+        return "table", f"横轴「{dim}」有 {card[dim]} 类 > {_BAR_MAX_CARD},降级为表格"
+
+    # 5. 饼图:扇区过多 → 柱图;指标不是可加占比(率/均值) → 柱图
+    if chart_type == "pie":
+        if card.get(dim, 0) > _PIE_MAX_CARD:
+            return "bar", f"饼图扇区 {card[dim]} 个 > {_PIE_MAX_CARD},降级为柱图"
+        measure_feat = next((c for c in shape.columns if c.name == measure), None)
+        if not _pie_meaningful(measure_feat):
+            return "bar", "该指标不是可加的占比(率/均值类),饼图无意义,降级为柱图"
+
+    return chart_type, ""

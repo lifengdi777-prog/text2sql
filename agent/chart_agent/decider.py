@@ -1,9 +1,13 @@
-"""图表决策:LLM 选 chart_type + 指出字段映射(哪列当横轴/分组/数值)。
+"""图表决策:LLM 看"事实清单 + 样本数据",自己判断每列含义,选 chart_type + 给字段映射。
 
-这是 chart_agent 里唯一的 LLM 调用,且只输出"选型 + 映射"这点判断,
-不碰数据本身(透视、填 series.data 由 option_builder 用代码做),所以又快又稳。
+分工:
+- 代码(analyzer)只算**事实**:每列的基数/求和/样本、总行数——这些是 LLM 看不到全量、算不准的。
+- LLM 拿着事实 + 几行真实数据,**自己判断每列是时间/分类/数值**,再选型 + 给映射。
+- 数据本身(透视、排序、填 series.data)由 option_builder 用代码做。
 """
 from __future__ import annotations
+
+from typing import Any
 
 from langchain.messages import HumanMessage, SystemMessage
 
@@ -13,20 +17,43 @@ from agent.prompts import load_prompt
 from core.log import logger
 
 
-async def decide_chart_type(query: str, shape: DataShape, allowed: list[str]) -> ChartTypeDecision | None:
-    """让 LLM 从 allowed 里选类型并给出字段映射。
+def _facts(shape: DataShape) -> list[dict[str, Any]]:
+    """把每列压成一张"事实清单"(代码精确统计的硬数字,不含语义猜测)。"""
+    out: list[dict[str, Any]] = []
+    for c in shape.columns:
+        item: dict[str, Any] = {
+            "列名": c.name,
+            "数据类型": c.dtype,
+            "不同值个数": c.cardinality,
+            "样本值": c.sample,
+        }
+        if c.min_value is not None:  # 数值列才有
+            item.update({"最小值": c.min_value, "最大值": c.max_value, "求和": c.sum_value})
+        out.append(item)
+    return out
 
-    返回 ChartTypeDecision(含 chart_type + x/value/series/value_fields 映射);
-    调用失败返回 None,由上层用规则兜底。chart_type 是否越界、映射列名是否有效,均由上层校验。
+
+async def decide_chart_type(
+    query: str,
+    shape: DataShape,
+    sample_rows: list[dict[str, Any]],
+    supported: list[str],
+) -> ChartTypeDecision | None:
+    """LLM 选 chart_type(从 supported 全集里)+ 给字段映射。
+
+    失败返回 None,由上层用规则兜底。chart_type 越界、映射列名是否有效、可读性硬限制,
+    均由上层(enforce_limits 等)再校验。
     """
     prompt = await load_prompt("chart_type_picker")
     structured_llm = llm.with_structured_output(ChartTypeDecision, method="json_mode")
 
     user_msg = (
         f"用户问题:{query}\n\n"
-        f"数据形状摘要(字段映射只能从下面的列名里选):\n{shape.model_dump_json(indent=2)}\n\n"
-        f"可选图表类型(chart_type 只能从中选恰好一个):{allowed}\n\n"
-        f"请输出 chart_type、字段映射(x_field / value_field / series_field / value_fields)与 reason。"
+        f"总行数:{shape.row_count}\n\n"
+        f"各列事实清单(代码精确统计;字段映射只能从这些「列名」里选):\n{_facts(shape)}\n\n"
+        f"前几行真实数据(据此判断每列含义与列间关系):\n{sample_rows}\n\n"
+        f"前端支持的图表类型(chart_type 只能从中选恰好一个):{supported}\n\n"
+        f"请自行判断每列角色,选出最贴合用户意图的 chart_type,并给出字段映射与 reason。"
     )
     try:
         decision: ChartTypeDecision = await structured_llm.ainvoke([  # type: ignore
