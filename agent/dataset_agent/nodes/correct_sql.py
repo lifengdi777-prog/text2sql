@@ -1,4 +1,4 @@
-"""根据 validate_sql 报的 issues 让 LLM 重写 SQL(替代旧的 correct_spec)。
+"""根据 validate_sql 报的 issues 让 LLM 重写 SQL。
 
 复用 generate_sql 的 system prompt(sql_generator.md)和 SQLDraft 输出结构,
 只把 user content 换成「修正语境」:真实 schema + 上一版 SQL + 校验报告 + 用户原问题。

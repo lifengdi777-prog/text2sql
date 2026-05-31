@@ -1,4 +1,4 @@
-"""执行 SQL 节点(替代旧的 execute_spec)。
+"""执行 SQL 节点。
 
 把数据集各 sheet 注册成 DuckDB 视图,跑 validate_sql 规范化后的 SELECT,得到 rows。
 rows 写进 state.sql_result(继承自 WSAgentState),下游 chart_agent / interpret_result 原样消费。

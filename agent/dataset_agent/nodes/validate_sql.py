@@ -1,4 +1,4 @@
-"""校验 LLM 产出的 SQL(替代旧的 validate_spec)。
+"""校验 LLM 产出的 SQL。
 
 两道关:
   1. **安全/语法**(sqlglot,零 DB):必须是**单条 SELECT**(可含 WITH/UNION/子查询/JOIN),

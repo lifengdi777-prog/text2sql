@@ -1,4 +1,4 @@
-"""LLM 生成 DuckDB SQL 的节点(替代旧的 generate_spec)。
+"""LLM 生成 DuckDB SQL 的节点。
 
 输入(从 state 拼 prompt):
   - 用户问题(messages 中最后一条 HumanMessage)

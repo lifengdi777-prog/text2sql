@@ -5,6 +5,8 @@
     ↓
   load_schema       (从 MySQL 拉 schema_json → 渲染 markdown)
     ↓
+  parse_intent      (宽松意图识别:纯闲聊 → 发 guide_queries 后直接 END;正常提问 → 继续)
+    ↓
   recall_values     (ES 用用户原 query 召回真实值)
     ↓
   generate_sql      (LLM 出 DuckDB SELECT)
