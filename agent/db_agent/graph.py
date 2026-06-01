@@ -1,5 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from agent.schemas import WSAgentState, WSAgentContext
+from core.log import logger
 from agent.db_agent.nodes.parse_query_intention import parse_query_intention
 from agent.db_agent.nodes.extract_keywords import extract_keywords
 from agent.db_agent.nodes.recall_columns import recall_columns
@@ -97,12 +98,28 @@ graph_builder.add_edge("add_extra_context", "plan_joins")
 graph_builder.add_edge("plan_joins", "generate_sql")
 #校验生成的SQL是否正确，是否符合规范。
 graph_builder.add_edge("generate_sql", "validate_sql")
-#如果SQL有问题，进入校正流程；如果没问题，直接执行。
+
+#SQL 校正的最大重试次数：超过后即便仍未通过也不再校正，避免无限循环。
+MAX_CORRECT_ATTEMPTS = 3
+
+#校验之后的路由：决定继续校正、放弃修复、还是执行。
+def route_after_validate(state: WSAgentState):
+    #1. 校验通过（无 error）→ 直接执行
+    if not state.error:
+        return "execute_sql"
+    #2. 校验失败但还没到重试上限 → 继续进入校正流程
+    if state.correct_attempts < MAX_CORRECT_ATTEMPTS:
+        return "correct_sql"
+    #3. 已达重试上限仍未修好 → 不再校正，交给 execute_sql 走它的异常分支，
+    #   把真实错误以"查询失败"结果返回给用户，避免在校验↔校正间无限循环撞 recursion_limit。
+    logger.warning(f"SQL 校正已达上限 {MAX_CORRECT_ATTEMPTS} 次仍未通过，停止修复。最后错误：{state.error}")
+    return "execute_sql"
+
+#如果SQL有问题，进入校正流程；如果没问题（或已达重试上限），直接执行。
 graph_builder.add_conditional_edges(
-    "validate_sql", 
-    #根据state中的error字段来判断是否需要校正。如果error不为None，说明SQL有问题，需要校正；
-    #如果error为None，说明SQL没问题，可以执行了。
-    lambda state: "correct_sql" if state.error else "execute_sql"
+    "validate_sql",
+    route_after_validate,
+    {"correct_sql": "correct_sql", "execute_sql": "execute_sql"}
 )
 #如果需要校正，校正完后继续执行SQL。
 graph_builder.add_edge("correct_sql", "validate_sql")

@@ -723,7 +723,7 @@ onBeforeUnmount(() => {
               @click="exportCsv(message)"
             >
               
-              导出表格
+              导出数据
               <span aria-hidden="true">⬇</span>
             </button>
           </div>

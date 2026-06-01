@@ -41,4 +41,5 @@ async def correct_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
     writer(WSStepInfo(step="校正SQL语句", status="success"))
     logger.info(f"校正后的SQL：{result}")
-    return {"sql": result}
+    #记录已校正次数，供 graph 路由判断是否超过重试上限，避免无限循环。
+    return {"sql": result, "correct_attempts": state.correct_attempts + 1}

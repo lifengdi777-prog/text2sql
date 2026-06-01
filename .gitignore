@@ -14,7 +14,6 @@ logs/
 
 #docker相关文件
 docker/mysql
-docker/embedding
 
 #版本号.md
 版本号.md

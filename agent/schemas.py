@@ -53,6 +53,9 @@ class WSAgentState(BaseModel):
     sql: str | None = None
     #记录错误信息
     error: Optional[str] = None
+    #SQL 校正次数：每进一次 correct_sql 自增 1。graph 路由据此判断是否超过重试上限，
+    #避免 SQL 永远修不好时在 validate_sql↔correct_sql 之间无限循环撞 recursion_limit。
+    correct_attempts: int = 0
     # ── 以下字段由 chart_agent 子图使用 ───────────────────────────────
     # execute_sql 跑完后的结果集(成功时是 list[dict],出错时为 None)
     sql_result: list[dict[str, Any]] | None = None
