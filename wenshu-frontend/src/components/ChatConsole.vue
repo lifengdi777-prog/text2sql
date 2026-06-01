@@ -65,6 +65,12 @@ const activeConversationId = ref<number | null>(null)
 const historyLoading = ref(false)
 const search = ref('')
 
+// 历史会话侧栏是否收起。收起后侧栏隐藏，聊天主区铺满；在主区 header 提供按钮再展开。
+const sidebarCollapsed = ref(false)
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
 // 按标题搜索过滤(本地)
 const filteredConversations = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -391,9 +397,28 @@ onBeforeUnmount(() => {
   <!-- 左右布局:左历史侧栏 + 右聊天主区 -->
   <div class="flex h-full w-full overflow-hidden bg-white/82 backdrop-blur-xl">
     <!-- 历史会话侧栏 -->
-    <aside class="flex h-full w-64 shrink-0 flex-col border-r border-slate-200/70 bg-slate-50/60">
+    <aside
+      v-show="!sidebarCollapsed"
+      class="flex h-full w-64 shrink-0 flex-col border-r border-slate-200/70 bg-slate-50/60"
+    >
+      <!-- 顶部:收起侧边栏 -->
+      <div class="flex items-center justify-between px-3 pt-3">
+        <span class="text-sm font-semibold text-slate-700">历史会话</span>
+        <button
+          type="button"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-700"
+          title="收起侧边栏"
+          @click="toggleSidebar"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
       <!-- 新建对话 -->
-      <div class="p-3">
+      <div class="px-3 pb-3 pt-2">
         <button
           type="button"
           class="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100"
@@ -506,6 +531,19 @@ onBeforeUnmount(() => {
     <header class="border-b border-slate-200/70 px-6 py-3 sm:px-8">
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">
+          <!-- 展开侧边栏(仅在侧栏收起时显示) -->
+          <button
+            v-if="sidebarCollapsed"
+            type="button"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:text-sky-600"
+            title="展开侧边栏"
+            @click="toggleSidebar"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" stroke-linecap="round" />
+            </svg>
+          </button>
           <router-link
             v-if="backTo"
             :to="backTo"
