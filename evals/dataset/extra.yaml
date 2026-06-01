@@ -1,54 +1,94 @@
-# Extra Hard: 业务同义词、反向语义、隐含术语
-# 这一档专门测召回链路对"用户口语化术语"的鲁棒性
+# Extra: 业务同义词、反向语义、隐含术语、相对时间表达
+# 专门测召回链路对"用户口语化术语"的鲁棒性 + 时间推断(当前为 2026 年)
+# 同义词映射:良率/良品率=合格率, 次品率/报废率=不良率, 目标产量=计划产量, 单位工时产量=生产效率
 
 - id: extra_001
   difficulty: extra
-  category: synonym_quality
-  query: "统计各工序的良率"
-  # "良率" 是 合格率 的口语化表达,见数据库介绍.md 同义词
+  category: synonym_qualified_rate
+  query: "各产品类别的良品率怎么样？"   # 良品率 = 合格率
   gold_sql: |
-    SELECT pr.process_name,
+    SELECT pd.product_category,
            SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
     FROM table_production_record p
-    JOIN table_process pr ON p.process_id = pr.process_id
-    GROUP BY pr.process_name
-  gold_tables: [table_production_record, table_process]
-  gold_columns: [process_name, qualified_quantity, actual_quantity]
+    JOIN table_product pd ON p.product_id = pd.product_id
+    GROUP BY pd.product_category
+  gold_tables: [table_production_record, table_product]
+  gold_columns: [product_category, qualified_quantity, actual_quantity]
 
 - id: extra_002
   difficulty: extra
-  category: synonym_downtime
-  query: "统计各设备的宕机时间排名"
-  # "宕机时间" = 停机时长
+  category: reverse_semantic_min
+  query: "哪个工厂的产量最低？"
   gold_sql: |
-    SELECT e.equipment_name, SUM(p.downtime_minutes) AS downtime_minutes
+    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
-    JOIN table_equipment e ON p.equipment_id = e.equipment_id
-    GROUP BY e.equipment_name
-    ORDER BY downtime_minutes DESC
-  gold_tables: [table_production_record, table_equipment]
-  gold_columns: [equipment_name, downtime_minutes]
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.factory_name
+    ORDER BY actual_quantity ASC
+    LIMIT 1
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [factory_name, actual_quantity]
 
 - id: extra_003
   difficulty: extra
-  category: synonym_efficiency
-  query: "统计各产线的产线效率排行"
-  # "产线效率" = 生产效率
+  category: synonym_defect_rate_topn
+  query: "次品率最高的产品是哪个？"   # 次品率 = 不良率
   gold_sql: |
-    SELECT w.line_name,
-           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
+    SELECT pd.product_name,
+           SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
     FROM table_production_record p
-    JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.line_name
-    ORDER BY efficiency DESC
-  gold_tables: [table_production_record, table_workshop]
-  gold_columns: [line_name, actual_quantity, production_hours]
+    JOIN table_product pd ON p.product_id = pd.product_id
+    GROUP BY pd.product_name
+    ORDER BY defect_rate DESC
+    LIMIT 1
+  gold_tables: [table_production_record, table_product]
+  gold_columns: [product_name, defect_quantity, actual_quantity]
 
 - id: extra_004
   difficulty: extra
-  category: synonym_achievement
-  query: "统计各工厂的计划完成率"
-  # "计划完成率" = 产量达成率
+  category: relative_time_this_year
+  query: "今年各工厂的实际产量是多少？"   # 今年 = 2026
+  gold_sql: |
+    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.year = 2026
+    GROUP BY w.factory_name
+  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_columns: [factory_name, actual_quantity, year]
+
+- id: extra_005
+  difficulty: extra
+  category: implicit_time_first_half
+  query: "2026 年上半年各车间的实际产量"   # 上半年 = 1~6 月
+  gold_sql: |
+    SELECT w.workshop_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.year = 2026 AND d.month <= 6
+    GROUP BY w.workshop_name
+  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_columns: [workshop_name, actual_quantity, year, month]
+
+- id: extra_006
+  difficulty: extra
+  category: synonym_efficiency
+  query: "各工厂的单位工时产量是多少？"   # 单位工时产量 = 生产效率
+  gold_sql: |
+    SELECT w.factory_name,
+           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.factory_name
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [factory_name, actual_quantity, production_hours]
+
+- id: extra_007
+  difficulty: extra
+  category: synonym_target_quantity
+  query: "各工厂的目标产量完成得如何？"   # 目标产量=计划产量, 完成情况=达成率
   gold_sql: |
     SELECT w.factory_name,
            SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
@@ -58,67 +98,44 @@
   gold_tables: [table_production_record, table_workshop]
   gold_columns: [factory_name, actual_quantity, planned_quantity]
 
-- id: extra_005
-  difficulty: extra
-  category: reverse_order
-  query: "找出生产效率最低的三条产线"
-  # 反向 ORDER BY ASC
-  gold_sql: |
-    SELECT w.line_name,
-           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
-    FROM table_production_record p
-    JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.line_name
-    ORDER BY efficiency ASC
-    LIMIT 3
-  gold_tables: [table_production_record, table_workshop]
-  gold_columns: [line_name, actual_quantity, production_hours]
-
-- id: extra_006
-  difficulty: extra
-  category: implicit_metric
-  query: "哪个工序的质量问题最严重?"
-  # 隐含 = 不良率最高
-  gold_sql: |
-    SELECT pr.process_name,
-           SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
-    FROM table_production_record p
-    JOIN table_process pr ON p.process_id = pr.process_id
-    GROUP BY pr.process_name
-    ORDER BY defect_rate DESC
-    LIMIT 1
-  gold_tables: [table_production_record, table_process]
-  gold_columns: [process_name, defect_quantity, actual_quantity]
-
-- id: extra_007
-  difficulty: extra
-  category: comparison_subquery
-  query: "找出 Q1 比 Q2 实际产量更高的产线"
-  gold_sql: |
-    SELECT line_name FROM (
-      SELECT w.line_name,
-        SUM(CASE WHEN d.quarter = 'Q1' THEN p.actual_quantity ELSE 0 END) AS q1,
-        SUM(CASE WHEN d.quarter = 'Q2' THEN p.actual_quantity ELSE 0 END) AS q2
-      FROM table_production_record p
-      JOIN table_workshop w ON p.workshop_id = w.workshop_id
-      JOIN table_date d ON p.date_id = d.date_id
-      GROUP BY w.line_name
-    ) t WHERE q1 > q2
-  gold_tables: [table_production_record, table_workshop, table_date]
-  gold_columns: [line_name, actual_quantity, quarter]
-
 - id: extra_008
   difficulty: extra
-  category: noisy_term
-  query: "统计华东工厂的一车间各产线在 2026 年 Q1 的实际产量"
-  # 多重过滤:工厂=华东 AND 车间=一车间 AND 时间=Q1
+  category: reverse_semantic_worst
+  query: "停机时间最长的设备是哪台？"
   gold_sql: |
-    SELECT w.line_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT e.equipment_name, SUM(p.downtime_minutes) AS downtime_minutes
+    FROM table_production_record p
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    GROUP BY e.equipment_name
+    ORDER BY downtime_minutes DESC
+    LIMIT 1
+  gold_tables: [table_production_record, table_equipment]
+  gold_columns: [equipment_name, downtime_minutes]
+
+- id: extra_009
+  difficulty: extra
+  category: implicit_below_target
+  query: "有哪些工厂没有完成生产计划？"   # 没完成 = 达成率 < 100%
+  gold_sql: |
+    SELECT w.factory_name,
+           SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    JOIN table_date d ON p.date_id = d.date_id
-    WHERE w.factory_name = '华东工厂' AND w.workshop_name = '一车间'
-      AND d.year = 2026 AND d.quarter = 'Q1'
-    GROUP BY w.line_name
-  gold_tables: [table_production_record, table_workshop, table_date]
-  gold_columns: [line_name, actual_quantity, factory_name, workshop_name, year, quarter]
+    GROUP BY w.factory_name
+    HAVING SUM(p.actual_quantity) / SUM(p.planned_quantity) < 1
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [factory_name, actual_quantity, planned_quantity]
+
+- id: extra_010
+  difficulty: extra
+  category: synonym_total_output_topn
+  query: "产出最多的车间是哪个？"   # 产出 = 实际产量
+  gold_sql: |
+    SELECT w.workshop_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.workshop_name
+    ORDER BY actual_quantity DESC
+    LIMIT 1
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [workshop_name, actual_quantity]

@@ -119,26 +119,18 @@ async def evaluate_case(
         "error": None,
     }
 
-    # 每条 case 独立 session,避免状态污染
-    async with (
-        dw_mysql_client.session() as dw_session,
-        meta_mysql_client.session() as meta_session,
-        dw_mysql_client.session() as eval_session,  # 独立 session 跑 gold/pred SQL 对比
-    ):
+    # 只需要一个独立 session 跑 gold/pred SQL 对比;
+    # 图本身按新架构用连接池(meta_db_client/dw_db_client),节点内部用 meta_repo()/dw_repo() 现开现关,
+    # 不再向 context 注入长生命周期 session。
+    async with dw_mysql_client.session() as eval_session:
         try:
-            dw_repo = DWDBRepository(dw_session)
-            meta_repo = MetaDBRepository(meta_session)
-            es_repo = ESRepository(es_client.client)
-            col_qdrant_repo = ColumnQdrantRepository(qdrant_client.client)
-            metric_qdrant_repo = MetricQdrantRepository(qdrant_client.client)
-
             initial_state = WSAgentState(messages=[HumanMessage(query)])
             context = WSAgentContext(
-                dw_db_repo=dw_repo,
-                meta_db_repo=meta_repo,
-                es_repo=es_repo,
-                column_qdrant_repo=col_qdrant_repo,
-                metric_qdrant_repo=metric_qdrant_repo,
+                column_qdrant_repo=ColumnQdrantRepository(qdrant_client.client),
+                metric_qdrant_repo=MetricQdrantRepository(qdrant_client.client),
+                es_repo=ESRepository(es_client.client),
+                meta_db_client=meta_mysql_client,
+                dw_db_client=dw_mysql_client,
             )
 
             # 跑图,同时通过 stream_mode="custom" 收集节点时长

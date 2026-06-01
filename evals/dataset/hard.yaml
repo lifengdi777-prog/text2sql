@@ -1,157 +1,164 @@
-# Hard: 多表 JOIN + 多个指标 + 时间趋势 + 多维度交叉 + 窗口函数
+# Hard: 3+ 表 JOIN、窗口函数、子查询、HAVING 比率筛选、多条件交叉
+# 这一档考察:JOIN 路径规划 + 复杂 SQL 结构 + 业务术语→公式映射
 
 - id: hard_001
   difficulty: hard
-  category: multi_metric_time
-  query: "计算 2026 年每月实际产量、合格率和生产效率"
+  category: three_table_time
+  query: "统计 2026 年第一季度各工厂的实际产量"
   gold_sql: |
-    SELECT d.month,
-           SUM(p.actual_quantity) AS actual_quantity,
-           SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate,
-           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
+    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
     JOIN table_date d ON p.date_id = d.date_id
-    WHERE d.year = 2026
-    GROUP BY d.month
-    ORDER BY d.month
-  gold_tables: [table_production_record, table_date]
-  gold_columns: [month, actual_quantity, qualified_quantity, production_hours, year]
+    WHERE d.year = 2026 AND d.quarter = 'Q1'
+    GROUP BY w.factory_name
+  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_columns: [factory_name, actual_quantity, year, quarter]
 
 - id: hard_002
   difficulty: hard
-  category: top_n_detail
-  query: "列出 2026 年 Q1 实际产量最高的前 10 条生产记录"
+  category: window_topn_per_group
+  query: "每个工厂实际产量最高的产品分别是什么？"
   gold_sql: |
-    SELECT p.*
-    FROM table_production_record p
-    JOIN table_date d ON p.date_id = d.date_id
-    WHERE d.year = 2026 AND d.quarter = 'Q1'
-    ORDER BY p.actual_quantity DESC
-    LIMIT 10
-  gold_tables: [table_production_record, table_date]
-  gold_columns: [actual_quantity, year, quarter]
+    SELECT factory_name, product_name, actual_quantity
+    FROM (
+      SELECT w.factory_name,
+             pd.product_name,
+             SUM(p.actual_quantity) AS actual_quantity,
+             ROW_NUMBER() OVER (
+               PARTITION BY w.factory_name
+               ORDER BY SUM(p.actual_quantity) DESC
+             ) AS rn
+      FROM table_production_record p
+      JOIN table_workshop w ON p.workshop_id = w.workshop_id
+      JOIN table_product pd ON p.product_id = pd.product_id
+      GROUP BY w.factory_name, pd.product_name
+    ) t
+    WHERE rn = 1
+  gold_tables: [table_production_record, table_workshop, table_product]
+  gold_columns: [factory_name, product_name, actual_quantity]
 
 - id: hard_003
   difficulty: hard
-  category: multi_filter_topn
-  query: "统计华东工厂 2026 年 Q2 实际产量最高的前 5 个产品"
+  category: window_ratio_of_total
+  query: "各产品类别的实际产量占总产量的比例是多少？"
   gold_sql: |
-    SELECT pd.product_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT pd.product_category,
+           SUM(p.actual_quantity) AS actual_quantity,
+           SUM(p.actual_quantity) / SUM(SUM(p.actual_quantity)) OVER () AS ratio
     FROM table_production_record p
     JOIN table_product pd ON p.product_id = pd.product_id
-    JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    JOIN table_date d ON p.date_id = d.date_id
-    WHERE w.factory_name = '华东工厂' AND d.year = 2026 AND d.quarter = 'Q2'
-    GROUP BY pd.product_name
-    ORDER BY actual_quantity DESC
-    LIMIT 5
-  gold_tables: [table_production_record, table_product, table_workshop, table_date]
-  gold_columns: [product_name, actual_quantity, factory_name, year, quarter]
+    GROUP BY pd.product_category
+  gold_tables: [table_production_record, table_product]
+  gold_columns: [product_category, actual_quantity]
 
 - id: hard_004
   difficulty: hard
-  category: time_trend
-  query: "统计每个月的不良率趋势"
+  category: having_ratio
+  query: "哪些车间的合格率低于 97%？"
   gold_sql: |
-    SELECT d.year, d.month,
-           SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
+    SELECT w.workshop_name,
+           SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
     FROM table_production_record p
-    JOIN table_date d ON p.date_id = d.date_id
-    GROUP BY d.year, d.month
-    ORDER BY d.year, d.month
-  gold_tables: [table_production_record, table_date]
-  gold_columns: [year, month, defect_quantity, actual_quantity]
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    GROUP BY w.workshop_name
+    HAVING SUM(p.qualified_quantity) / SUM(p.actual_quantity) < 0.97
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [workshop_name, qualified_quantity, actual_quantity]
 
 - id: hard_005
   difficulty: hard
-  category: cross_dim
-  query: "统计各工厂各车间的产量达成率"
+  category: filter_dim_ratio_topn
+  query: "在焊接工序中，合格率最高的车间是哪个？"
   gold_sql: |
-    SELECT w.factory_name, w.workshop_name,
-           SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
-    FROM table_production_record p
-    JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.factory_name, w.workshop_name
-  gold_tables: [table_production_record, table_workshop]
-  gold_columns: [factory_name, workshop_name, actual_quantity, planned_quantity]
-
-- id: hard_006
-  difficulty: hard
-  category: time_compare
-  query: "对比各产品类别 Q1 和 Q2 的实际产量"
-  gold_sql: |
-    SELECT pd.product_category,
-      SUM(CASE WHEN d.quarter = 'Q1' THEN p.actual_quantity ELSE 0 END) AS q1_actual,
-      SUM(CASE WHEN d.quarter = 'Q2' THEN p.actual_quantity ELSE 0 END) AS q2_actual
-    FROM table_production_record p
-    JOIN table_product pd ON p.product_id = pd.product_id
-    JOIN table_date d ON p.date_id = d.date_id
-    GROUP BY pd.product_category
-  gold_tables: [table_production_record, table_product, table_date]
-  gold_columns: [product_category, actual_quantity, quarter]
-
-- id: hard_007
-  difficulty: hard
-  category: cross_dim
-  query: "统计各车间下不同工序的合格率"
-  gold_sql: |
-    SELECT w.workshop_name, pr.process_name,
+    SELECT w.workshop_name,
            SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
     JOIN table_process pr ON p.process_id = pr.process_id
-    GROUP BY w.workshop_name, pr.process_name
+    WHERE pr.process_name = '焊接'
+    GROUP BY w.workshop_name
+    ORDER BY qualified_rate DESC
+    LIMIT 1
   gold_tables: [table_production_record, table_workshop, table_process]
-  gold_columns: [workshop_name, process_name, qualified_quantity, actual_quantity]
+  gold_columns: [workshop_name, qualified_quantity, actual_quantity, process_name]
+
+- id: hard_006
+  difficulty: hard
+  category: filter_equipment_status
+  query: "各工厂中处于运行状态的设备的实际产量是多少？"
+  gold_sql: |
+    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_equipment e ON p.equipment_id = e.equipment_id
+    WHERE e.equipment_status = '运行'
+    GROUP BY w.factory_name
+  gold_tables: [table_production_record, table_workshop, table_equipment]
+  gold_columns: [factory_name, actual_quantity, equipment_status]
+
+- id: hard_007
+  difficulty: hard
+  category: subquery_above_avg
+  query: "哪些产品的实际产量高于所有产品的平均实际产量？"
+  gold_sql: |
+    SELECT pd.product_name, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_product pd ON p.product_id = pd.product_id
+    GROUP BY pd.product_name
+    HAVING SUM(p.actual_quantity) > (
+      SELECT AVG(s) FROM (
+        SELECT SUM(actual_quantity) AS s
+        FROM table_production_record
+        GROUP BY product_id
+      ) x
+    )
+  gold_tables: [table_production_record, table_product]
+  gold_columns: [product_name, actual_quantity]
 
 - id: hard_008
   difficulty: hard
-  category: window_function
-  query: "找出每个工厂实际产量最高的产线"
+  category: time_quarter_trend
+  query: "2026 年各季度的实际产量分别是多少？"
   gold_sql: |
-    SELECT factory_name, line_name, actual_quantity FROM (
-      SELECT w.factory_name, w.line_name,
-             SUM(p.actual_quantity) AS actual_quantity,
-             ROW_NUMBER() OVER (PARTITION BY w.factory_name ORDER BY SUM(p.actual_quantity) DESC) AS rn
-      FROM table_production_record p
-      JOIN table_workshop w ON p.workshop_id = w.workshop_id
-      GROUP BY w.factory_name, w.line_name
-    ) t WHERE rn = 1
-  gold_tables: [table_production_record, table_workshop]
-  gold_columns: [factory_name, line_name, actual_quantity]
+    SELECT d.quarter, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE d.year = 2026
+    GROUP BY d.quarter
+    ORDER BY d.quarter
+  gold_tables: [table_production_record, table_date]
+  gold_columns: [quarter, actual_quantity, year]
 
 - id: hard_009
   difficulty: hard
-  category: above_average
-  query: "找出 Q2 不良率高于全厂平均水平的产品"
+  category: window_rank
+  query: "按产量达成率给各工厂排名"
   gold_sql: |
-    SELECT product_name, defect_rate FROM (
-      SELECT pd.product_name,
-             SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
+    SELECT factory_name,
+           achievement_rate,
+           RANK() OVER (ORDER BY achievement_rate DESC) AS rk
+    FROM (
+      SELECT w.factory_name,
+             SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
       FROM table_production_record p
-      JOIN table_product pd ON p.product_id = pd.product_id
-      JOIN table_date d ON p.date_id = d.date_id
-      WHERE d.quarter = 'Q2'
-      GROUP BY pd.product_name
-    ) t WHERE defect_rate > (
-      SELECT SUM(p2.defect_quantity) / SUM(p2.actual_quantity)
-      FROM table_production_record p2
-      JOIN table_date d2 ON p2.date_id = d2.date_id
-      WHERE d2.quarter = 'Q2'
-    )
-  gold_tables: [table_production_record, table_product, table_date]
-  gold_columns: [product_name, defect_quantity, actual_quantity, quarter]
+      JOIN table_workshop w ON p.workshop_id = w.workshop_id
+      GROUP BY w.factory_name
+    ) t
+  gold_tables: [table_production_record, table_workshop]
+  gold_columns: [factory_name, actual_quantity, planned_quantity]
 
 - id: hard_010
   difficulty: hard
-  category: cross_dim_metric
-  query: "统计各设备类型在各工厂的停机时长"
+  category: efficiency_metric_filter
+  query: "2026 年华东工厂各产线的生产效率是多少？"
   gold_sql: |
-    SELECT e.equipment_type, w.factory_name,
-           SUM(p.downtime_minutes) AS downtime_minutes
+    SELECT w.line_name,
+           SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
     FROM table_production_record p
-    JOIN table_equipment e ON p.equipment_id = e.equipment_id
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY e.equipment_type, w.factory_name
-  gold_tables: [table_production_record, table_equipment, table_workshop]
-  gold_columns: [equipment_type, factory_name, downtime_minutes]
+    JOIN table_date d ON p.date_id = d.date_id
+    WHERE w.factory_name = '华东工厂' AND d.year = 2026
+    GROUP BY w.line_name
+  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_columns: [line_name, actual_quantity, production_hours, factory_name, year]
