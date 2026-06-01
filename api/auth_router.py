@@ -39,14 +39,14 @@ class TokenOut(BaseModel):
 @router.post("/register", response_model=TokenOut)
 async def register(body: RegisterBody) -> TokenOut:
     user = await auth_service.register_user(body.username, body.password)
-    token = auth_service.create_access_token(user.id)
+    token = auth_service.create_access_token(user.id, user.username)
     return TokenOut(access_token=token, user=UserOut(id=user.id, username=user.username))
 
 
 @router.post("/login", response_model=TokenOut)
 async def login(body: LoginBody) -> TokenOut:
     user = await auth_service.authenticate_user(body.username, body.password)
-    token = auth_service.create_access_token(user.id)
+    token = auth_service.create_access_token(user.id, user.username)
     return TokenOut(access_token=token, user=UserOut(id=user.id, username=user.username))
 
 

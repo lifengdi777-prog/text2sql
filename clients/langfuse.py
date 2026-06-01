@@ -53,6 +53,7 @@ def build_run_config(
     run_name: str,
     *,
     user_id: str | None = None,
+    user_name: str | None = None,
     session_id: Any | None = None,
     request_id: str | None = None,
     query: str | None = None,
@@ -76,8 +77,21 @@ def build_run_config(
         metadata["request_id"] = request_id
     if query:
         metadata["query"] = query[:200] if isinstance(query, str) else query
-    if user_id:
-        metadata["langfuse_user_id"] = str(user_id)
+    # Langfuse 的 User 维度(Users 面板按它归类):以数字 id 为主(稳定归类),
+    # 若能拿到用户名则拼上,显示成 "1 (admin)" —— 既能按 id 归类又可读。
+    # 老 token 拿不到用户名 → 只显示 id;连 id 都没有 → 退回用户名。
+    uid = str(user_id) if user_id else None
+    if uid and user_name:
+        metadata["langfuse_user_id"] = f"{uid} ({user_name})"
+    elif uid:
+        metadata["langfuse_user_id"] = uid
+    elif user_name:
+        metadata["langfuse_user_id"] = user_name
+    # 同时把数字 id 与用户名分别留在 metadata,便于检索/精确定位。
+    if uid:
+        metadata["user_id"] = uid
+    if user_name:
+        metadata["user_name"] = user_name
     if session_id is not None:
         metadata["langfuse_session_id"] = str(session_id)
     if metadata:

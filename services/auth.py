@@ -45,31 +45,42 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 # ───────── JWT 签发 / 解码 ───────────────────────────────
-def create_access_token(user_id: int) -> str:
-    """签发 access_token,sub=用户 id 字符串,带过期时间。"""
+def create_access_token(user_id: int, username: str) -> str:
+    """签发 access_token,sub=用户 id 字符串,name=用户名,带过期时间。"""
     cfg = app_config.auth
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
+        "name": username,  # 用户名:供 Langfuse 等按可读名字归类 trace
         "iat": now,
         "exp": now + timedelta(minutes=cfg.access_token_expire_minutes),
     }
     return jwt.encode(payload, cfg.secret, algorithm=cfg.algorithm)
 
 
-def decode_access_token(token: str) -> str:
-    """解码 token,返回 sub(用户 id 字符串)。无效/过期 → 401。"""
+def _decode_payload(token: str) -> dict:
+    """解码并校验 token 签名/有效期,返回完整 payload。无效/过期 → 401。"""
     cfg = app_config.auth
     try:
-        payload = jwt.decode(token, cfg.secret, algorithms=[cfg.algorithm])
+        return jwt.decode(token, cfg.secret, algorithms=[cfg.algorithm])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="登录已过期,请重新登录")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="无效的登录凭证")
-    sub = payload.get("sub")
+
+
+def decode_access_token(token: str) -> str:
+    """解码 token,返回 sub(用户 id 字符串)。无效/过期 → 401。"""
+    sub = _decode_payload(token).get("sub")
     if not sub:
         raise HTTPException(status_code=401, detail="无效的登录凭证")
     return str(sub)
+
+
+def decode_access_token_username(token: str) -> str | None:
+    """解码 token,返回 name(用户名)。老 token 无该字段 → None。无效/过期 → 401。"""
+    name = _decode_payload(token).get("name")
+    return str(name) if name else None
 
 
 # ───────── 注册 / 登录 ───────────────────────────────────

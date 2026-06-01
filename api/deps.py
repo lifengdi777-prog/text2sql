@@ -13,8 +13,19 @@ from fastapi import Header, HTTPException
 
 from models.upload import UploadDatasetMySQL
 from repositories.upload import UploadDatasetRepository
-from services.auth import decode_access_token
+from services.auth import decode_access_token, decode_access_token_username
 from services.excel_ingest import get_session_factory
+
+
+def _extract_bearer_token(authorization: str | None) -> str:
+    """从 Authorization 头取出 Bearer token;缺失/格式错误 → 401。"""
+    prefix = "Bearer "
+    if not authorization or not authorization.startswith(prefix):
+        raise HTTPException(status_code=401, detail="未登录,请先登录")
+    token = authorization[len(prefix):].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="未登录,请先登录")
+    return token
 
 
 async def get_current_user(authorization: str | None = Header(default=None)) -> str:
@@ -22,13 +33,15 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
 
     缺失 / 格式错误 / token 无效或过期 → 401(由 decode_access_token 抛)。
     """
-    prefix = "Bearer "
-    if not authorization or not authorization.startswith(prefix):
-        raise HTTPException(status_code=401, detail="未登录,请先登录")
-    token = authorization[len(prefix):].strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="未登录,请先登录")
-    return decode_access_token(token)
+    return decode_access_token(_extract_bearer_token(authorization))
+
+
+async def get_current_username(authorization: str | None = Header(default=None)) -> str | None:
+    """从 token 解析当前用户名(name claim),供 Langfuse 按名字归类。
+
+    老 token 无 name 字段 → 返回 None(调用方退回用 id)。token 无效/过期 → 401。
+    """
+    return decode_access_token_username(_extract_bearer_token(authorization))
 
 
 async def require_owned_dataset(dataset_id: int, user_id: str) -> UploadDatasetMySQL:

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from agent.common.history import stream_with_history
 from agent.dataset_agent.graph import dataset_graph
 from agent.dataset_agent.schemas import DatasetAgentContext, DatasetAgentState
-from api.deps import get_current_user, require_owned_dataset
+from api.deps import get_current_user, get_current_username, require_owned_dataset
 from clients.langfuse import build_run_config
 
 router = APIRouter(prefix="/dataset")
@@ -24,7 +24,7 @@ class DatasetQueryBody(BaseModel):
     conversation_id: int | None = None
 
 
-async def _graph_chunks(dataset_id: int, query: str, user_id: str,
+async def _graph_chunks(dataset_id: int, query: str, user_id: str, user_name: str | None = None,
                         request_id: str | None = None, session_id: int | None = None):
     # 产出 WSStepInfo chunk;SSE 格式化 + 历史落库交给 stream_with_history
     state = DatasetAgentState(
@@ -34,7 +34,7 @@ async def _graph_chunks(dataset_id: int, query: str, user_id: str,
     context = DatasetAgentContext(user_id=user_id)
     # Langfuse 追踪 + 运行元数据(未启用 Langfuse 时只带 run_name/metadata,无害)
     run_config = build_run_config(
-        "dataset_query", user_id=user_id, session_id=session_id,
+        "dataset_query", user_id=user_id, user_name=user_name, session_id=session_id,
         request_id=request_id, query=query,
     )
     # subgraphs=True:让 chart_subgraph 内部的 stream_writer 事件冒泡上来
@@ -54,13 +54,14 @@ async def query_dataset(
     body: DatasetQueryBody,
     request: Request,
     user_id: str = Depends(get_current_user),
+    user_name: str | None = Depends(get_current_username),
 ):
     # 先校验归属:不属于当前用户(或不存在)→ 404,绝不进入流式计算管线
     await require_owned_dataset(dataset_id, user_id)
     request_id = getattr(request.state, "request_id", None)
     return StreamingResponse(
         stream_with_history(
-            _graph_chunks(dataset_id, body.query, user_id,
+            _graph_chunks(dataset_id, body.query, user_id, user_name=user_name,
                           request_id=request_id, session_id=body.conversation_id),
             user_id=user_id,
             source="dataset",
