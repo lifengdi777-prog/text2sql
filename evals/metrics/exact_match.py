@@ -10,9 +10,28 @@ Exact Set Match: 用 sqlglot parse 成 AST,比较结构等价性。
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlglot import exp, parse_one
+
+# validate_sql 会给每条 pred 注入 LIMIT(MAX_RESULT_ROWS+1) 防全表查询;
+# 金标没有这个 LIMIT,会让 EM 的结构比对永远 false。评分前用下面的函数把这个
+# “注入哨兵 LIMIT”剥掉(用户自己写的更小 LIMIT/TopN 会保留,因为值不等于哨兵)。
+try:
+    from agent.db_agent.nodes.validate_sql import MAX_RESULT_ROWS
+    _INJECTED_LIMIT = MAX_RESULT_ROWS + 1
+except Exception:
+    _INJECTED_LIMIT = 1001
+
+
+def strip_injected_limit(sql: str | None) -> str | None:
+    """去掉 validate_sql 注入的 `LIMIT 1001`(=MAX_RESULT_ROWS+1)。其它 LIMIT 原样保留。"""
+    if not sql:
+        return sql
+    return re.sub(
+        rf"\s+limit\s+{_INJECTED_LIMIT}\s*;?\s*$", "", sql, flags=re.IGNORECASE
+    ).strip()
 
 
 def extract_skeleton(sql: str, dialect: str = "mysql") -> dict[str, set[str]]:

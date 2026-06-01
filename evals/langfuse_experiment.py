@@ -35,7 +35,7 @@ from clients.es import es_client  # noqa: E402
 from clients.mysql import dw_mysql_client, meta_mysql_client  # noqa: E402
 from clients.qdrant import qdrant_client  # noqa: E402
 from conf.app_config import app_config  # noqa: E402
-from evals.metrics.exact_match import exact_match  # noqa: E402
+from evals.metrics.exact_match import exact_match, strip_injected_limit  # noqa: E402
 from evals.metrics.execution import execution_match  # noqa: E402
 from evals.metrics.schema_linking import schema_linking_recall  # noqa: E402
 from repositories.es import ESRepository  # noqa: E402
@@ -95,7 +95,7 @@ async def run_graph_task(*, item, **kwargs) -> dict:
 async def eval_execution(*, input, output, expected_output, metadata=None, **kwargs):
     """Execution Accuracy(金标):跑 gold/pred SQL 比结果集。"""
     gold = (expected_output or {}).get("sql")
-    pred = (output or {}).get("sql")
+    pred = strip_injected_limit((output or {}).get("sql"))  # 去掉校验注入的 LIMIT 1001
     if not gold:  # safety 类没有 gold_sql → 跳过该指标
         return Evaluation(name="execution_accuracy", value=None, comment="无 gold_sql,跳过")
     async with dw_mysql_client.session() as session:
@@ -109,7 +109,7 @@ async def eval_execution(*, input, output, expected_output, metadata=None, **kwa
 def eval_exact_match(*, input, output, expected_output, metadata=None, **kwargs):
     """Exact Match:AST 结构等价(表/列/聚合/结构)。"""
     gold = (expected_output or {}).get("sql")
-    pred = (output or {}).get("sql")
+    pred = strip_injected_limit((output or {}).get("sql"))  # 去掉校验注入的 LIMIT 1001
     if not gold:
         return Evaluation(name="exact_match", value=None, comment="无 gold_sql,跳过")
     em = exact_match(gold, pred)

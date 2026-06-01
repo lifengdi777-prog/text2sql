@@ -154,7 +154,7 @@
 - id: medium_012
   difficulty: medium
   category: ratio_metric_orderby
-  query: "各工厂的产量达成率排名（从高到低）"
+  query: "各工厂的产量达成率，按从高到低排序"
   gold_sql: |
     SELECT w.factory_name,
            SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate

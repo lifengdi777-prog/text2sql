@@ -54,7 +54,7 @@ from clients.mysql import dw_mysql_client, meta_mysql_client  # noqa: E402
 from clients.qdrant import qdrant_client  # noqa: E402
 from core.log import logger  # noqa: E402
 from evals.metrics.cost import CostTracker, aggregate_latency  # noqa: E402
-from evals.metrics.exact_match import exact_match  # noqa: E402
+from evals.metrics.exact_match import exact_match, strip_injected_limit  # noqa: E402
 from evals.metrics.execution import execution_match  # noqa: E402
 from evals.metrics.schema_linking import schema_linking_recall  # noqa: E402
 from repositories.es import ESRepository  # noqa: E402
@@ -170,16 +170,18 @@ async def evaluate_case(
                 result.update(_score_safety(case, result))
             else:
                 # ── 2. 普通用例:算 EX / EM / Schema Linking
+                # 评分用去掉 validate_sql 注入的 LIMIT 1001 后的 SQL(用户真实 TopN 保留)
+                pred_for_eval = strip_injected_limit(result["pred_sql"])
                 if enable_execution and case.get("gold_sql"):
                     ex_result = await execution_match(
-                        case["gold_sql"], result["pred_sql"], eval_session
+                        case["gold_sql"], pred_for_eval, eval_session
                     )
                     result["execution"] = ex_result.to_dict()
                 else:
                     result["execution"] = {"match": None, "skipped": True}
 
                 if case.get("gold_sql"):
-                    result["exact_match"] = exact_match(case["gold_sql"], result["pred_sql"])
+                    result["exact_match"] = exact_match(case["gold_sql"], pred_for_eval)
                 else:
                     result["exact_match"] = {"match": None, "skipped": True}
 

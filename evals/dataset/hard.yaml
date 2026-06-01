@@ -44,7 +44,6 @@
   query: "各产品类别的实际产量占总产量的比例是多少？"
   gold_sql: |
     SELECT pd.product_category,
-           SUM(p.actual_quantity) AS actual_quantity,
            SUM(p.actual_quantity) / SUM(SUM(p.actual_quantity)) OVER () AS ratio
     FROM table_production_record p
     JOIN table_product pd ON p.product_id = pd.product_id
@@ -133,7 +132,7 @@
 - id: hard_009
   difficulty: hard
   category: window_rank
-  query: "按产量达成率给各工厂排名"
+  query: "按产量达成率给各工厂排名，并给出名次序号"
   gold_sql: |
     SELECT factory_name,
            achievement_rate,
