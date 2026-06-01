@@ -15,7 +15,7 @@ from langchain.messages import HumanMessage, SystemMessage
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
 
-from agent.llm import llm
+from agent.llm import fast_llm
 from agent.prompts import load_prompt
 from agent.schemas import WSAgentContext, WSAgentState, WSStepInfo
 from core.log import logger
@@ -62,7 +62,7 @@ async def translate_columns(state: WSAgentState, runtime: Runtime[WSAgentContext
 
     query = state.messages[0].content if state.messages else ""
     prompt = await load_prompt("translate_columns")
-    structured_llm = llm.with_structured_output(_ColumnLabels, method="json_mode")
+    structured_llm = fast_llm.with_structured_output(_ColumnLabels, method="json_mode")
 
     messages = [
         SystemMessage(content=prompt),

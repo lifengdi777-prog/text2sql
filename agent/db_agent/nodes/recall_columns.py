@@ -2,7 +2,7 @@ import asyncio
 
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
-from agent.llm import llm
+from agent.llm import fast_llm
 from pydantic import BaseModel
 from agent.prompts import load_prompt
 from clients.embedding import embedding_client
@@ -30,7 +30,7 @@ async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     #PromptTemplate 的作用就是在调用时，把 {query} 替换成真实的查询内容
     #llm负责调用大模型
     #JsonOutputParser()负责把大模型返回的文本解析成 JSON
-    chain = prompt_template | llm | JsonOutputParser()
+    chain = prompt_template | fast_llm | JsonOutputParser()
     #这一步是真正执行整条链，而且是异步执行。
     result: list[str] = await chain.ainvoke({"query": query}) # type: ignore
     keywords = list(set((keywords or [] )+result))

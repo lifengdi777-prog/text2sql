@@ -1,7 +1,7 @@
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo, WSAgentTableInfoState
 from agent.prompts import load_prompt
-from agent.llm import llm
+from agent.llm import fast_llm
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from core.log import logger
@@ -20,7 +20,7 @@ async def filter_tables(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     prompt_template = PromptTemplate(template=prompt, input_variables=['query', 'table_infos'])
     #定义了一个langchian的链式调用，包含了提示词模板、LLM调用和JSON输出解析三个步骤。
     #JsonOutputParser()	的作用是把LLM返回的文本解析成JSON格式，方便后续处理。
-    chain = prompt_template | llm | JsonOutputParser()
+    chain = prompt_template | fast_llm | JsonOutputParser()
     result = await chain.ainvoke({"query": query, "table_infos": [table_info.model_dump() for table_info in table_infos]})
     #如果合并返回的表信息没有在result里，就从table_infos里删除；
     #如果表信息里的字段没有在result里，就从table_info.columns里删除。

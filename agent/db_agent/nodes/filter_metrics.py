@@ -1,7 +1,7 @@
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from agent.prompts import load_prompt
-from agent.llm import llm
+from agent.llm import fast_llm
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from core.log import logger
@@ -17,7 +17,7 @@ async def filter_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
     prompt = await load_prompt("filter_metric_info")
     prompt_template = PromptTemplate(template=prompt, input_variables=['query', 'metric_infos'])
-    chain = prompt_template | llm | JsonOutputParser()
+    chain = prompt_template | fast_llm | JsonOutputParser()
     result = await chain.ainvoke({"query": query, "metric_infos": [metric_info.model_dump() for metric_info in metric_infos]})
 
     for metric_info in metric_infos[:]:

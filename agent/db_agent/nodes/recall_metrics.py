@@ -5,7 +5,7 @@ from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from agent.prompts import load_prompt
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from agent.llm import llm
+from agent.llm import fast_llm
 from dtos.meta import MetricInfo
 from clients.embedding import embedding_client
 
@@ -25,7 +25,7 @@ async def recall_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     # 先使用大模型拓展关键词
     prompt = await load_prompt("extend_keywords_for_metric_recall")
     prompt_template = PromptTemplate(template=prompt, input_variables=['query'])
-    chain = prompt_template | llm | JsonOutputParser()
+    chain = prompt_template | fast_llm | JsonOutputParser()
     result: list[str] = await chain.ainvoke({"query": query}) # type: ignore
     keywords = list(set((keywords or [] )+result))
 
