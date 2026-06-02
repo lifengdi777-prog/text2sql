@@ -110,3 +110,38 @@ class ConversationRepository:
             .order_by(MessageMySQL.id.asc())
         )
         return list((await self.session.scalars(stmt)).all())
+
+    async def load_recent_turns(
+        self,
+        conversation_id: int,
+        max_turns: int = 3,
+        max_rows: int = 20,
+    ) -> list[dict[str, Any]]:
+        """加载最近 max_turns 轮历史,供多轮改写(指代消解)用。
+
+        把消息按「user → 紧邻的 assistant」配对成一轮,每轮取:
+          - question:该轮用户问题文本
+          - sql:assistant payload 里真正执行的 SQL(含 region='华东' 这类筛选,换参数型追问靠它)
+          - rows:结果前 max_rows 行(按展示顺序,位置型/名称型追问靠它取值)
+
+        注意:当前这轮的 user 消息此刻还没有 assistant 回复(stream_with_history 先落 user、
+        跑完才落 assistant),配对时落单 → 自动被排除,不会把"当前问题"当成历史。
+        """
+        msgs = await self.list_messages(conversation_id)
+        turns: list[dict[str, Any]] = []
+        i = 0
+        while i < len(msgs):
+            cur = msgs[i]
+            nxt = msgs[i + 1] if i + 1 < len(msgs) else None
+            if cur.role == "user" and nxt is not None and nxt.role == "assistant":
+                payload = nxt.payload or {}
+                turns.append({
+                    "question": cur.content,
+                    "sql": payload.get("sql"),
+                    "rows": (payload.get("result") or [])[:max_rows],
+                })
+                i += 2
+            else:
+                # 落单消息(如当前轮还没回复的 user、或异常半截轮)跳过
+                i += 1
+        return turns[-max_turns:]

@@ -24,6 +24,10 @@ class WSAgentState(BaseModel):
     # 这个验证器会在messages字段被赋值时被调用。
     #add_messages是langgraph的方法，用于将新的消息添加到现有的消息列表中。
     messages: Annotated[list[AnyMessage], add_messages]
+    #多轮:最近几轮历史快照(每轮 question + sql + 结果前 N 行),由入口 query_graph 按 conversation_id
+    #加载后注入。parse_query_intention 用它做指代消解,把当前追问改写成自包含问题;改写完即用完,
+    #下游节点不读它(它们只读改写后的 messages[-1])。
+    history: list[dict[str, Any]] | None = None
     #Optional的作用是表示这个字段(should_continue)是可选的，
     # 可以为bool类型的值，也可以为None。
     should_continue: Optional[bool] = None

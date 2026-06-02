@@ -103,6 +103,9 @@ function toChatMessage(m: StoredMessage): ChatMessage {
     interpretation: p.interpretation ?? null,
     sql: p.sql ?? null,
     guideQueries: p.guideQueries ?? [],
+    // 扇出风险标记 + 文案:历史回放时重现警告样式(老数据无此字段则按非扇出处理)
+    fanout: p.fanout ?? false,
+    fanoutMessage: p.fanoutMessage ?? null,
     status: p.status ?? 'success',
   }
 }

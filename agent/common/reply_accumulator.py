@@ -23,6 +23,9 @@ class ReplyAccumulator:
         self.interpretation: str | None = None
         self.sql: str | None = None
         self.guide_queries: list[str] = []
+        # 扇出风险:fanout_clarify 发的引导卡(警告样式 + 风险说明),要落库才能在历史里重现
+        self.fanout: bool = False
+        self.fanout_message: str | None = None
 
     def feed(self, info: WSStepInfo) -> None:
         # 1) steps:按 step 名去重更新状态
@@ -53,6 +56,12 @@ class ReplyAccumulator:
         if info.finish and info.guide_queries:
             self.guide_queries = list(info.guide_queries)
 
+        # 6) 扇出风险卡:data 带 fanout=True(对齐前端 isFanoutData,不强制 finish)。
+        #    记下标记 + 风险说明,落库后历史回放才能重现警告样式,而不是退回普通引导卡。
+        if isinstance(data, dict) and data.get("fanout") is True:
+            self.fanout = True
+            self.fanout_message = data.get("message")
+
     def payload(self) -> dict[str, Any]:
         """组装成前端 AgentReplyMessage 形状(缺 id/role,加载时补)。"""
         return {
@@ -62,6 +71,9 @@ class ReplyAccumulator:
             "interpretation": self.interpretation,
             "sql": self.sql,
             "guideQueries": self.guide_queries,
+            # 扇出风险标记 + 文案(camelCase 对齐前端 AgentReplyMessage)
+            "fanout": self.fanout,
+            "fanoutMessage": self.fanout_message,
             # 落库的都是已完成的一轮(含 error 卡也算完成),统一 success
             "status": "success",
         }

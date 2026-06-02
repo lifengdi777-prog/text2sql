@@ -13,6 +13,8 @@ from clients.embedding import embedding_client
 
 from repositories.es import ESRepository
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
+from repositories.conversation import ConversationRepository
+from services.excel_ingest import get_session_factory
 from langchain.messages import HumanMessage
 from agent.schemas import WSAgentState, WSAgentContext
 
@@ -31,7 +33,15 @@ async def query_graph(query: str, user_id: str | None = None, user_name: str | N
     column_qdrant_repo = ColumnQdrantRepository(qdrant_client.client)
     metric_qdrant_repo = MetricQdrantRepository(qdrant_client.client)
 
-    state = WSAgentState(messages=[HumanMessage(query)])
+    # 多轮:有会话才加载历史(最近几轮的 问题/SQL/结果前 N 行),供 parse_query_intention 指代消解。
+    # 用一个短会话读完即还;此刻当前 user 消息已落库但还没 assistant 回复,会被配对逻辑排除。
+    history: list[dict] = []
+    if session_id is not None:
+        Session = get_session_factory()
+        async with Session() as s:
+            history = await ConversationRepository(s).load_recent_turns(session_id)
+
+    state = WSAgentState(messages=[HumanMessage(query)], history=history)
     context = WSAgentContext(
         dw_db_client=dw_mysql_client,
         meta_db_client=meta_mysql_client,
