@@ -1,6 +1,6 @@
 from conf.meta_config import MetaConfig
 import json
-from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric, JoinRelation
+from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric
 from dtos.qdrant import ColumnQdrantInfo, MetricQdrantInfo
 from repositories.mysql import MetaDBRepository, DWDBRepository
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
@@ -86,39 +86,6 @@ async def sync_dw_to_meta_db() -> tuple[list[ColumnInfo], list[MetricInfo]]:
             await meta_repo.add_metric_infos(metric_infos)
 
             return column_infos, metric_infos
-
-#从 DW 业务库的真实外键约束抽取表间 JOIN 关系，落库到 meta.join_relation。
-#运行时由 plan_joins 节点消费，规划 join path 并作为强约束注入 SQL 生成。
-async def sync_dw_fk_to_meta_db() -> list[JoinRelation]:
-    async with (
-        meta_mysql_client.session() as meta_session,
-        dw_mysql_client.session() as dw_session
-    ):
-        dw_repo = DWDBRepository(dw_session)
-        meta_repo = MetaDBRepository(meta_session)
-
-        # 1. 从 information_schema 读取 DW 的真实外键
-        fks = await dw_repo.get_foreign_keys()
-
-        # 2. 转换为 JoinRelation。表编号(table_id)在本系统中就是表名，与外键里的表名一致。
-        join_relations: list[JoinRelation] = [
-            JoinRelation(
-                source_table=src_table,
-                source_column=src_col,
-                target_table=tgt_table,
-                target_column=tgt_col,
-                join_type='inner',
-                description=f"{src_table}.{src_col} 关联 {tgt_table}.{tgt_col}"
-            )
-            for src_table, src_col, tgt_table, tgt_col in fks
-        ]
-
-        # 3. 落库(先清空保证可重复执行)
-        async with meta_session.begin():
-            await meta_repo.clear_join_relations()
-            await meta_repo.add_join_relations(join_relations)
-
-        return join_relations
 
 #向量化 字段的名字丶描述和别名 便于向量化检索召回字段相关信息
 async def sync_meta_column_to_qdrant(column_infos: list[ColumnInfo]):
@@ -207,8 +174,6 @@ async def main():
         await sync_meta_metric_to_qdrant(metric_infos)
         # 4. 将指定字段的值同步到es中建立索引
         await sync_dw_value_to_es(column_infos)
-        # 5. 从 DW 真实外键抽取表间 JOIN 关系，落库到 meta.join_relation
-        await sync_dw_fk_to_meta_db()
     finally:
         await es_client.close()
         await qdrant_client.close()

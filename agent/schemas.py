@@ -42,9 +42,6 @@ class WSAgentState(BaseModel):
     table_infos: list[WSAgentTableInfoState] | None = None
     #meta指标信息
     metric_infos: list[MetricInfo] | None =  None
-    #plan_joins 节点根据已选表 + 元数据中的外键关系规划出的 JOIN 子句(强约束),
-    #供 generate_sql 注入提示词,避免 LLM 自行推断 JOIN 条件。
-    join_clauses: str | None = None
     #获取当前数据库的基本信息，用于后续 LLM 生成 SQL 时提供数据库环境上下文。
     db_info: str | None = None
     #当前日期时间上下文

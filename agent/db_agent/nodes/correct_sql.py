@@ -22,11 +22,9 @@ async def correct_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     metric_infos = state.metric_infos
     date_info = state.date_info
     db_info = state.db_info
-    #plan_joins 规划出的 JOIN 子句(强约束)，修复时同样需遵循，避免改错连接条件。
-    join_clauses = state.join_clauses or "（本次查询无预设 JOIN 关系）"
 
     prompt = await load_prompt("correct_sql")
-    prompt_template = PromptTemplate(template=prompt, input_variables=['query', 'sql', 'error', 'table_infos', 'metric_infos', 'date_info', 'db_info', 'join_clauses'])
+    prompt_template = PromptTemplate(template=prompt, input_variables=['query', 'sql', 'error', 'table_infos', 'metric_infos', 'date_info', 'db_info'])
     chain = prompt_template | llm | StrOutputParser()
     result = await chain.ainvoke({
         "query": query,
@@ -35,8 +33,7 @@ async def correct_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         "table_infos": table_infos,
         "metric_infos": metric_infos,
         "date_info": date_info,
-        "db_info": db_info,
-        "join_clauses": join_clauses
+        "db_info": db_info
     })
 
     writer(WSStepInfo(step="校正SQL语句", status="success"))

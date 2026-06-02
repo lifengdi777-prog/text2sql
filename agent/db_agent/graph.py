@@ -11,7 +11,6 @@ from agent.db_agent.nodes.add_extra_context import add_extra_context
 from agent.db_agent.nodes.extract_keywords import extract_keywords
 from agent.db_agent.nodes.filter_metrics import filter_metrics
 from agent.db_agent.nodes.filter_tables import filter_tables
-from agent.db_agent.nodes.plan_joins import plan_joins
 from agent.db_agent.nodes.validate_sql import validate_sql
 from agent.db_agent.nodes.generate_sql import generate_sql
 from agent.db_agent.nodes.correct_sql import correct_sql
@@ -41,7 +40,6 @@ graph_builder.add_node(recall_values)
 graph_builder.add_node(merge_recalled_infos)
 graph_builder.add_node(filter_metrics)
 graph_builder.add_node(filter_tables)
-graph_builder.add_node(plan_joins)
 graph_builder.add_node(add_extra_context)
 graph_builder.add_node(generate_sql)
 graph_builder.add_node(validate_sql)
@@ -87,15 +85,10 @@ graph_builder.add_edge("merge_recalled_infos", "filter_metrics")
 graph_builder.add_edge("merge_recalled_infos", "filter_tables")
 #根据过滤的结果，添加额外的上下文信息，帮助生成更准确的SQL
 #filter_metrics 与 filter_tables 同为 merge 的并行分支(同一 superstep 完成)，在 add_extra_context 汇合(屏障)。
-#注意：plan_joins 不能插在其中某一条分支上，否则两分支深度不一致会让 add_extra_context 被触发两次，
-#进而 generate_sql 重复执行并发写 sql 键 → InvalidUpdateError。故保持屏障原样，plan_joins 放到屏障之后。
 graph_builder.add_edge("filter_metrics", "add_extra_context")
 graph_builder.add_edge("filter_tables", "add_extra_context")
-#汇合之后再线性插入 plan_joins：它读 state.table_infos(filter_tables 已写入)规划 JOIN，
-#写入 join_clauses 供 generate_sql 注入。放在屏障之后，保证只执行一次。
-graph_builder.add_edge("add_extra_context", "plan_joins")
-#根据之前的上下文信息生成SQL语句。
-graph_builder.add_edge("plan_joins", "generate_sql")
+#汇合之后直接生成 SQL：JOIN 由 generate_sql 依据 table_infos 里的主外键描述自行连接。
+graph_builder.add_edge("add_extra_context", "generate_sql")
 #校验生成的SQL是否正确，是否符合规范。
 graph_builder.add_edge("generate_sql", "validate_sql")
 
