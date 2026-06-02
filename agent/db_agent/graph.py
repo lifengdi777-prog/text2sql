@@ -13,6 +13,7 @@ from agent.db_agent.nodes.filter_metrics import filter_metrics
 from agent.db_agent.nodes.filter_tables import filter_tables
 from agent.db_agent.nodes.complete_join_path import complete_join_path
 from agent.db_agent.nodes.detect_fanout import detect_fanout
+from agent.db_agent.nodes.fanout_clarify import fanout_clarify
 from agent.db_agent.nodes.validate_sql import validate_sql
 from agent.db_agent.nodes.generate_sql import generate_sql
 from agent.db_agent.nodes.correct_sql import correct_sql
@@ -44,6 +45,7 @@ graph_builder.add_node(filter_metrics)
 graph_builder.add_node(filter_tables)
 graph_builder.add_node(complete_join_path)
 graph_builder.add_node(detect_fanout)
+graph_builder.add_node(fanout_clarify)
 graph_builder.add_node(add_extra_context)
 graph_builder.add_node(generate_sql)
 graph_builder.add_node(validate_sql)
@@ -95,7 +97,17 @@ graph_builder.add_edge("merge_recalled_infos", "filter_tables")
 graph_builder.add_edge("filter_metrics", "complete_join_path")
 graph_builder.add_edge("filter_tables", "complete_join_path")
 graph_builder.add_edge("complete_join_path", "detect_fanout")
-graph_builder.add_edge("detect_fanout", "add_extra_context")
+#扇出风险分叉：检测到扇出 → fanout_clarify 发 guide_queries 并结束本轮(让用户重新明确口径,
+#  下一次提问是全新运行,自动重过 parse_query_intention);无风险 → 正常进入 add_extra_context。
+def route_after_fanout(state: WSAgentState):
+    return "fanout_clarify" if state.fanout_warning else "add_extra_context"
+
+graph_builder.add_conditional_edges(
+    "detect_fanout",
+    route_after_fanout,
+    {"fanout_clarify": "fanout_clarify", "add_extra_context": "add_extra_context"},
+)
+graph_builder.add_edge("fanout_clarify", END)
 #汇合之后直接生成 SQL：JOIN 由 generate_sql 依据 table_infos 里的主外键描述自行连接。
 graph_builder.add_edge("add_extra_context", "generate_sql")
 #校验生成的SQL是否正确，是否符合规范。

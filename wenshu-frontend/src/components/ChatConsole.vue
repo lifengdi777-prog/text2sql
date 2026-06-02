@@ -705,10 +705,21 @@ onBeforeUnmount(() => {
 
           <section
             v-if="message.status === 'success' && message.guideQueries.length > 0"
-            class="mt-6 rounded-3xl border border-sky-100 bg-sky-50/70 p-4 sm:p-5"
+            :class="[
+              'mt-6 rounded-3xl border p-4 sm:p-5',
+              message.fanout ? 'border-amber-300 bg-amber-50/80' : 'border-sky-100 bg-sky-50/70',
+            ]"
           >
             <div class="mb-3">
-              <p class="mt-1 text-xs text-sky-600/80 sm:text-sm">
+              <!-- 扇出风险:警告图标 + 危险色文案 -->
+              <div v-if="message.fanout" class="flex items-start gap-2">
+                <span class="text-base leading-6 sm:text-lg">⚠️</span>
+                <p class="mt-0.5 text-xs font-semibold text-rose-600 sm:text-sm">
+                  {{ message.fanoutMessage || '检测到扇出风险：直接统计会重复计算，请换一个更明确的口径。' }}
+                </p>
+              </div>
+              <!-- 普通意图引导 -->
+              <p v-else class="mt-1 text-xs text-sky-600/80 sm:text-sm">
                 {{ guideText }}
               </p>
             </div>
@@ -718,7 +729,12 @@ onBeforeUnmount(() => {
                 v-for="guideQuery in message.guideQueries"
                 :key="`${message.id}-${guideQuery}`"
                 type="button"
-                class="rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left text-xs leading-6 text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 sm:text-sm"
+                :class="[
+                  'rounded-2xl border bg-white px-4 py-3 text-left text-xs leading-6 text-slate-700 transition sm:text-sm',
+                  message.fanout
+                    ? 'border-amber-200 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700'
+                    : 'border-sky-200 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700',
+                ]"
                 @click="applyGuideQuery(guideQuery)"
               >
                 {{ guideQuery }}

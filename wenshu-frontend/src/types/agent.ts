@@ -48,6 +48,9 @@ export interface AgentReplyMessage {
   interpretation: string | null     // 由 interpret_result 节点产出的自然语言解读
   sql: string | null                // 真正执行的那条 SQL(执行成功事件带上),供「查看 SQL」展示
   guideQueries: string[]
+  // 扇出风险:为 true 时前端用"警告图标 + 危险色"渲染引导区,fanoutMessage 是风险说明文案
+  fanout?: boolean
+  fanoutMessage?: string | null
   status: 'streaming' | 'success' | 'error'
   errorMessage?: string
 }

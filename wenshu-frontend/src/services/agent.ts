@@ -58,6 +58,16 @@ function isRawRowsData(data: AgentEventData): data is Record<string, AgentResult
   return Array.isArray(data)
 }
 
+function isFanoutData(data: AgentEventData): data is { fanout: boolean; message?: string } {
+  // fanout_clarify 的事件:data 是带 fanout:true 的对象(扇出风险引导)
+  return (
+    !!data &&
+    !Array.isArray(data) &&
+    typeof data === 'object' &&
+    (data as Record<string, unknown>).fanout === true
+  )
+}
+
 function isChartConfigData(data: AgentEventData): data is ChartConfig {
   // chart_agent 的 finish 事件:data 是带 chart_type 字段的对象
   return (
@@ -117,6 +127,11 @@ function mergeReplyMessage(
     guideQueries: event.finish && event.guide_queries && event.guide_queries.length > 0
       ? event.guide_queries
       : current.guideQueries,
+    // 扇出风险:命中时记下标记 + 说明文案,供 ChatConsole 用危险色 + 警告图标渲染引导区
+    fanout: isFanoutData(event.data) ? true : current.fanout,
+    fanoutMessage: isFanoutData(event.data)
+      ? (event.data.message ?? null)
+      : current.fanoutMessage,
     status: chartDone && interpretSettled ? 'success' : current.status,
   }
 }
@@ -178,6 +193,8 @@ async function runStream(
     interpretation: null,
     sql: null,
     guideQueries: [],
+    fanout: false,
+    fanoutMessage: null,
     status: 'streaming',
   }
 
