@@ -1,6 +1,7 @@
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo, WSAgentTableInfoState
 from dtos.meta import TableInfo, ColumnInfo, MetricInfo, ValueInfo
+from agent.db_agent.join_path import complete_join_path
 from core.log import logger
 
 
@@ -94,6 +95,11 @@ async def merge_recalled_infos(state: WSAgentState, runtime: Runtime[WSAgentCont
                     role=table_info.role,  #额外加入的表的角色信息（维表还是事实表）
                     columns=column_infos  # 召回的字段 + 指标/值关联的字段 + 补充的主外键
                 ))
+
+        # 1.6 连接路径补全:把"已选表→事实表"路径上缺失的中间表补进来,
+        #     避免雪花多跳维表(如 city 所在的 factory)因中间表(workshop)未被召回而成孤岛、
+        #     在 filter 阶段被当作"连不上的废表"误删(详见 join_path.complete_join_path)。
+        table_infos = await complete_join_path(table_infos, meta_db_repo)
 
     # 2. 处理指标信息
     metric_infos: list[MetricInfo] = [metric_info for metric_info in recalled_metrics]

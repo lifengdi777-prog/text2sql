@@ -32,7 +32,7 @@ class MetricInfo(BaseModel):
 class TableInfo(BaseModel):
     id: str
     name: str
-    role: Literal['dim', 'fact']
+    role: Literal['dim', 'fact', 'bridge']
     description: str
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,4 +41,14 @@ class ValueInfo(BaseModel):
     id: str
     value: str
     column_id: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DataRelationship(BaseModel):
+    # 一条外键关系：from_table(多) 的 from_column 引用 to_table(一) 的 to_column。
+    from_table: str
+    from_column: str
+    to_table: str
+    to_column: str
+    description: str | None = None
     model_config = ConfigDict(from_attributes=True)

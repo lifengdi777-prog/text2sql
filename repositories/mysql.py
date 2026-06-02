@@ -1,9 +1,22 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
-from models.meta import ColumnInfoMySQL, MetricInfoMySQL, TableInfoMySQL, ColumnMetricMySQL
-from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric
+from models.meta import ColumnInfoMySQL, MetricInfoMySQL, TableInfoMySQL, ColumnMetricMySQL, DataRelationshipMySQL
+from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric, DataRelationship
 from sqlalchemy import text, and_, or_
 from typing import Any
+from decimal import Decimal
+
+
+def _to_jsonable(value: Any) -> Any:
+    """把数据库取出的值规整成 JSON 可序列化类型。
+
+    DECIMAL 列(如 production_hours)会被驱动读成 Decimal，而 Decimal 无法被
+    json.dumps 序列化，会让写入 JSON 列(examples)、Qdrant payload、ES 文档时报错。
+    这里统一转成 float；其它类型原样返回。
+    """
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 # MetaDBRepository类用于操作元数据库中的表格和指标信息。
 class MetaDBRepository:
@@ -15,6 +28,7 @@ class MetaDBRepository:
         await self.session.execute(delete(MetricInfoMySQL))
         await self.session.execute(delete(ColumnInfoMySQL))
         await self.session.execute(delete(TableInfoMySQL))
+        await self.session.execute(delete(DataRelationshipMySQL))
 
 #以下方法用于将ColumnInfo、TableInfo、MetricInfo和ColumnMetric对象添加到数据库中。
 # 每个方法都接受一个包含相应对象的列表，并将这些对象转换为对应的MySQL模型实例，
@@ -34,6 +48,15 @@ class MetaDBRepository:
 
     async def add_column_metrics(self, column_metrics: list[ColumnMetric]):
         self.session.add_all([ColumnMetricMySQL(**column_metric.model_dump()) for column_metric in column_metrics])
+
+    # 写入表关系(外键边),供连接路径补全/扇出检测使用。
+    async def add_relationships(self, relationships: list[DataRelationship]):
+        self.session.add_all([DataRelationshipMySQL(**rel.model_dump()) for rel in relationships])
+
+    # 读取全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
+    async def get_relationships(self) -> list[DataRelationship]:
+        rows = await self.session.scalars(select(DataRelationshipMySQL))
+        return [DataRelationship.model_validate(row) for row in rows]
 
     async def get_column_info_by_id(self, column_id: str) -> ColumnInfo | None:
         stmt = select(ColumnInfoMySQL).where(ColumnInfoMySQL.id == column_id)
@@ -100,7 +123,7 @@ class DWDBRepository:
         for index, column_name in enumerate(column_names):
             #将行格式的数据(rows)转换为按列聚合的字典结构(column_values)，
             # 其中每个键是列名，对应的值是该列的所有数据列表。
-            column_values[column_name] = [row[index] for row in rows]
+            column_values[column_name] = [_to_jsonable(row[index]) for row in rows]
         return column_values
     
     
@@ -132,6 +155,20 @@ class DWDBRepository:
     #    例如 distinct(gender, city) 后，gender 这一列仍可能得到 ["男", "女", "女", "男"]。
     # 所以如果这个方法的目标是给每一列提供“候选枚举值”，通常还需要在这里再按列去重；
     # 如果目标是保留原始采样结果或频次特征，则不应该去重。
+
+    async def get_foreign_keys(self) -> list[dict[str, str]]:
+        """读取当前 DW 库声明的所有外键关系(from 子表/多 → to 父表/一)。
+        直接取自 information_schema,无需人工维护;dw.sql 里的 FOREIGN KEY 约束就是来源。"""
+        sql = """
+            SELECT TABLE_NAME            AS from_table,
+                   COLUMN_NAME           AS from_column,
+                   REFERENCED_TABLE_NAME AS to_table,
+                   REFERENCED_COLUMN_NAME AS to_column
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+        """
+        result = await self.session.execute(text(sql))
+        return [dict(row) for row in result.mappings().fetchall()]
 
     async def get_db_info(self):
         """

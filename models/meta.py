@@ -43,3 +43,15 @@ class ColumnMetricMySQL(Base):
 
     column_id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="列编号")
     metric_id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="指标编号")
+
+
+# 表关系(外键边)：由 init_data 从 DW 的外键约束自动灌入。
+# from_* 是外键所在表(多的一方)，to_* 是被引用表(一的一方)，方向用于推导扇出。
+class DataRelationshipMySQL(Base):
+    __tablename__ = "data_relationship"
+
+    from_table: Mapped[str] = mapped_column(String(64),primary_key=True,comment="外键所在表(多的一方)")
+    from_column: Mapped[str] = mapped_column(String(64),primary_key=True,comment="外键列")
+    to_table: Mapped[str] = mapped_column(String(64),primary_key=True,comment="被引用表(一的一方)")
+    to_column: Mapped[str] = mapped_column(String(64),primary_key=True,comment="被引用列")
+    description: Mapped[str | None] = mapped_column(String(255),comment="关系语义描述")

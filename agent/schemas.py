@@ -15,7 +15,7 @@ from agent.chart_agent.schemas import DataShape
 class WSAgentTableInfoState(BaseModel):
     id: str
     name: str
-    role: Literal['dim', 'fact']
+    role: Literal['dim', 'fact', 'bridge']
     description: str
     columns: list[ColumnInfo]
 
@@ -50,6 +50,8 @@ class WSAgentState(BaseModel):
     sql: str | None = None
     #记录错误信息
     error: Optional[str] = None
+    #扇出检测结果：事实度量经一对多/多对多关系聚合到某维度时的重复计算警告(无风险则为 None)
+    fanout_warning: Optional[str] = None
     #SQL 校正次数：每进一次 correct_sql 自增 1。graph 路由据此判断是否超过重试上限，
     #避免 SQL 永远修不好时在 validate_sql↔correct_sql 之间无限循环撞 recursion_limit。
     correct_attempts: int = 0

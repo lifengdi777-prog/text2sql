@@ -1,6 +1,6 @@
 from conf.meta_config import MetaConfig
 import json
-from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric
+from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric, DataRelationship
 from dtos.qdrant import ColumnQdrantInfo, MetricQdrantInfo
 from repositories.mysql import MetaDBRepository, DWDBRepository
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
@@ -62,6 +62,22 @@ async def sync_dw_to_meta_db() -> tuple[list[ColumnInfo], list[MetricInfo]]:
 
             await meta_repo.add_column_infos(column_infos)
             await meta_repo.add_table_infos(table_infos)
+
+            # 1.5 同步外键关系到 data_relationship（供"连接路径补全"与"扇出检测"使用）
+            # 边直接取自 DW 已声明的外键约束，零人工维护；description 取自对应外键列的描述。
+            column_desc_mapping: dict[str, str] = {column_info.id: column_info.description for column_info in column_infos}
+            foreign_keys = await dw_repo.get_foreign_keys()
+            relationships: list[DataRelationship] = [
+                DataRelationship(
+                    from_table=fk["from_table"],
+                    from_column=fk["from_column"],
+                    to_table=fk["to_table"],
+                    to_column=fk["to_column"],
+                    description=column_desc_mapping.get(f'{fk["from_table"]}.{fk["from_column"]}')
+                )
+                for fk in foreign_keys
+            ]
+            await meta_repo.add_relationships(relationships)
 
             # 2. 同步MetricInfo和ColumnMetric到meta元数据库中
             metric_infos: list[MetricInfo] = []

@@ -11,6 +11,8 @@ from agent.db_agent.nodes.add_extra_context import add_extra_context
 from agent.db_agent.nodes.extract_keywords import extract_keywords
 from agent.db_agent.nodes.filter_metrics import filter_metrics
 from agent.db_agent.nodes.filter_tables import filter_tables
+from agent.db_agent.nodes.complete_join_path import complete_join_path
+from agent.db_agent.nodes.detect_fanout import detect_fanout
 from agent.db_agent.nodes.validate_sql import validate_sql
 from agent.db_agent.nodes.generate_sql import generate_sql
 from agent.db_agent.nodes.correct_sql import correct_sql
@@ -40,6 +42,8 @@ graph_builder.add_node(recall_values)
 graph_builder.add_node(merge_recalled_infos)
 graph_builder.add_node(filter_metrics)
 graph_builder.add_node(filter_tables)
+graph_builder.add_node(complete_join_path)
+graph_builder.add_node(detect_fanout)
 graph_builder.add_node(add_extra_context)
 graph_builder.add_node(generate_sql)
 graph_builder.add_node(validate_sql)
@@ -84,9 +88,14 @@ graph_builder.add_edge("recall_values", "merge_recalled_infos")
 graph_builder.add_edge("merge_recalled_infos", "filter_metrics")
 graph_builder.add_edge("merge_recalled_infos", "filter_tables")
 #根据过滤的结果，添加额外的上下文信息，帮助生成更准确的SQL
-#filter_metrics 与 filter_tables 同为 merge 的并行分支(同一 superstep 完成)，在 add_extra_context 汇合(屏障)。
-graph_builder.add_edge("filter_metrics", "add_extra_context")
-graph_builder.add_edge("filter_tables", "add_extra_context")
+#filter_metrics 与 filter_tables 同为 merge 的并行分支，两者在 complete_join_path 汇合(屏障)：
+#  必须让两条分支等长地在同一节点汇合，否则 add_extra_context 会被两条不等长路径触发两次，
+#  导致 generate_sql/execute_sql 跑两遍、两个分支同时写 sql_result 而报 InvalidUpdateError。
+#汇合后单链推进：complete_join_path(补回被剪掉的连接中间表) → detect_fanout(扇出检测) → add_extra_context。
+graph_builder.add_edge("filter_metrics", "complete_join_path")
+graph_builder.add_edge("filter_tables", "complete_join_path")
+graph_builder.add_edge("complete_join_path", "detect_fanout")
+graph_builder.add_edge("detect_fanout", "add_extra_context")
 #汇合之后直接生成 SQL：JOIN 由 generate_sql 依据 table_infos 里的主外键描述自行连接。
 graph_builder.add_edge("add_extra_context", "generate_sql")
 #校验生成的SQL是否正确，是否符合规范。

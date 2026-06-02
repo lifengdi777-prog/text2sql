@@ -14,6 +14,10 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
     async with runtime.context.dw_repo() as dw_db_repo:
         db_infos = await dw_db_repo.get_db_info()
     db_info = f"当前数据库类型：{db_infos['dialect']}，编码：{db_infos['charset']}，版本号：{db_infos['version']}"
+    # 若扇出检测发现"事实度量经一对多/多对多关系聚合到某维度会重复计算"，把警告随上下文一并交给
+    # generate_sql(沿用现有 {db_info} 槽位，不改提示词模板)，提醒它避免直接 SUM 或改用可归因口径。
+    if state.fanout_warning:
+        db_info = f"{db_info}\n{state.fanout_warning}"
 
     # 获取当前时间
     now = datetime.now()

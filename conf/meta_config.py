@@ -15,7 +15,8 @@ class ColumnConfig(BaseModel):
 
 class TableConfig(BaseModel):
     name: str
-    role: Literal['dim', 'fact']
+    # dim=维表, fact=事实表, bridge=多对多桥接表(junction)
+    role: Literal['dim', 'fact', 'bridge']
     description: str
     columns: list[ColumnConfig]
     model_config = ConfigDict(from_attributes=True)
