@@ -18,6 +18,11 @@ const router = createRouter({
       component: () => import('@/views/DbChatView.vue'),
     },
     {
+      path: '/sources',
+      name: 'source-list',
+      component: () => import('@/views/DatasourceListView.vue'),
+    },
+    {
       path: '/datasets',
       name: 'dataset-list',
       component: () => import('@/views/DatasetListView.vue'),

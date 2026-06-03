@@ -16,19 +16,18 @@ onMounted(() => {
 // 登录页用独立全屏布局,不套侧边栏外壳
 const isAuthPage = computed(() => route.name === 'login')
 
-// 数据集问答下的所有子路由(列表 / 对某数据集问数)都高亮"数据集问答"
-const isDatasetSection = computed(() => route.path.startsWith('/datasets'))
-
 // 聊天页(DB / 数据集问数):去掉上下留白,让聊天卡片贴顶贴底铺满高度
 const isChatView = computed(() => route.name === 'db-chat' || route.name === 'dataset-chat')
 
 const navItems = [
   { key: 'db', label: '数据库问答', desc: 'MySQL 数仓', to: '/db', icon: '🗄️' },
+  { key: 'source', label: '数据源', desc: 'MySQL 连接管理', to: '/sources', icon: '🗃️' },
   { key: 'dataset', label: '数据集问答', desc: '上传的 Excel', to: '/datasets', icon: '📊' },
 ]
 
-function isActive(key: string): boolean {
-  return key === 'dataset' ? isDatasetSection.value : route.path.startsWith('/db')
+// 各入口按路径前缀高亮('/db' '/sources' '/datasets' 互不为前缀)
+function isActive(item: { to: string }): boolean {
+  return route.path.startsWith(item.to)
 }
 
 async function logout() {
@@ -57,7 +56,7 @@ async function logout() {
           :to="item.to"
           class="group flex items-start gap-3 rounded-2xl border px-4 py-3 transition"
           :class="
-            isActive(item.key)
+            isActive(item)
               ? 'border-sky-200 bg-sky-50 text-sky-700 shadow-sm'
               : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50'
           "
