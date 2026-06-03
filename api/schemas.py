@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from conf.meta_config import MetaConfig
+
 #这是一个 FastAPI 的请求体模型，用 Pydantic 定义前端传进来的数据结构。
 class QueryInput(BaseModel):
     query: str
@@ -24,3 +26,10 @@ class DatasourceRegisterInput(BaseModel):
 class DatasourceBuildInput(BaseModel):
     """构建(草稿+物化)入参。tables 为空则接入该库全部表;否则只接入选中的表。"""
     tables: list[str] = []
+
+
+class MetaUpdateInput(BaseModel):
+    """保存编辑后的元数据。需同时校验:登录账号密码 + 该数据源的数据库密码,过了才允许保存。"""
+    config: MetaConfig
+    user_password: str
+    db_password: str

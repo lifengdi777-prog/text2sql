@@ -12,12 +12,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import text
 
 from api.deps import get_current_user
-from api.schemas import DatasourceBuildInput, DatasourceRegisterInput
+from api.schemas import DatasourceBuildInput, DatasourceRegisterInput, MetaUpdateInput
 from clients.es import es_client
 from clients.mysql import MySQLClient, client_registry, meta_mysql_client
 from clients.qdrant import qdrant_client
 from conf.app_config import DBConfig
 from conf.meta_config import MetaConfig
+from core import crypto
 from core.log import logger
 from dtos.datasource import DatasourceCreate, DatasourceInfo
 from repositories.datasource import DatasourceRepository
@@ -26,6 +27,7 @@ from repositories.mysql import MetaDBRepository
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 from scripts.generate_draft import generate_draft
 from scripts.materialize import materialize
+from services.auth import get_user_by_id, verify_password
 
 router = APIRouter(prefix="/datasources")
 
@@ -173,19 +175,30 @@ async def build_datasource(datasource_id: str, data: DatasourceBuildInput,
 
 
 @router.put("/{datasource_id}/meta")
-async def update_datasource_meta(datasource_id: str, config: MetaConfig,
+async def update_datasource_meta(datasource_id: str, data: MetaUpdateInput,
                                  background: BackgroundTasks, user_id: str = Depends(get_current_user)):
-    """保存人工审核后的元数据:把编辑后的 config 重新物化(异步)。
-    description/alias 改了会重嵌 Qdrant、sync 改了会重灌 ES —— 全在 materialize 里完成。"""
+    """保存人工审核后的元数据。双重确认:登录账号密码 + 该数据源的数据库密码,都对才放行。
+    通过后异步重物化(description/alias 改了重嵌 Qdrant、sync 改了重灌 ES)。"""
+    # 1. 校验登录账号密码
+    user = await get_user_by_id(int(user_id))
+    if user is None or not verify_password(data.user_password, user.password_hash):
+        raise HTTPException(status_code=403, detail="账号密码错误")
+    # 2. 校验该数据源的数据库密码(与注册时存的解密后比对)
     async with meta_mysql_client.session() as session:
-        repo = DatasourceRepository(session)
-        async with session.begin():
-            if not await repo.exists(datasource_id):
-                raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
-            await repo.set_build_status(datasource_id, "building")
-    background.add_task(_materialize_and_track, datasource_id, config)
+        ds = await DatasourceRepository(session).get_by_id(datasource_id)
+        if ds is None:
+            raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+        try:
+            db_ok = crypto.decrypt(ds.password_enc) == data.db_password
+        except Exception:  # noqa: BLE001
+            db_ok = False
+        if not db_ok:
+            raise HTTPException(status_code=403, detail="数据库密码错误")
+        ds.build_status = "building"
+        await session.commit()
+    background.add_task(_materialize_and_track, datasource_id, data.config)
     logger.info(f"[/datasources] user_id={user_id} 保存元数据并重物化 {datasource_id}"
-                f"({len(config.tables)} 表 / {len(config.metrics)} 指标)")
+                f"({len(data.config.tables)} 表 / {len(data.config.metrics)} 指标)")
     return {"status": "building"}
 
 

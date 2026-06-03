@@ -85,13 +85,20 @@ export async function getDatasourceMeta(id: string): Promise<DatasourceMeta> {
   }
 }
 
-// 保存编辑后的元数据(后端异步重物化:重嵌 Qdrant / 重灌 ES)
+// 保存编辑后的元数据(后端异步重物化:重嵌 Qdrant / 重灌 ES)。
+// 需双重确认:登录账号密码 + 该数据源的数据库密码,后端校验通过才保存。
 export async function saveDatasourceMeta(
   id: string,
-  payload: { tables: MetaTable[]; metrics: MetaMetric[] },
+  config: { tables: MetaTable[]; metrics: MetaMetric[] },
+  userPassword: string,
+  dbPassword: string,
 ): Promise<void> {
   try {
-    await api.put(`/datasources/${id}/meta`, payload)
+    await api.put(`/datasources/${id}/meta`, {
+      config,
+      user_password: userPassword,
+      db_password: dbPassword,
+    })
   } catch (err) {
     throw toError(err, '保存元数据失败')
   }
