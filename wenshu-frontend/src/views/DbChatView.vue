@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import ChatConsole from '@/components/ChatConsole.vue'
 import { streamAgentQuery } from '@/services/agent'
 import type { StreamFn } from '@/types/agent'
 
 const route = useRoute()
+const router = useRouter()
 
-// 从「数据源」页点「开启问数」会带 ?datasource=<id>&name=<名>;直接进 /db 则默认 ds_default。
-const datasourceId = computed(() => (route.query.datasource as string) || 'ds_default')
-const datasourceName = computed(() => (route.query.name as string) || '默认数据源')
-const subtitle = computed(() => `Text to SQL · ${datasourceName.value}`)
+// 必须从「数据源」页「开启问数」带 ?datasource=<id>&name=<名> 进来;没有就回数据源页选一个。
+const datasourceId = computed(() => (route.query.datasource as string) || '')
+const datasourceName = computed(() => (route.query.name as string) || '')
+const subtitle = computed(() => `Text to SQL · ${datasourceName.value || '请选择数据源'}`)
+
+onMounted(() => {
+  if (!datasourceId.value) router.replace('/sources')
+})
 
 // 闭包注入当前数据源(同 DatasetChatView 注入 datasetId 的写法)
 const streamFn: StreamFn = (query, options) =>

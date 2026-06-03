@@ -16,7 +16,7 @@ from api.schemas import DatasourceBuildInput, DatasourceRegisterInput
 from clients.es import es_client
 from clients.mysql import MySQLClient, client_registry, meta_mysql_client
 from clients.qdrant import qdrant_client
-from conf.app_config import DBConfig, DEFAULT_DATASOURCE_ID
+from conf.app_config import DBConfig
 from conf.meta_config import MetaConfig
 from core.log import logger
 from dtos.datasource import DatasourceCreate, DatasourceInfo
@@ -124,8 +124,6 @@ async def build_datasource(datasource_id: str, data: DatasourceBuildInput,
 
 @router.delete("/{datasource_id}")
 async def delete_datasource(datasource_id: str, user_id: str = Depends(get_current_user)):
-    if datasource_id == DEFAULT_DATASOURCE_ID:
-        raise HTTPException(status_code=400, detail="默认数据源不可删除")
     async with meta_mysql_client.session() as session:
         async with session.begin():
             ds_repo = DatasourceRepository(session)

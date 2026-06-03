@@ -20,7 +20,7 @@ const isAuthPage = computed(() => route.name === 'login')
 const isChatView = computed(() => route.name === 'db-chat' || route.name === 'dataset-chat')
 
 const navItems = [
-  { key: 'db', label: '数据库问答', desc: 'MySQL 数仓', to: '/db', icon: '🗄️' },
+  // 不再有「默认数据源」:数据库问数统一从「数据源」页选库后「开启问数」进入。
   { key: 'source', label: '数据源', desc: 'MySQL 连接管理', to: '/sources', icon: '🗃️' },
   { key: 'dataset', label: '数据集问答', desc: '上传的 Excel', to: '/datasets', icon: '📊' },
 ]

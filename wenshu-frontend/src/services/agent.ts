@@ -39,7 +39,7 @@ interface QueryOptions {
   conversationId?: number | null
   // 后端回传(新建或确认)的 conversation_id,通过首个 SSE 事件送达
   onConversation?: (id: number) => void
-  // 针对哪个数据源问数;不传则默认 ds_default(现有制造库)
+  // 针对哪个数据源问数(必须显式给;不再有隐式默认源)
   datasourceId?: string
 }
 
@@ -256,7 +256,7 @@ export async function streamAgentQuery(query: string, options: QueryOptions): Pr
     {
       query,
       conversation_id: options.conversationId ?? null,
-      datasource_id: options.datasourceId ?? 'ds_default',
+      datasource_id: options.datasourceId,
     },
     options,
   )
