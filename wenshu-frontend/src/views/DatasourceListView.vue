@@ -2,10 +2,12 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import DatasourceWizard from '@/components/DatasourceWizard.vue'
 import { deleteDatasource, listDatasources } from '@/services/datasource'
 import type { DatasourceSummary } from '@/types/datasource'
 
 const router = useRouter()
+const wizardOpen = ref(false)
 
 const sources = ref<DatasourceSummary[]>([])
 const loading = ref(false)
@@ -80,8 +82,13 @@ function openChat(ds: DatasourceSummary) {
 }
 
 function onCreate() {
-  // 第 4 步接入「新建数据源」3 步向导
-  window.alert('「新建数据源」向导将在下一步接入')
+  wizardOpen.value = true
+}
+
+// 向导触发接入后:关弹窗 + 刷新列表(新卡片以 building 出现,轮询转 ready)
+function onCreated() {
+  wizardOpen.value = false
+  void reload()
 }
 
 function onRemove(ds: DatasourceSummary) {
@@ -191,6 +198,9 @@ onUnmounted(stopPolling)
         </div>
       </div>
     </div>
+
+    <!-- 新建数据源向导 -->
+    <DatasourceWizard :open="wizardOpen" @close="wizardOpen = false" @created="onCreated" />
 
     <!-- 删除确认 -->
     <div
