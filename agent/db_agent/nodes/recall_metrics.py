@@ -38,7 +38,7 @@ async def recall_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         embeddings = await embedding_client.aembed_documents_batched(keywords)
         # 2. 所有向量的 Qdrant 检索并行发出
         search_results: list[list[MetricInfo]] = await asyncio.gather(*[
-            metric_qdrant_repo.search(embedding) for embedding in embeddings
+            metric_qdrant_repo.search(embedding, context.datasource_id) for embedding in embeddings
         ])
         # 3. 去重收集，多个关键词可能搜出同一个指标，按 id 去重
         for metric_infos in search_results:

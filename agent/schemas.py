@@ -4,10 +4,11 @@ from langgraph.graph import MessagesState, add_messages
 from typing import Annotated, Any
 from langchain.messages import AnyMessage
 from typing import Optional, Literal
-from clients.mysql import MySQLClient
+from clients.mysql import MySQLClient, client_registry
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository, DWDBRepository
+from conf.app_config import DEFAULT_DATASOURCE_ID
 from dtos.meta import ColumnInfo, MetricInfo, ValueInfo
 # Chart Agent 子图相关 schema(WSAgentState 里要嵌)
 from agent.chart_agent.schemas import DataShape
@@ -82,20 +83,28 @@ class WSAgentContext(BaseModel):
     # LLM 调用等待期间不占用任何 MySQL 连接 —— 同样的连接池能支撑高得多的并发。
     meta_db_client: MySQLClient
     dw_db_client: MySQLClient
+    # 当前会话查询的数据源 + 库(库不传则用该数据源的默认库)。单源默认 ds_default。
+    # 所有元数据查询/召回/DW 连接都按它作用域化。
+    datasource_id: str = DEFAULT_DATASOURCE_ID
+    database: str | None = None
     #全是自定义类，所以需要在模型配置中设置arbitrary_types_allowed=True，
     #允许使用任意类型的字段。
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @asynccontextmanager
     async def meta_repo(self):
-        """开一个短生命周期的 meta 库会话 + repo,用完即还连接。"""
+        """开一个短生命周期的 meta 库会话 + repo(绑定本会话的 datasource_id),用完即还连接。"""
         async with self.meta_db_client.session() as session:
-            yield MetaDBRepository(session)
+            yield MetaDBRepository(session, self.datasource_id)
 
     @asynccontextmanager
     async def dw_repo(self):
-        """开一个短生命周期的 dw 库会话 + repo,用完即还连接。"""
-        async with self.dw_db_client.session() as session:
+        """开一个短生命周期的 DW 会话 + repo。
+
+        通过 client_registry 按 datasource_id/库拿对应连接池:ds_default+默认库复用进程级
+        dw_mysql_client(零新建),其它源按需建池。"""
+        client = await client_registry.get_client(self.datasource_id, self.database)
+        async with client.session() as session:
             yield DWDBRepository(session)
 
 

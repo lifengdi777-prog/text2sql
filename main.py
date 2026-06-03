@@ -11,6 +11,7 @@ from api.dataset_query_router import router as dataset_query_router
 from api.auth_router import router as auth_router
 from api.conversation_router import router as conversation_router
 from api.health_router import router as health_router
+from api.datasource_router import router as datasource_router
 import uvicorn
 
 #FastAPI() 创建整个应用实例
@@ -61,6 +62,8 @@ app.include_router(dataset_query_router)
 app.include_router(conversation_router)
 # 健康检查(GET /healthz 探活 / GET /readyz 依赖就绪) —— 给 LB / K8s 探针与上线自检
 app.include_router(health_router)
+# 数据源注册接口(POST/GET /datasources, DELETE /datasources/{id}) —— 多数据源接入
+app.include_router(datasource_router)
 
 def main():
     print("Hello from wenshu!")

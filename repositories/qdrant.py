@@ -25,6 +25,16 @@ class BaseQdrantRepository(ABC):
                 points_selector=Filter()
             )
  
+    # 只删某个数据源的点(增量物化用:重灌前先清本源旧向量,不动别的源)。
+    async def delete_by_datasource(self, datasource_id: str):
+        if await self.client.collection_exists(self.collection_name):
+            await self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=Filter(
+                    must=[FieldCondition(key="datasource_id", match=MatchValue(value=datasource_id))]
+                )
+            )
+
     #先判断集合是否存在，如果不存在该集合则创建集合。
     async def ensure_collection(self):
         if not (await self.client.collection_exists(self.collection_name)):

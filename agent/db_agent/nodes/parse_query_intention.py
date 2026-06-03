@@ -16,6 +16,25 @@ class ParseQueryResult(BaseModel):
     guide_queries: list[str]
 
 
+def _render_domain(tables, metrics) -> str:
+    """把当前数据源的表 + 指标拼成"当前数据库领域"上下文,让守门判断和引导问题贴合本源,
+    而不是写死某个行业。ds_default 注入的就是制造业那套,行为等价。"""
+    lines = ["# 当前数据库领域（务必据此判断问题可答性、并生成本领域的引导问题；",
+             "# 不要假设任何固定行业——下文 prompt 里若出现某行业的示例，仅为格式说明，实际领域以本段为准）"]
+    if tables:
+        lines.append("## 可查询的表")
+        for t in tables:
+            lines.append(f"- {t.name}：{t.description}")
+    if metrics:
+        lines.append("## 常见指标（含别名）")
+        for m in metrics:
+            alias = ("，别名：" + "、".join(m.alias)) if m.alias else ""
+            lines.append(f"- {m.name}：{m.description}{alias}")
+    if not tables and not metrics:
+        lines.append("（该数据源暂无元数据，按通用 Text2SQL 守门规则判断即可）")
+    return "\n".join(lines)
+
+
 def _render_history(history: list[dict] | None) -> str:
     """把最近几轮历史渲染成可读文本,供 LLM 做指代消解。
 
@@ -45,6 +64,12 @@ async def parse_query_intention(state: WSAgentState, runtime: Runtime[WSAgentCon
         prompt = await load_prompt("parse_query_intention")
         structured_llm = llm.with_structured_output(ParseQueryResult, method="json_mode")
 
+        # 当前数据源的领域(表+指标)单独注入:守门判断与引导问题按本源领域走,不写死行业。
+        async with runtime.context.meta_repo() as meta_repo:
+            domain_tables = await meta_repo.get_all_tables()
+            domain_metrics = await meta_repo.get_all_metrics()
+        domain_msg = SystemMessage(content=_render_domain(domain_tables, domain_metrics))
+
         # 历史单独作为一条 SystemMessage 注入(不塞进 messages),这样提示词模板里那一堆
         # JSON 大括号无需转义;当前追问仍是 state.messages 的最后一条(HumanMessage)。
         history_msg = SystemMessage(
@@ -53,6 +78,7 @@ async def parse_query_intention(state: WSAgentState, runtime: Runtime[WSAgentCon
 
         result: ParseQueryResult = await structured_llm.ainvoke([
             SystemMessage(content=prompt),
+            domain_msg,
             history_msg,
         ] + state.messages)  # type: ignore
 

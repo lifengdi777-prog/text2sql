@@ -29,6 +29,15 @@ class ESRepository:
     async def clear_all(self):
         if (await self.client.indices.exists(index=self.index_name)):
             await self.client.indices.delete(index=self.index_name)
+
+    # 只删某个数据源的值文档(增量物化用:重灌前先清本源旧值,不动别的源)。
+    async def delete_by_datasource(self, datasource_id: str):
+        if await self.client.indices.exists(index=self.index_name):
+            await self.client.delete_by_query(
+                index=self.index_name,
+                query={"term": {"datasource_id": datasource_id}},
+                conflicts="proceed",
+            )
     #确定索引是否存在，如果不存在则创建索引。
     async def ensure_index(self):
         if not (await self.client.indices.exists(index=self.index_name)):

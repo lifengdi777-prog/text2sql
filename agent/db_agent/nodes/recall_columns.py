@@ -44,7 +44,7 @@ async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         embeddings = await embedding_client.aembed_documents_batched(keywords)
         # 2. 所有向量的 Qdrant 检索并行发出，而不是排队串行
         search_results: list[list[ColumnInfo]] = await asyncio.gather(*[
-            column_qdrant_repo.search(embedding) for embedding in embeddings
+            column_qdrant_repo.search(embedding, context.datasource_id) for embedding in embeddings
         ])
         # 3. 去重收集，多个关键词可能搜出同一个字段，按 id 去重
         for column_infos in search_results:

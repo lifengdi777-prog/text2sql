@@ -1,17 +1,18 @@
-"""草稿生成脚本(验证用)——对现有 DW 库自动产出一份 meta_config 草稿。
+"""草稿生成——对**任意数据源**自动产出一份 meta_config 草稿。
 
 定位:这是 init_data.py 的"反面"。init_data 是【读 json → 灌库】,
-本脚本是【读库 → 生成 json 草稿】,且**不写任何库、不碰 Qdrant/ES**。
+本模块是【读库 → 生成 json 草稿】,且**不写任何库、不碰 Qdrant/ES**。
 
-目的:验证"代码 introspect + 启发式 + LLM 起草"这条路质量够不够,
-所以最后会把草稿和你手工维护的 conf/meta_config.json 并排对比。
+- `generate_draft(datasource_id)`:可复用函数,返回草稿 dict(供 API/materialize 调用)。
+- 直接跑脚本:对指定数据源跑一遍并打印报告;ds_default 还会跟手写版对比。
 
-跑法:  uv run python -m scripts.generate_draft
-产出:  conf/meta_config.draft.json + 终端对比报告
+跑法:  uv run python -m scripts.generate_draft [datasource_id]   # 不传则 ds_default
+产出:  conf/meta_config.draft[.<datasource_id>].json + 终端对比报告
 """
 import asyncio
 import json
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,8 @@ from sqlalchemy import text
 
 from agent.llm import llm, fast_llm
 from agent.prompts import load_prompt
-from clients.mysql import dw_mysql_client
+from clients.mysql import dw_mysql_client, client_registry
+from conf.app_config import DEFAULT_DATASOURCE_ID
 from conf.meta_config import MetaConfig
 from repositories.mysql import DWDBRepository
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -34,7 +36,13 @@ NUMERIC_TYPES = {
 # 索引进 ES 又大又没用,默认不 sync。普通 varchar/char 维度则默认 sync。
 FREE_TEXT_TYPES = {"text", "tinytext", "mediumtext", "longtext", "blob",
                    "tinyblob", "mediumblob", "longblob", "json"}
-DRAFT_PATH = Path("conf/meta_config.draft.json")
+
+
+def _draft_path(datasource_id: str) -> Path:
+    # ds_default 沿用老文件名;其它源带上 id 区分。
+    if datasource_id == DEFAULT_DATASOURCE_ID:
+        return Path("conf/meta_config.draft.json")
+    return Path(f"conf/meta_config.draft.{datasource_id}.json")
 
 
 # ───────────────────────── ① 代码确定性探测 + 启发式 ─────────────────────────
@@ -58,9 +66,34 @@ async def introspect(session) -> dict[str, Any]:
         "ORDER BY TABLE_NAME, ORDINAL_POSITION"
     ))).fetchall()
 
-    # 3. 外键边(谁是外键列) —— 复用现成方法
-    fks = await repo.get_foreign_keys()
-    fk_cols = {(fk["from_table"], fk["from_column"]) for fk in fks}
+    # 3. 外键边:① DB 声明的(information_schema) ② 命名约定推断
+    #    很多库(尤其本项目的星型库)不在 DB 里建 FK 约束,关系全靠"外键列名==被引用表主键名"
+    #    的命名约定(如 table_order.customer_id ↔ table_customer.customer_id)。
+    #    两者合并:声明的优先,声明没覆盖到的按命名补。推断出的边同时用于判 foreign_key 角色。
+    declared = await repo.get_foreign_keys()
+    declared_cols = {(e["from_table"], e["from_column"]) for e in declared}
+
+    # 每张表自己的主键列(避免把本表主键误判成外键) + "主键列名→表"(只留全局唯一的名,防歧义)
+    pk_of_table: dict[str, set[str]] = {}
+    pk_name_tables: dict[str, set[str]] = {}
+    for tname, cname, _dtype, ckey, _cc in col_rows:
+        if ckey == "PRI":
+            pk_of_table.setdefault(tname, set()).add(cname)
+            pk_name_tables.setdefault(cname, set()).add(tname)
+    pk_name_to_table = {name: next(iter(ts)) for name, ts in pk_name_tables.items() if len(ts) == 1}
+
+    fks = [dict(e, source="declared") for e in declared]
+    for tname, cname, _dtype, _ckey, _cc in col_rows:
+        if cname in pk_of_table.get(tname, set()):
+            continue  # 本表主键,不是外键
+        ref = pk_name_to_table.get(cname)
+        if ref and ref != tname and (tname, cname) not in declared_cols:
+            fks.append({"from_table": tname, "from_column": cname,
+                        "to_table": ref, "to_column": cname, "source": "inferred"})
+
+    fk_cols = {(e["from_table"], e["from_column"]) for e in fks}
+    n_inf = sum(1 for e in fks if e.get("source") == "inferred")
+    print(f"   外键边: 声明 {len(declared)} 条 + 命名推断 {n_inf} 条 = {len(fks)} 条")
 
     tables: list[dict[str, Any]] = []
     for tname in table_names:
@@ -276,20 +309,36 @@ def merge_to_meta_config(schema: dict[str, Any], llm_out: dict[str, Any]) -> dic
     return {"tables": out_tables, "metrics": out_metrics, "_dropped_metrics": dropped}
 
 
+# ───────────────────────── 可复用入口:返回草稿 dict ─────────────────────────
+async def generate_draft(datasource_id: str = DEFAULT_DATASOURCE_ID) -> dict[str, Any]:
+    """对指定数据源产出 meta_config 草稿(introspect + LLM 起草 + 合并校验)。
+
+    返回 {tables, metrics, _dropped_metrics}:tables/metrics 已可直接给前端审核;
+    _dropped_metrics 是被丢弃的幻觉指标(供报告)。**不写任何库、不碰 Qdrant/ES。**
+    连接经 client_registry 按 datasource_id 解析,任意已注册数据源都能用。
+    """
+    client = await client_registry.get_client(datasource_id)
+    async with client.session() as session:
+        schema = await introspect(session)
+    llm_out = await draft_semantics(schema)
+    return merge_to_meta_config(schema, llm_out)
+
+
 # ───────────────────────── 跟手写版对比报告 ─────────────────────────
-def compare_report(draft: dict[str, Any]) -> None:
+def compare_report(draft: dict[str, Any], datasource_id: str = DEFAULT_DATASOURCE_ID) -> None:
     print("\n" + "=" * 70)
     print("草稿 vs 手写 meta_config.json 对比")
     print("=" * 70)
 
-    gold_path = Path("conf/meta_config.json")
     gold = None
-    if gold_path.exists():
+    gold_tables: dict[str, Any] = {}
+    gold_path = Path("conf/meta_config.json")
+    # 只有 ds_default 才有手工金标准可比;其它数据源没有 gold,只展示草稿。
+    if datasource_id == DEFAULT_DATASOURCE_ID and gold_path.exists():
         gold = json.loads(gold_path.read_text(encoding="utf-8"))
         gold_tables = {t["name"]: t for t in gold["tables"]}
     else:
-        gold_tables = {}
-        print("(未找到 conf/meta_config.json,跳过逐字段对比)")
+        print(f"(数据源 {datasource_id} 无手工 meta_config.json 可比,仅展示草稿)")
 
     for t in draft["tables"]:
         gt = gold_tables.get(t["name"])
@@ -324,10 +373,14 @@ def compare_report(draft: dict[str, Any]) -> None:
 
 
 async def main():
+    # 命令行第一个参数 = datasource_id(不传则 ds_default)
+    datasource_id = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DATASOURCE_ID
+    print(f"数据源: {datasource_id}")
     t0 = time.perf_counter()
     timings: dict[str, float] = {}
     try:
-        async with dw_mysql_client.session() as session:
+        client = await client_registry.get_client(datasource_id)
+        async with client.session() as session:
             print("① 探测物理结构 + 启发式...")
             t = time.perf_counter()
             schema = await introspect(session)
@@ -348,11 +401,12 @@ async def main():
         # 校验草稿是否符合 MetaConfig 形状(剔除内部字段后)
         clean = {"tables": draft["tables"], "metrics": draft["metrics"]}
         MetaConfig.model_validate(clean)
-        DRAFT_PATH.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+        draft_path = _draft_path(datasource_id)
+        draft_path.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
         timings["③ 合并+校验+落盘"] = time.perf_counter() - t
-        print(f"   ✓ 草稿已写入 {DRAFT_PATH}  (耗时 {timings['③ 合并+校验+落盘']:.1f}s)")
+        print(f"   ✓ 草稿已写入 {draft_path}  (耗时 {timings['③ 合并+校验+落盘']:.1f}s)")
 
-        compare_report(draft)
+        compare_report(draft, datasource_id)
 
         # 耗时汇总:看哪一步最慢、整体能不能接受
         total = time.perf_counter() - t0
@@ -363,6 +417,8 @@ async def main():
             print(f"  {name:<28} {sec:6.1f}s  ({sec / total * 100:4.1f}%)")
         print(f"  {'合计':<28} {total:6.1f}s")
     finally:
+        # 关掉按需建出的连接池 + 默认 DW 池(脚本退出前清理)
+        await client_registry.close_all()
         await dw_mysql_client.close()
 
 

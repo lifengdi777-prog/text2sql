@@ -16,6 +16,7 @@ async def recall_values(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     query = state.messages[-1].content
     keywords = state.keywords
     es_repo = runtime.context.es_repo
+    datasource_id = runtime.context.datasource_id
 
     # 先使用大模型拓展关键词
     prompt = await load_prompt("extend_keywords_for_value_recall")
@@ -30,7 +31,7 @@ async def recall_values(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     recalled_values_mapping: dict[str, ValueInfo] = {}
     if keywords:
         search_results: list[list[ValueInfo]] = await asyncio.gather(*[
-            es_repo.search(keyword) for keyword in keywords
+            es_repo.search(keyword, datasource_id) for keyword in keywords
         ])
         # 去重收集，多个关键词可能搜出同一个值，按 id 去重
         for value_infos in search_results:

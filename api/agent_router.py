@@ -23,7 +23,8 @@ router = APIRouter(prefix="/agent")
 
 
 async def query_graph(query: str, user_id: str | None = None, user_name: str | None = None,
-                      request_id: str | None = None, session_id: int | None = None):
+                      request_id: str | None = None, session_id: int | None = None,
+                      datasource_id: str = "ds_default", database: str | None = None):
     # 产出 WSStepInfo chunk(不再自己格式化 SSE);由 stream_with_history 统一转发 + 落库
     # 注意:这里不再开"贯穿整条流"的 MySQL 会话(那会让一条查询全程占用 2 个连接、严重压并发)。
     # 改为把 MySQL 客户端(连接池工厂)注入 context,各节点用 context.meta_repo()/dw_repo()
@@ -48,6 +49,8 @@ async def query_graph(query: str, user_id: str | None = None, user_name: str | N
         es_repo=es_repo,
         column_qdrant_repo=column_qdrant_repo,
         metric_qdrant_repo=metric_qdrant_repo,
+        datasource_id=datasource_id,
+        database=database,
     )
     # Langfuse 追踪 + 运行元数据(未启用 Langfuse 时只带 run_name/metadata,无害)
     run_config = build_run_config(
@@ -79,7 +82,9 @@ async def query_data(data: QueryInput, request: Request, user_id: str = Depends(
     # 用 stream_with_history 包一层:落库会话历史(归属当前用户),并回传 conversation_id
     return StreamingResponse(
         stream_with_history(
-            query_graph(query, user_id=user_id, user_name=user_name, request_id=request_id, session_id=data.conversation_id),
+            query_graph(query, user_id=user_id, user_name=user_name, request_id=request_id,
+                        session_id=data.conversation_id,
+                        datasource_id=data.datasource_id, database=data.database),
             user_id=user_id,
             source="db",
             query=query,

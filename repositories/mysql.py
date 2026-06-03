@@ -20,14 +20,17 @@ def _to_jsonable(value: Any) -> Any:
     return value
 
 # MetaDBRepository类用于操作元数据库中的表格和指标信息。
+# datasource_id 绑定在实例上:meta_repo() 按当前会话的数据源构造,所有查询/清理自动限定本源,
+# 各业务节点(merge/join/fanout)无需逐个方法传参。
 class MetaDBRepository:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, datasource_id: str = DEFAULT_DATASOURCE_ID):
         self.session = session
+        self.datasource_id = datasource_id
 
-    # 只清某个数据源的元数据,不再清全表(否则注册第 2 个源会清掉第 1 个)。
-    async def clear_all(self, datasource_id: str = DEFAULT_DATASOURCE_ID):
+    # 只清本数据源的元数据,不再清全表(否则注册第 2 个源会清掉第 1 个)。
+    async def clear_all(self):
         for model in (ColumnMetricMySQL, MetricInfoMySQL, ColumnInfoMySQL, TableInfoMySQL, DataRelationshipMySQL):
-            await self.session.execute(delete(model).where(model.datasource_id == datasource_id))
+            await self.session.execute(delete(model).where(model.datasource_id == self.datasource_id))
 
 #以下方法用于将ColumnInfo、TableInfo、MetricInfo和ColumnMetric对象添加到数据库中。
 # 每个方法都接受一个包含相应对象的列表，并将这些对象转换为对应的MySQL模型实例，
@@ -52,16 +55,28 @@ class MetaDBRepository:
     async def add_relationships(self, relationships: list[DataRelationship]):
         self.session.add_all([DataRelationshipMySQL(**rel.model_dump()) for rel in relationships])
 
-    # 读取某数据源的全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
-    async def get_relationships(self, datasource_id: str = DEFAULT_DATASOURCE_ID) -> list[DataRelationship]:
-        stmt = select(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == datasource_id)
+    # 列出本数据源的全部表(给意图解析节点拼"当前数据库领域"上下文用)。
+    async def get_all_tables(self) -> list[TableInfo]:
+        stmt = select(TableInfoMySQL).where(TableInfoMySQL.datasource_id == self.datasource_id)
+        rows = await self.session.scalars(stmt)
+        return [TableInfo.model_validate(row) for row in rows]
+
+    # 列出本数据源的全部指标(同上)。
+    async def get_all_metrics(self) -> list[MetricInfo]:
+        stmt = select(MetricInfoMySQL).where(MetricInfoMySQL.datasource_id == self.datasource_id)
+        rows = await self.session.scalars(stmt)
+        return [MetricInfo.model_validate(row) for row in rows]
+
+    # 读取本数据源的全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
+    async def get_relationships(self) -> list[DataRelationship]:
+        stmt = select(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == self.datasource_id)
         rows = await self.session.scalars(stmt)
         return [DataRelationship.model_validate(row) for row in rows]
 
-    async def get_column_info_by_id(self, column_id: str, datasource_id: str = DEFAULT_DATASOURCE_ID) -> ColumnInfo | None:
+    async def get_column_info_by_id(self, column_id: str) -> ColumnInfo | None:
         # id 只在单库内唯一,必须连 datasource_id 一起查。
         stmt = select(ColumnInfoMySQL).where(
-            and_(ColumnInfoMySQL.datasource_id == datasource_id, ColumnInfoMySQL.id == column_id)
+            and_(ColumnInfoMySQL.datasource_id == self.datasource_id, ColumnInfoMySQL.id == column_id)
         )
         column_info_mysql = await self.session.scalar(stmt)
         if column_info_mysql:
@@ -70,11 +85,11 @@ class MetaDBRepository:
         return None
 
     # 根据table_id获取表的主外键信息
-    async def get_table_pfks_by_id(self, table_id: str, datasource_id: str = DEFAULT_DATASOURCE_ID) -> list[ColumnInfo]:
+    async def get_table_pfks_by_id(self, table_id: str) -> list[ColumnInfo]:
         # 根据table_id获取表的主外键
         stmt = select(ColumnInfoMySQL).where(
             and_(
-                ColumnInfoMySQL.datasource_id == datasource_id,
+                ColumnInfoMySQL.datasource_id == self.datasource_id,
                 ColumnInfoMySQL.table_id == table_id,
                 ColumnInfoMySQL.role.in_(['primary_key', 'foreign_key'])
             )
@@ -82,10 +97,10 @@ class MetaDBRepository:
         column_info_mysqls = await self.session.scalars(stmt)
         return [ColumnInfo.model_validate(column_info_mysql) for column_info_mysql in column_info_mysqls]
 
-    async def get_table_info_by_id(self, table_id: str, datasource_id: str = DEFAULT_DATASOURCE_ID) -> TableInfo | None:
+    async def get_table_info_by_id(self, table_id: str) -> TableInfo | None:
         #构造一个SQL查询语句，查询TableInfoMySQL表中id等于table_id的记录。
         stmt = select(TableInfoMySQL).where(
-            and_(TableInfoMySQL.datasource_id == datasource_id, TableInfoMySQL.id == table_id)
+            and_(TableInfoMySQL.datasource_id == self.datasource_id, TableInfoMySQL.id == table_id)
         )
         #执行查询，并将结果存储在table_info_mysql变量中。
         table_info_mysql = await self.session.scalar(stmt)

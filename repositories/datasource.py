@@ -43,6 +43,15 @@ class DatasourceRepository:
         rows = await self.session.scalars(select(DatasourceMySQL))
         return [DatasourceInfo.model_validate(row) for row in rows]
 
+    async def delete(self, datasource_id: str) -> bool:
+        """删除数据源注册行。返回是否删到。
+        注:本方法只删 datasource 表;该源的 5 张 meta 表行 / Qdrant / ES 由调用方另行清理。"""
+        ds = await self.get_by_id(datasource_id)
+        if ds is None:
+            return False
+        await self.session.delete(ds)
+        return True
+
     def to_db_config(self, ds: DatasourceMySQL, database: str | None = None) -> DBConfig:
         """解密密码 + 组装成连接用的 DBConfig(供 ClientRegistry 建连接池)。
 
