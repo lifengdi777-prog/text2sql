@@ -30,6 +30,12 @@ export default defineConfig({
         target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      // 数据源接口:/datasources、/datasources/{id}/...、/datasources?...
+      // 注意要在 /dataset 之外单列(两者前缀都是 dataset,但 ^/dataset(/|$) 不会匹配 datasources)。
+      '^/datasources(/|\\?|$)': {
+        target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
       '^/auth(/|$)': {
         target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
