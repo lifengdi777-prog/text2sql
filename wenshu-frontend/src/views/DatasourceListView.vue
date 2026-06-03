@@ -17,6 +17,12 @@ const search = ref('')
 const deleteTarget = ref<DatasourceSummary | null>(null)
 const deleting = ref(false)
 
+// 当前展开「⋯」菜单的卡片 id(同时只开一个);null=全关
+const menuFor = ref<string | null>(null)
+function toggleMenu(id: string) {
+  menuFor.value = menuFor.value === id ? null : id
+}
+
 const filtered = computed(() => {
   const kw = search.value.trim().toLowerCase()
   if (!kw) return sources.value
@@ -84,6 +90,16 @@ function openChat(ds: DatasourceSummary) {
 function openMeta(ds: DatasourceSummary) {
   if (ds.build_status !== 'ready') return
   router.push({ path: `/sources/${ds.id}/meta`, query: { name: ds.name } })
+}
+
+// ⋯ 菜单项:先关菜单再执行,避免菜单残留
+function chooseMeta(ds: DatasourceSummary) {
+  menuFor.value = null
+  openMeta(ds)
+}
+function chooseRemove(ds: DatasourceSummary) {
+  menuFor.value = null
+  onRemove(ds)
 }
 
 function onCreate() {
@@ -159,10 +175,26 @@ onUnmounted(stopPolling)
       </div>
 
       <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <template v-for="ds in filtered" :key="ds.id">
+        <!-- 接入中:与数据集卡片同款「解析处理中」进度条,完成前不暴露操作 -->
         <div
-          v-for="ds in filtered"
-          :key="ds.id"
-          class="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
+          v-if="ds.build_status === 'building'"
+          class="flex h-[168px] flex-col justify-center gap-4 rounded-2xl border border-slate-200 bg-white p-5"
+        >
+          <div class="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <span class="h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-hidden="true" />
+            解析处理中
+          </div>
+          <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div class="ds-progress h-full w-1/3 rounded-full bg-sky-400" />
+          </div>
+          <p class="text-xs text-slate-400">AI 解析中，完成后即可开始问数</p>
+        </div>
+
+        <!-- 正常卡片 -->
+        <div
+          v-else
+          class="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-sky-300 hover:shadow-[0_12px_30px_rgba(148,163,184,0.18)]"
         >
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
@@ -183,33 +215,54 @@ onUnmounted(stopPolling)
             <div class="flex items-center gap-2">
               <button
                 type="button"
-                class="rounded-lg px-2 py-1.5 text-xs text-slate-400 transition hover:bg-slate-100 hover:text-rose-500"
-                title="删除"
-                @click="onRemove(ds)"
-              >
-                删除
-              </button>
-              <button
-                type="button"
-                class="rounded-lg px-2 py-1.5 text-xs text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-                :disabled="ds.build_status !== 'ready'"
-                title="查看/修改元数据(描述/别名/角色/sync/指标)"
-                @click="openMeta(ds)"
-              >
-                编辑元数据
-              </button>
-              <button
-                type="button"
                 class="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="ds.build_status !== 'ready'"
                 :title="ds.build_status === 'ready' ? '' : '接入完成后才能问数'"
                 @click="openChat(ds)"
               >
+                <span aria-hidden="true">⊕</span>
                 开启问数
               </button>
+
+              <div class="relative">
+                <button
+                  type="button"
+                  class="inline-flex h-7 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                  aria-label="更多操作"
+                  @click="toggleMenu(ds.id)"
+                >
+                  ⋯
+                </button>
+
+                <!-- 关闭菜单的透明遮罩 -->
+                <div v-if="menuFor === ds.id" class="fixed inset-0 z-10" @click="menuFor = null" />
+
+                <div
+                  v-if="menuFor === ds.id"
+                  class="absolute right-0 z-20 mt-1 w-28 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                >
+                  <button
+                    type="button"
+                    class="block w-full px-3 py-2 text-left text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                    :disabled="ds.build_status !== 'ready'"
+                    title="查看/修改元数据(描述/别名/角色/sync/指标)"
+                    @click="chooseMeta(ds)"
+                  >
+                    编辑元数据
+                  </button>
+                  <button
+                    type="button"
+                    class="block w-full px-3 py-2 text-left text-xs text-rose-600 transition hover:bg-rose-50"
+                    @click="chooseRemove(ds)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+        </template>
       </div>
     </div>
 
@@ -250,3 +303,19 @@ onUnmounted(stopPolling)
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 接入中的不确定进度条:一小段高亮在轨道里来回滑动(与数据集卡片同款) */
+@keyframes ds-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.ds-progress {
+  animation: ds-progress-slide 1.4s ease-in-out infinite;
+}
+</style>

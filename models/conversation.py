@@ -34,6 +34,9 @@ class ConversationMySQL(Base):
     user_id: Mapped[str] = mapped_column(String(64), index=True, comment="归属用户")
     source: Mapped[str] = mapped_column(String(16), default="db", comment="db / dataset")
     dataset_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="数据集会话才有,指向 upload_datasets")
+    # db 会话绑定的数据源(指向 meta 库 datasource.id);dataset 会话为空。
+    # 删除数据源时按它连带清理会话;问数列表按它隔离(切到哪个源只看哪个源的历史)。
+    datasource_id: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="db 会话才有,指向 datasource.id")
     title: Mapped[str] = mapped_column(String(255), default="新对话", comment="会话标题")
     # 用 Python 端 default/onupdate(本地时间)而非仅 server_default(DB 端,容器多为 UTC),
     # 避免新建/更新时间与全项目 datetime.now() 不一致,导致前端按本地日期分组错位。
@@ -46,9 +49,10 @@ class ConversationMySQL(Base):
         onupdate=datetime.now,
     )
 
-    # 列表查询:按 (user_id, source, dataset_id) 过滤后按时间倒序,加联合索引
+    # 列表查询:数据集按 (user_id, source, dataset_id);问数按 (user_id, source, datasource_id)
     __table_args__ = (
         Index("idx_user_source_dataset", "user_id", "source", "dataset_id"),
+        Index("idx_user_source_ds", "user_id", "source", "datasource_id"),
     )
 
 

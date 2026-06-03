@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { hasDisplayableResult } from '@/lib/result-display'
 import { exportRowsToCsv } from '@/lib/export'
@@ -23,9 +23,11 @@ import ChartPanel from '@/components/ChartPanel.vue'
 const props = withDefaults(
   defineProps<{
     streamFn: StreamFn
-    // 会话历史归属:主图传 'db';数据集传 'dataset' + datasetId
+    // 会话历史归属:主图传 'db' + datasourceId;数据集传 'dataset' + datasetId
     source?: ConversationSource
     datasetId?: number
+    // 问数会话绑定的数据源 id(按它隔离历史列表 + 新建会话时落库)
+    datasourceId?: string
     title?: string
     subtitle?: string
     placeholder?: string
@@ -35,6 +37,7 @@ const props = withDefaults(
   {
     source: 'db',
     datasetId: undefined,
+    datasourceId: undefined,
     title: '智能数据分析工作台',
     subtitle: 'Text to SQL',
     placeholder: '请输入想查询的问题，例如：统计 2026 年各工厂的实际产量',
@@ -100,7 +103,7 @@ const groupedConversations = computed(() => {
 
 async function loadConversations() {
   try {
-    conversations.value = await listConversations(props.source, props.datasetId)
+    conversations.value = await listConversations(props.source, props.datasetId, props.datasourceId)
   } catch (e) {
     // 历史列表加载失败不阻断主流程,但打到控制台便于排查(如开发代理未覆盖 /conversations)
     console.error('[历史会话] 加载失败:', e)
@@ -155,7 +158,12 @@ async function confirmCreate() {
   if (creating.value) return
   creating.value = true
   try {
-    const conv = await createConversation(props.source, newTitle.value.trim() || '新对话', props.datasetId)
+    const conv = await createConversation(
+      props.source,
+      newTitle.value.trim() || '新对话',
+      props.datasetId,
+      props.datasourceId,
+    )
     await loadConversations()
     // 切到这个新空白会话(清空对话区,后续提问会带上它的 id 续写)
     newConversation()
@@ -231,6 +239,17 @@ async function confirmDelete() {
 }
 
 onMounted(loadConversations)
+
+// 切换数据源(/db 路由数据源在 query 里,切源不会重挂载组件):
+// 重置对话区 + 重新拉取该源的历史列表,避免残留上一个源的会话。
+watch(
+  () => props.datasourceId,
+  () => {
+    if (props.source !== 'db') return
+    newConversation()
+    void loadConversations()
+  },
+)
 
 function createReplyMessage(): AgentReplyMessage {
   return {

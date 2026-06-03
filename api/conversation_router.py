@@ -23,6 +23,7 @@ class RenameBody(BaseModel):
 class CreateBody(BaseModel):
     source: str = "db"
     dataset_id: int | None = None
+    datasource_id: str | None = None
     title: str = "新对话"
 
 
@@ -31,6 +32,7 @@ def _conv_brief(conv) -> dict:
         "id": conv.id,
         "source": conv.source,
         "dataset_id": conv.dataset_id,
+        "datasource_id": conv.datasource_id,
         "title": conv.title,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
         "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
@@ -50,6 +52,7 @@ async def create_conversation(body: CreateBody, user_id: str = Depends(get_curre
             source=body.source,
             title=(body.title or "新对话"),
             dataset_id=body.dataset_id,
+            datasource_id=body.datasource_id,
         )
         await session.commit()
         # created_at/updated_at 是 server_default,INSERT 后未加载;
@@ -62,13 +65,16 @@ async def create_conversation(body: CreateBody, user_id: str = Depends(get_curre
 async def list_conversations(
     source: str = Query("db", pattern="^(db|dataset)$"),
     dataset_id: int | None = None,
+    datasource_id: str | None = None,
     user_id: str = Depends(get_current_user),
 ):
-    """列出当前用户在某来源下的会话(主图全局一个列表 / 每个数据集各一个列表)。"""
+    """列出当前用户在某来源下的会话(每个数据源 / 每个数据集各一个列表)。"""
     Session = get_session_factory()
     async with Session() as session:
         repo = ConversationRepository(session)
-        rows = await repo.list_by_user(user_id, source=source, dataset_id=dataset_id)
+        rows = await repo.list_by_user(
+            user_id, source=source, dataset_id=dataset_id, datasource_id=datasource_id
+        )
     return [_conv_brief(c) for c in rows]
 
 

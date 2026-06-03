@@ -6,7 +6,7 @@ payload 是 MySQL JSON 列,SQLAlchemy 返回已反序列化的 dict,写入直接
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.conversation import ConversationMySQL, MessageMySQL
@@ -22,12 +22,14 @@ class ConversationRepository:
         source: str,
         title: str,
         dataset_id: int | None = None,
+        datasource_id: str | None = None,
     ) -> ConversationMySQL:
         # created_at/updated_at 由模型层 default=datetime.now(本地时间)自动填充,无需在此显式赋值。
         conv = ConversationMySQL(
             user_id=user_id,
             source=source,
             dataset_id=dataset_id,
+            datasource_id=datasource_id,
             title=title[:255] or "新对话",
         )
         self.session.add(conv)
@@ -49,10 +51,11 @@ class ConversationRepository:
         user_id: str,
         source: str,
         dataset_id: int | None = None,
+        datasource_id: str | None = None,
     ) -> list[ConversationMySQL]:
         """列出当前用户在某来源下的会话(最近更新优先)。
 
-        source='db'      → 主图问数历史(忽略 dataset_id)
+        source='db'      → 某数据源的问数历史(给了 datasource_id 就按它隔离)
         source='dataset' → 指定 dataset_id 的数据集问数历史
         """
         stmt = select(ConversationMySQL).where(
@@ -61,6 +64,9 @@ class ConversationRepository:
         )
         if source == "dataset" and dataset_id is not None:
             stmt = stmt.where(ConversationMySQL.dataset_id == dataset_id)
+        # 问数会话绑数据源:切到哪个源只看哪个源的历史(老的未归属会话 datasource_id 为空,不在此显示)
+        if source == "db" and datasource_id is not None:
+            stmt = stmt.where(ConversationMySQL.datasource_id == datasource_id)
         stmt = stmt.order_by(ConversationMySQL.updated_at.desc(), ConversationMySQL.id.desc())
         return list((await self.session.scalars(stmt)).all())
 
@@ -84,6 +90,19 @@ class ConversationRepository:
         await self.session.execute(
             delete(ConversationMySQL).where(ConversationMySQL.id == conversation_id)
         )
+
+    async def delete_by_datasource(self, datasource_id: str) -> int:
+        """删除某数据源下「所有用户」的问数会话及其消息(数据源是全员共享的,删源即全清)。
+        返回删除的会话数。删数据源时由 delete_datasource 调用。"""
+        sub = select(ConversationMySQL.id).where(ConversationMySQL.datasource_id == datasource_id)
+        # 先删消息(无 DB 外键级联,手动按子查询删),再删会话本身
+        await self.session.execute(
+            delete(MessageMySQL).where(MessageMySQL.conversation_id.in_(sub))
+        )
+        res = await self.session.execute(
+            delete(ConversationMySQL).where(ConversationMySQL.datasource_id == datasource_id)
+        )
+        return res.rowcount or 0
 
     # ── 消息 ────────────────────────────────────────────────
     async def add_message(
@@ -145,3 +164,24 @@ class ConversationRepository:
                 # 落单消息(如当前轮还没回复的 user、或异常半截轮)跳过
                 i += 1
         return turns[-max_turns:]
+
+
+# 幂等迁移:给已存在的 conversations 表补 datasource_id 列(问数会话绑数据源用)。
+# conversations 在 upload 库,create_all 只建新表不改旧表,故启动时单独 ALTER 补列。
+# 老的存量 db 会话该列留 NULL(未归属任何源),按数据源过滤列表时不显示,也不会被连带删除。
+async def ensure_conversation_columns() -> None:
+    from services.excel_ingest import get_session_factory
+
+    Session = get_session_factory()
+    async with Session() as session:
+        existing = set((await session.execute(text(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='conversations'"
+        ))).scalars().all())
+        if not existing or "datasource_id" in existing:
+            return  # 表还没建(全新环境,create_all 会按模型建好)或已有该列 → no-op
+        await session.execute(text("ALTER TABLE conversations ADD COLUMN datasource_id VARCHAR(64) NULL"))
+        await session.execute(text(
+            "ALTER TABLE conversations ADD INDEX idx_user_source_ds (user_id, source, datasource_id)"
+        ))
+        await session.commit()

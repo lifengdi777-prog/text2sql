@@ -89,6 +89,7 @@ async def query_data(data: QueryInput, request: Request, user_id: str = Depends(
             source="db",
             query=query,
             conversation_id=data.conversation_id,
+            datasource_id=data.datasource_id,
         ),
         media_type="text/event-stream",
     )

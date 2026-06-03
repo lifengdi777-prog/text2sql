@@ -32,6 +32,7 @@ export interface ConversationBrief {
   id: number
   source: ConversationSource
   dataset_id: number | null
+  datasource_id: string | null
   title: string
   created_at: string | null
   updated_at: string | null
@@ -49,27 +50,31 @@ interface ConversationDetail extends ConversationBrief {
   messages: StoredMessage[]
 }
 
-// 新建一个空白会话(用户起名);返回新会话
+// 新建一个空白会话(用户起名);返回新会话。问数会话绑数据源(datasourceId)。
 export async function createConversation(
   source: ConversationSource,
   title: string,
   datasetId?: number,
+  datasourceId?: string,
 ): Promise<ConversationBrief> {
   const { data } = await convApi.post<ConversationBrief>('/conversations', {
     source,
     title,
     dataset_id: source === 'dataset' ? (datasetId ?? null) : null,
+    datasource_id: source === 'db' ? (datasourceId ?? null) : null,
   })
   return data
 }
 
-// 列表:主图传 source='db';数据集传 source='dataset' + datasetId
+// 列表:问数传 source='db' + datasourceId(按数据源隔离);数据集传 source='dataset' + datasetId
 export async function listConversations(
   source: ConversationSource,
   datasetId?: number,
+  datasourceId?: string,
 ): Promise<ConversationBrief[]> {
   const params: Record<string, string | number> = { source }
   if (source === 'dataset' && datasetId != null) params.dataset_id = datasetId
+  if (source === 'db' && datasourceId) params.datasource_id = datasourceId
   const { data } = await convApi.get<ConversationBrief[]>('/conversations', { params })
   return data
 }

@@ -27,6 +27,7 @@ const streamFn: StreamFn = (query, options) =>
   <ChatConsole
     :stream-fn="streamFn"
     source="db"
+    :datasource-id="datasourceId"
     title="智能数据分析工作台"
     :subtitle="subtitle"
     placeholder="请输入想查询的问题，例如：统计各区域的总销售额"

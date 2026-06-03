@@ -47,6 +47,7 @@ async def stream_with_history(
     query: str,
     conversation_id: int | None = None,
     dataset_id: int | None = None,
+    datasource_id: str | None = None,
 ) -> AsyncIterator[str]:
     Session = get_session_factory()
 
@@ -57,10 +58,12 @@ async def stream_with_history(
             conv = await repo.get_owned(conversation_id, user_id)
             # 传了但不属于当前用户(或不存在)→ 不报错,新建一个,避免越权写入别人会话
             if conv is None:
-                conv = await repo.create(user_id, source, title=query, dataset_id=dataset_id)
+                conv = await repo.create(user_id, source, title=query,
+                                         dataset_id=dataset_id, datasource_id=datasource_id)
                 conversation_id = conv.id
         else:
-            conv = await repo.create(user_id, source, title=query, dataset_id=dataset_id)
+            conv = await repo.create(user_id, source, title=query,
+                                     dataset_id=dataset_id, datasource_id=datasource_id)
             conversation_id = conv.id
         await repo.add_message(conversation_id, role="user", content=query)
         await session.commit()

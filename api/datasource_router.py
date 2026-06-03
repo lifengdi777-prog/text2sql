@@ -276,5 +276,16 @@ async def delete_datasource(datasource_id: str, user_id: str = Depends(get_curre
     await ColumnQdrantRepository(qdrant_client.client).delete_by_datasource(datasource_id)
     await MetricQdrantRepository(qdrant_client.client).delete_by_datasource(datasource_id)
     await ESRepository(es_client.client).delete_by_datasource(datasource_id)
-    logger.info(f"[/datasources] user_id={user_id} 删除数据源 {datasource_id}(含 meta/Qdrant/ES 清理)")
+    # 连带清掉该源的问数会话历史(在 upload 库,全员共享 → 删源即全清)
+    from repositories.conversation import ConversationRepository
+    from services.excel_ingest import get_session_factory
+    convs_removed = 0
+    Session = get_session_factory()
+    async with Session() as conv_session:
+        async with conv_session.begin():
+            convs_removed = await ConversationRepository(conv_session).delete_by_datasource(datasource_id)
+    logger.info(
+        f"[/datasources] user_id={user_id} 删除数据源 {datasource_id}"
+        f"(含 meta/Qdrant/ES 清理 + 会话 {convs_removed} 条)"
+    )
     return {"deleted": datasource_id}
