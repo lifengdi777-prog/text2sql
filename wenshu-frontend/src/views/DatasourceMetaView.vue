@@ -9,6 +9,7 @@ import {
   saveDatasourceRelationships,
 } from '@/services/datasource'
 import type { DatasourceMeta, MetaColumn } from '@/types/datasource'
+import RelationshipErEditor from '@/components/er/RelationshipErEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -130,6 +131,8 @@ function removeMetric(idx: number) {
 }
 
 // ── 表关系(单独编辑,不从 DB 拉,直接写 data_relationship) ──────────
+// 两种视图:'er' 可视化拖拽(默认) / 'list' 下拉框列表,共用同一份 meta.relationships
+const relationView = ref<'er' | 'list'>('er')
 const tableNames = computed(() => meta.value?.tables.map((t) => t.name) ?? [])
 function columnsOf(tableName: string): string[] {
   return meta.value?.tables.find((t) => t.name === tableName)?.columns.map((c) => c.name) ?? []
@@ -484,16 +487,47 @@ onMounted(load)
           <p class="text-xs text-slate-500">
             关系用于多表 JOIN 与扇出检测。首次接入会从数据库外键种入；此处可人工增删，点右上角「保存关系」<b>即时生效</b>（不重建索引）。
           </p>
-          <button
-            type="button"
-            class="shrink-0 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-medium text-emerald-600 transition hover:bg-emerald-50"
-            @click="addRelation"
-          >
-            ＋ 新增关系
-          </button>
+          <div class="flex shrink-0 items-center gap-2">
+            <!-- 视图切换:ER 图 / 列表 -->
+            <div class="flex overflow-hidden rounded-lg border border-slate-200 text-sm">
+              <button
+                type="button"
+                class="px-3 py-1.5 transition"
+                :class="relationView === 'er' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:bg-slate-50'"
+                @click="relationView = 'er'"
+              >
+                ER 图
+              </button>
+              <button
+                type="button"
+                class="px-3 py-1.5 transition"
+                :class="relationView === 'list' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:bg-slate-50'"
+                @click="relationView = 'list'"
+              >
+                列表
+              </button>
+            </div>
+            <button
+              v-if="relationView === 'list'"
+              type="button"
+              class="rounded-xl border border-emerald-200 px-4 py-2 text-sm font-medium text-emerald-600 transition hover:bg-emerald-50"
+              @click="addRelation"
+            >
+              ＋ 新增关系
+            </button>
+          </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto pr-1 pb-4">
+        <!-- ER 图视图:拖线增 / 点线删,共用 meta.relationships -->
+        <RelationshipErEditor
+          v-if="relationView === 'er'"
+          :tables="meta.tables"
+          v-model="meta.relationships"
+          class="flex-1 overflow-hidden"
+        />
+
+        <!-- 列表视图 -->
+        <div v-else class="flex-1 overflow-y-auto pr-1 pb-4">
           <p v-if="meta.relationships.length === 0" class="py-10 text-center text-sm text-slate-400">
             暂无关系，点右上角「新增关系」
           </p>

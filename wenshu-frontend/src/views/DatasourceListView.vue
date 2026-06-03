@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import DatasourceWizard from '@/components/DatasourceWizard.vue'
+import DatasourcePreviewModal from '@/components/DatasourcePreviewModal.vue'
 import { deleteDatasource, listDatasources } from '@/services/datasource'
 import type { DatasourceSummary } from '@/types/datasource'
 
@@ -21,6 +22,14 @@ const deleting = ref(false)
 const menuFor = ref<string | null>(null)
 function toggleMenu(id: string) {
   menuFor.value = menuFor.value === id ? null : id
+}
+
+// 点击卡片(非按钮区)打开简单预览
+const previewTarget = ref<DatasourceSummary | null>(null)
+const previewOpen = ref(false)
+function openPreview(ds: DatasourceSummary) {
+  previewTarget.value = ds
+  previewOpen.value = true
 }
 
 const filtered = computed(() => {
@@ -191,15 +200,29 @@ onUnmounted(stopPolling)
           <p class="text-xs text-slate-400">AI 解析中，完成后即可开始问数</p>
         </div>
 
-        <!-- 正常卡片 -->
+        <!-- 正常卡片:点击(非按钮区)打开预览 -->
         <div
           v-else
-          class="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-sky-300 hover:shadow-[0_12px_30px_rgba(148,163,184,0.18)]"
+          class="flex cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-sky-300 hover:shadow-[0_12px_30px_rgba(148,163,184,0.18)]"
+          @click="openPreview(ds)"
         >
           <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <h3 class="truncate text-base font-semibold text-slate-800">{{ ds.name }}</h3>
-              <p class="mt-0.5 text-xs text-slate-400">{{ ds.type }} · {{ ds.default_database || '—' }}</p>
+            <div class="flex min-w-0 items-start gap-3">
+              <!-- 数据源图标:数据库圆柱(蓝色),与数据集卡片的 XLS 徽标同位同尺寸 -->
+              <span
+                class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white"
+                aria-hidden="true"
+              >
+                <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <ellipse cx="12" cy="5" rx="9" ry="3" />
+                  <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                  <path d="M3 12a9 3 0 0 0 18 0" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <h3 class="truncate text-base font-semibold text-slate-800">{{ ds.name }}</h3>
+                <p class="mt-0.5 text-xs text-slate-400">{{ ds.type }} · {{ ds.default_database || '—' }}</p>
+              </div>
             </div>
             <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium" :class="badge(ds).cls">
               {{ badge(ds).text }}
@@ -212,7 +235,7 @@ onUnmounted(stopPolling)
             <span class="text-xs text-slate-400">
               {{ ds.table_count != null ? `${ds.table_count} 张表` : '未接入' }}
             </span>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" @click.stop>
               <button
                 type="button"
                 class="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
@@ -268,6 +291,14 @@ onUnmounted(stopPolling)
 
     <!-- 新建数据源向导 -->
     <DatasourceWizard :open="wizardOpen" @close="wizardOpen = false" @created="onCreated" />
+
+    <!-- 卡片点击预览 -->
+    <DatasourcePreviewModal
+      :open="previewOpen"
+      :datasource="previewTarget"
+      @close="previewOpen = false"
+      @open-chat="() => previewTarget && openChat(previewTarget)"
+    />
 
     <!-- 删除确认 -->
     <div

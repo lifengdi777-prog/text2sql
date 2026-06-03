@@ -96,7 +96,7 @@ function chooseRemove() {
       </span>
 
       <div
-        class="flex items-center gap-2 opacity-0 transition group-hover:opacity-100"
+        class="flex items-center gap-2"
         @click.stop
       >
         <button
