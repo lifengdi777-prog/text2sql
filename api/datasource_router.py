@@ -88,6 +88,46 @@ async def list_datasource_tables(datasource_id: str, _: str = Depends(get_curren
     return [{"name": r[0], "comment": r[1] or "", "rows": int(r[2]) if r[2] is not None else None} for r in rows]
 
 
+@router.get("/{datasource_id}/meta")
+async def get_datasource_meta(datasource_id: str, _: str = Depends(get_current_user)):
+    """组装该数据源的元数据(5 表)给编辑页:表/列(含只读的 type/examples + 可改的 desc/alias/role/sync)
+    + 指标 + 关系(只读)。"""
+    async with meta_mysql_client.session() as session:
+        if not await DatasourceRepository(session).exists(datasource_id):
+            raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+        meta_repo = MetaDBRepository(session, datasource_id)
+        tables = await meta_repo.get_all_tables()
+        columns = await meta_repo.get_all_columns()
+        metrics = await meta_repo.get_all_metrics()
+        relationships = await meta_repo.get_relationships()
+
+    cols_by_table: dict[str, list[dict]] = {}
+    for c in columns:
+        cols_by_table.setdefault(c.table_id, []).append({
+            "name": c.name, "type": c.type, "role": c.role,
+            "description": c.description, "alias": c.alias, "sync": c.sync,
+            "examples": (c.examples or [])[:5],  # 只读,给点上下文
+        })
+    return {
+        "datasource_id": datasource_id,
+        "tables": [
+            {"name": t.name, "role": t.role, "description": t.description,
+             "columns": cols_by_table.get(t.id, [])}
+            for t in tables
+        ],
+        "metrics": [
+            {"name": m.name, "description": m.description,
+             "relevant_columns": m.relevant_columns, "alias": m.alias}
+            for m in metrics
+        ],
+        "relationships": [
+            {"from_table": r.from_table, "from_column": r.from_column,
+             "to_table": r.to_table, "to_column": r.to_column, "description": r.description}
+            for r in relationships
+        ],
+    }
+
+
 async def _run_build(datasource_id: str, tables: list[str]) -> None:
     """后台任务:生成草稿 → 物化,成功置 ready,失败置 failed(记 last_error)。"""
     try:

@@ -67,6 +67,12 @@ class MetaDBRepository:
         rows = await self.session.scalars(stmt)
         return [MetricInfo.model_validate(row) for row in rows]
 
+    # 列出本数据源的全部列(给元数据编辑页加载;按表分组在调用方做)。
+    async def get_all_columns(self) -> list[ColumnInfo]:
+        stmt = select(ColumnInfoMySQL).where(ColumnInfoMySQL.datasource_id == self.datasource_id)
+        rows = await self.session.scalars(stmt)
+        return [ColumnInfo.model_validate(row) for row in rows]
+
     # 读取本数据源的全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
     async def get_relationships(self) -> list[DataRelationship]:
         stmt = select(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == self.datasource_id)
