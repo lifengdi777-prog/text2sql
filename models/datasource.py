@@ -6,7 +6,7 @@ created_by 存创建人 user.id(连接的归属/管理权,与"指标库级共享
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
@@ -25,4 +25,8 @@ class DatasourceMySQL(Base):
     default_database: Mapped[str | None] = mapped_column(String(128), comment="默认库名")
     created_by: Mapped[int | None] = mapped_column(Integer, comment="创建人 user.id(连接归属)")
     status: Mapped[str] = mapped_column(String(16), default="active", comment="active/disabled")
+    # 接入构建状态:pending(刚注册)/building(草稿+物化中)/ready(可问数)/failed
+    build_status: Mapped[str] = mapped_column(String(16), default="pending", comment="pending/building/ready/failed")
+    last_error: Mapped[str | None] = mapped_column(Text, comment="构建失败原因")
+    table_count: Mapped[int | None] = mapped_column(Integer, comment="已物化的表数")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())

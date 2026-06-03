@@ -25,4 +25,6 @@ class DatasourceInfo(BaseModel):
     default_database: str | None
     created_by: int | None
     status: str
+    build_status: str | None = None
+    table_count: int | None = None
     model_config = ConfigDict(from_attributes=True)

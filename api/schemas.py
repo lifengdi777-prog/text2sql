@@ -19,3 +19,8 @@ class DatasourceRegisterInput(BaseModel):
     password: str
     type: str = "mysql"
     default_database: str | None = None
+
+
+class DatasourceBuildInput(BaseModel):
+    """构建(草稿+物化)入参。tables 为空则接入该库全部表;否则只接入选中的表。"""
+    tables: list[str] = []

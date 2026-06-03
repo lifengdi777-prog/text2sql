@@ -8,17 +8,24 @@
 """
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import text
 
 from api.deps import get_current_user
-from api.schemas import DatasourceRegisterInput
-from clients.mysql import MySQLClient, meta_mysql_client
+from api.schemas import DatasourceBuildInput, DatasourceRegisterInput
+from clients.es import es_client
+from clients.mysql import MySQLClient, client_registry, meta_mysql_client
+from clients.qdrant import qdrant_client
 from conf.app_config import DBConfig, DEFAULT_DATASOURCE_ID
+from conf.meta_config import MetaConfig
 from core.log import logger
 from dtos.datasource import DatasourceCreate, DatasourceInfo
 from repositories.datasource import DatasourceRepository
+from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository
+from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
+from scripts.generate_draft import generate_draft
+from scripts.materialize import materialize
 
 router = APIRouter(prefix="/datasources")
 
@@ -66,6 +73,55 @@ async def list_datasources(_: str = Depends(get_current_user)) -> list[Datasourc
         return await repo.list_all()
 
 
+@router.get("/{datasource_id}/tables")
+async def list_datasource_tables(datasource_id: str, _: str = Depends(get_current_user)):
+    """列出该数据源默认库里的表(供向导第③步勾选)。只读 information_schema,不灌任何库。"""
+    async with meta_mysql_client.session() as session:
+        if not await DatasourceRepository(session).exists(datasource_id):
+            raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+    client = await client_registry.get_client(datasource_id)
+    async with client.session() as session:
+        rows = (await session.execute(text(
+            "SELECT TABLE_NAME, TABLE_COMMENT, TABLE_ROWS FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
+        ))).fetchall()
+    return [{"name": r[0], "comment": r[1] or "", "rows": int(r[2]) if r[2] is not None else None} for r in rows]
+
+
+async def _run_build(datasource_id: str, tables: list[str]) -> None:
+    """后台任务:生成草稿 → 物化,成功置 ready,失败置 failed(记 last_error)。"""
+    try:
+        draft = await generate_draft(datasource_id, tables or None)
+        config = MetaConfig.model_validate({"tables": draft["tables"], "metrics": draft["metrics"]})
+        stats = await materialize(datasource_id, config)
+        async with meta_mysql_client.session() as session:
+            async with session.begin():
+                await DatasourceRepository(session).set_build_status(
+                    datasource_id, "ready", table_count=stats["tables"])
+        logger.info(f"[/datasources] {datasource_id} 构建完成: {stats}")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"[/datasources] {datasource_id} 构建失败")
+        async with meta_mysql_client.session() as session:
+            async with session.begin():
+                await DatasourceRepository(session).set_build_status(
+                    datasource_id, "failed", last_error=str(exc))
+
+
+@router.post("/{datasource_id}/build")
+async def build_datasource(datasource_id: str, data: DatasourceBuildInput,
+                           background: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    """接入(草稿+物化)。异步执行:立即置 building 并返回,前端轮询 GET /datasources 看状态。"""
+    async with meta_mysql_client.session() as session:
+        repo = DatasourceRepository(session)
+        async with session.begin():
+            if not await repo.exists(datasource_id):
+                raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+            await repo.set_build_status(datasource_id, "building")
+    background.add_task(_run_build, datasource_id, data.tables)
+    logger.info(f"[/datasources] user_id={user_id} 触发构建 {datasource_id}(表数={len(data.tables) or '全部'})")
+    return {"status": "building"}
+
+
 @router.delete("/{datasource_id}")
 async def delete_datasource(datasource_id: str, user_id: str = Depends(get_current_user)):
     if datasource_id == DEFAULT_DATASOURCE_ID:
@@ -76,7 +132,11 @@ async def delete_datasource(datasource_id: str, user_id: str = Depends(get_curre
             deleted = await ds_repo.delete(datasource_id)
             if not deleted:
                 raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
-            # 连带清掉该源在 meta 库的 5 张表行(Qdrant/ES 的清理待 materialize 配套补)
+            # 连带清掉该源在 meta 库的 5 张表行
             await MetaDBRepository(session, datasource_id).clear_all()
-    logger.info(f"[/datasources] user_id={user_id} 删除数据源 {datasource_id}")
+    # 再清该源的 Qdrant 向量 + ES 值文档(都是按 datasource_id 过滤删除,不动别的源)
+    await ColumnQdrantRepository(qdrant_client.client).delete_by_datasource(datasource_id)
+    await MetricQdrantRepository(qdrant_client.client).delete_by_datasource(datasource_id)
+    await ESRepository(es_client.client).delete_by_datasource(datasource_id)
+    logger.info(f"[/datasources] user_id={user_id} 删除数据源 {datasource_id}(含 meta/Qdrant/ES 清理)")
     return {"deleted": datasource_id}

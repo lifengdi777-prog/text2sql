@@ -10,6 +10,13 @@ from core.log import logger
 @asynccontextmanager
 async def lifespan(_: FastAPI):
 # ↑ yield 之前：应用启动时执行
+    # 幂等迁移:给 datasource 表补 build_status/last_error/table_count 列(存量源回填 ready)。
+    # 非破坏性,不动其它源的 meta;失败不阻断启动(表可能还没建,等 init_data)。
+    try:
+        from repositories.datasource import ensure_datasource_columns
+        await ensure_datasource_columns(meta_mysql_client.engine)
+    except Exception as exc:
+        logger.warning(f"datasource 列迁移跳过/失败(不影响启动):{exc}")
     # 配置了对象存储就确保 bucket 存在(上传功能用;没配则跳过,不影响原 DW 路径)
     if app_config.s3 is not None:
         try:
