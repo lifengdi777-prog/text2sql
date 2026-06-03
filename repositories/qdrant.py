@@ -1,9 +1,10 @@
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct, Filter
+from qdrant_client.models import VectorParams, Distance, PointStruct, Filter, FieldCondition, MatchValue
 from typing import Sequence
 from dtos.qdrant import ColumnQdrantInfo, MetricQdrantInfo, BaseQdrantInfo
 from abc import ABC
 from dtos.meta import ColumnInfo, MetricInfo
+from conf.app_config import DEFAULT_DATASOURCE_ID
 
 class BaseQdrantRepository(ABC):
     collection_name: str
@@ -51,15 +52,21 @@ class BaseQdrantRepository(ABC):
             await self.client.upsert(self.collection_name, points=points)
 
     #根据输入的 embedding 向 Qdrant 数据库中查询相似的点，返回它们的 payload。
+    # 多数据源:query_filter 按 payload 里的 datasource_id 精确过滤,只在本源内召回。
+    # (collection 仍是共享的 column_info/metric_info,靠 datasource_id 区分,不分库建 collection。)
     async def _search(
-        self, 
-        embedding: list[float], 
-        score_threshold: float=0.6, 
+        self,
+        embedding: list[float],
+        datasource_id: str = DEFAULT_DATASOURCE_ID,
+        score_threshold: float=0.6,
         limit: int=5
     ) -> list:
         result = await self.client.query_points(
             collection_name=self.collection_name,
             query=embedding,
+            query_filter=Filter(
+                must=[FieldCondition(key="datasource_id", match=MatchValue(value=datasource_id))]
+            ),
             score_threshold=score_threshold,
             limit=limit
         )
@@ -76,12 +83,13 @@ class ColumnQdrantRepository(BaseQdrantRepository):
 
     async def search(
         self,
-        embedding: list[float], 
-        score_threshold: float=0.6, 
+        embedding: list[float],
+        datasource_id: str = DEFAULT_DATASOURCE_ID,
+        score_threshold: float=0.6,
         limit: int=5
     ) -> list[ColumnInfo]:
         #调用父类的 _search 方法，获取原始的 payload 列表。
-        payloads = await super()._search(embedding, score_threshold, limit)
+        payloads = await super()._search(embedding, datasource_id, score_threshold, limit)
         return [ColumnInfo.model_validate(payload) for payload in payloads]
 
 class MetricQdrantRepository(BaseQdrantRepository):
@@ -92,10 +100,11 @@ class MetricQdrantRepository(BaseQdrantRepository):
 
     async def search(
         self,
-        embedding: list[float], 
-        score_threshold: float=0.6, 
+        embedding: list[float],
+        datasource_id: str = DEFAULT_DATASOURCE_ID,
+        score_threshold: float=0.6,
         limit: int=5
     ) -> list[MetricInfo]:
         #调用父类的 _search 方法，获取原始的 payload 列表。
-        payloads = await super()._search(embedding, score_threshold, limit)
+        payloads = await super()._search(embedding, datasource_id, score_threshold, limit)
         return [MetricInfo.model_validate(payload) for payload in payloads]

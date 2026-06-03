@@ -2,6 +2,7 @@ from typing import Any
 
 from elasticsearch import AsyncElasticsearch
 
+from conf.app_config import DEFAULT_DATASOURCE_ID
 from dtos.es import ValueInfo
 
 
@@ -16,7 +17,9 @@ class ESRepository:
             # ik_smart：最少切分
             # ik_max_word：最细粒度划分
             "value": {"type": "text", "analyzer": "ik_max_word", "search_analyzer": "ik_max_word"},
-            "column_id": {"type": "keyword"}
+            "column_id": {"type": "keyword"},
+            # 多数据源隔离:keyword,过滤几乎免费(同 upload 的 dataset_id 做法)
+            "datasource_id": {"type": "keyword"}
         }
     }
 
@@ -46,14 +49,19 @@ class ESRepository:
     async def search(
         self,
         keyword: str,
+        datasource_id: str = DEFAULT_DATASOURCE_ID,
         score_threshold: float = 0.6,
         limit: int = 5
     ) -> list[ValueInfo]:
+        # bool.must:datasource_id 精确过滤(term) + value 文本匹配(match);只在本数据源内召回值。
         result = await self.client.search(
             index=self.index_name,
             query={
-                "match": {
-                    "value": keyword
+                "bool": {
+                    "must": [
+                        {"term": {"datasource_id": datasource_id}},
+                        {"match": {"value": keyword}},
+                    ]
                 }
             },
             min_score=score_threshold,
