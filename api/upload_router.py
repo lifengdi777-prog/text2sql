@@ -95,4 +95,12 @@ async def delete_dataset_endpoint(dataset_id: int, user_id: str = Depends(get_cu
     ok = await delete_dataset(dataset_id)
     if not ok:
         raise HTTPException(status_code=404, detail=f"数据集 {dataset_id} 不存在")
+    # 连带清掉该数据集的问答会话历史(与删数据源一致)
+    from repositories.conversation import ConversationRepository
+    convs_removed = 0
+    Session = get_session_factory()
+    async with Session() as conv_session:
+        async with conv_session.begin():
+            convs_removed = await ConversationRepository(conv_session).delete_by_dataset(dataset_id)
+    logger.info(f"[/dataset] user_id={user_id} 删除数据集 {dataset_id}(含会话 {convs_removed} 条)")
     return {"ok": True, "dataset_id": dataset_id}

@@ -104,6 +104,23 @@ class ConversationRepository:
         )
         return res.rowcount or 0
 
+    async def delete_by_dataset(self, dataset_id: int) -> int:
+        """删除某数据集的会话及其消息。返回删除的会话数。删数据集时由 delete_dataset 调用。"""
+        sub = select(ConversationMySQL.id).where(
+            ConversationMySQL.source == "dataset",
+            ConversationMySQL.dataset_id == dataset_id,
+        )
+        await self.session.execute(
+            delete(MessageMySQL).where(MessageMySQL.conversation_id.in_(sub))
+        )
+        res = await self.session.execute(
+            delete(ConversationMySQL).where(
+                ConversationMySQL.source == "dataset",
+                ConversationMySQL.dataset_id == dataset_id,
+            )
+        )
+        return res.rowcount or 0
+
     # ── 消息 ────────────────────────────────────────────────
     async def add_message(
         self,
