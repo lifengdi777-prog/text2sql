@@ -62,6 +62,19 @@ class DatasourceRepository:
         if table_count is not None:
             ds.table_count = table_count
 
+    def to_db_config(self, ds: DatasourceMySQL, database: str | None = None) -> DBConfig:
+        """解密密码 + 组装成连接用的 DBConfig(供 ClientRegistry 建连接池)。
+
+        database 不传则用数据源的 default_database。
+        """
+        return DBConfig(
+            host=ds.host,
+            port=ds.port,
+            user=ds.username,
+            password=crypto.decrypt(ds.password_enc),
+            database=database or ds.default_database or "",
+        )
+
 
 # 幂等迁移:给已存在的 datasource 表补 build_status/last_error/table_count 列,并把存量行回填为 ready。
 # datasource 表不随 init_data 重建(里面是连接源数据),所以这几列单独在应用启动时迁移补上。
@@ -85,16 +98,3 @@ async def ensure_datasource_columns(engine) -> None:
             "SET d.table_count = COALESCE(x.c, 0), d.build_status = 'ready' "
             "WHERE d.build_status IS NULL"
         ))
-
-    def to_db_config(self, ds: DatasourceMySQL, database: str | None = None) -> DBConfig:
-        """解密密码 + 组装成连接用的 DBConfig(供 ClientRegistry 建连接池)。
-
-        database 不传则用数据源的 default_database。
-        """
-        return DBConfig(
-            host=ds.host,
-            port=ds.port,
-            user=ds.username,
-            password=crypto.decrypt(ds.password_enc),
-            database=database or ds.default_database or "",
-        )
