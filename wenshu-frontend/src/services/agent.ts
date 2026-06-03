@@ -39,6 +39,8 @@ interface QueryOptions {
   conversationId?: number | null
   // 后端回传(新建或确认)的 conversation_id,通过首个 SSE 事件送达
   onConversation?: (id: number) => void
+  // 针对哪个数据源问数;不传则默认 ds_default(现有制造库)
+  datasourceId?: string
 }
 
 function toErrorMessage(error: unknown): string {
@@ -249,7 +251,15 @@ async function runStream(
 
 // DW(MySQL 数仓)问答
 export async function streamAgentQuery(query: string, options: QueryOptions): Promise<void> {
-  await runStream('/agent/query', { query, conversation_id: options.conversationId ?? null }, options)
+  await runStream(
+    '/agent/query',
+    {
+      query,
+      conversation_id: options.conversationId ?? null,
+      datasource_id: options.datasourceId ?? 'ds_default',
+    },
+    options,
+  )
 }
 
 // 上传数据集(Excel)问答。身份走 Authorization: Bearer 头,不再随 body 传 user_id。
