@@ -149,3 +149,8 @@ context = OmegaConf.load(config_path)
 #②定义了一个全局的app_config变量，类型是AppConfig，
 #并且通过调用AppConfig.model_validate(context)来初始化这个变量。
 app_config: AppConfig = AppConfig.model_validate(context)
+
+# 多数据源:现有这套手工维护的源,统一挂在这个固定 datasource_id 下。
+# meta 表的作用域列、召回过滤、init_data 写入都用它当单源时的默认值;
+# 多源接入后,新源用各自的 id。
+DEFAULT_DATASOURCE_ID: str = "ds_default"

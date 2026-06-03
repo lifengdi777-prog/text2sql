@@ -6,9 +6,13 @@ from models import Base
 
 #ORM模型定义了四个类，分别对应元数据库中的四张表：table_info、column_info、metric_info和column_metric。
 #每个类都继承自Base，并使用SQLAlchemy的映射功能定义了表结构和字段属性。
+# 多数据源:每张表都加 datasource_id 并纳入复合主键。
+# 因为 id(如 "table_factory"、"良品率")只在单库内唯一,不同数据源会重名,
+# 必须靠 (datasource_id, id) 才能全局区分。各 datasource_id 列建索引,召回全靠它过滤。
 class TableInfoMySQL(Base):
     __tablename__ = "table_info"
 
+    datasource_id: Mapped[str] = mapped_column(String(64),primary_key=True,index=True,comment="数据源ID")
     id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="表编号")
     name: Mapped[str | None] = mapped_column(String(128),comment="表名称")
     role: Mapped[str | None] = mapped_column(String(32),comment="表类型(fact/dim)")
@@ -18,6 +22,7 @@ class TableInfoMySQL(Base):
 class ColumnInfoMySQL(Base):
     __tablename__ = "column_info"
 
+    datasource_id: Mapped[str] = mapped_column(String(64),primary_key=True,index=True,comment="数据源ID")
     id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="列编号")
     name: Mapped[str | None] = mapped_column(String(128),comment="列名称")
     type: Mapped[str | None] = mapped_column(String(64),comment="数据类型")
@@ -31,6 +36,7 @@ class ColumnInfoMySQL(Base):
 class MetricInfoMySQL(Base):
     __tablename__ = "metric_info"
 
+    datasource_id: Mapped[str] = mapped_column(String(64),primary_key=True,index=True,comment="数据源ID")
     id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="指标编码")
     name: Mapped[str | None] = mapped_column(String(128),comment="指标名称")
     description: Mapped[str | None] = mapped_column(Text,comment="指标描述")
@@ -41,6 +47,7 @@ class MetricInfoMySQL(Base):
 class ColumnMetricMySQL(Base):
     __tablename__ = "column_metric"
 
+    datasource_id: Mapped[str] = mapped_column(String(64),primary_key=True,index=True,comment="数据源ID")
     column_id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="列编号")
     metric_id: Mapped[str] = mapped_column(String(64),primary_key=True,comment="指标编号")
 
@@ -50,6 +57,7 @@ class ColumnMetricMySQL(Base):
 class DataRelationshipMySQL(Base):
     __tablename__ = "data_relationship"
 
+    datasource_id: Mapped[str] = mapped_column(String(64),primary_key=True,index=True,comment="数据源ID")
     from_table: Mapped[str] = mapped_column(String(64),primary_key=True,comment="外键所在表(多的一方)")
     from_column: Mapped[str] = mapped_column(String(64),primary_key=True,comment="外键列")
     to_table: Mapped[str] = mapped_column(String(64),primary_key=True,comment="被引用表(一的一方)")

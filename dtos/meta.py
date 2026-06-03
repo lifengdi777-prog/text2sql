@@ -1,6 +1,10 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Any, Literal
 
+from conf.app_config import DEFAULT_DATASOURCE_ID
+
+# datasource_id 给默认值,是为了让"还没传作用域"的旧构造/旧 Qdrant payload(没有该字段)
+# 仍能通过校验,落在 ds_default 上 —— 单源行为不变,多源时再显式传值。
 #这些类定义了数据模型，用于表示数据库中的表格、列、指标等信息。这些模型可以用于数据验证、序列化和反序列化等操作。
 class ColumnInfo(BaseModel):
     id: str
@@ -11,12 +15,14 @@ class ColumnInfo(BaseModel):
     description: str
     alias: list[str]
     table_id: str
+    datasource_id: str = DEFAULT_DATASOURCE_ID
     model_config = ConfigDict(from_attributes=True)
 
 
 class ColumnMetric(BaseModel):
     column_id: str
     metric_id: str
+    datasource_id: str = DEFAULT_DATASOURCE_ID
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -26,6 +32,7 @@ class MetricInfo(BaseModel):
     description: str
     relevant_columns: list[str]
     alias: list[str]
+    datasource_id: str = DEFAULT_DATASOURCE_ID
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -34,6 +41,7 @@ class TableInfo(BaseModel):
     name: str
     role: Literal['dim', 'fact', 'bridge']
     description: str
+    datasource_id: str = DEFAULT_DATASOURCE_ID
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -51,4 +59,5 @@ class DataRelationship(BaseModel):
     to_table: str
     to_column: str
     description: str | None = None
+    datasource_id: str = DEFAULT_DATASOURCE_ID
     model_config = ConfigDict(from_attributes=True)

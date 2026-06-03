@@ -12,6 +12,45 @@ from uuid import uuid4
 from repositories.es import ESRepository
 from clients.es import es_client
 from dtos.es import ValueInfo
+from conf.app_config import app_config, DEFAULT_DATASOURCE_ID
+from models.meta import TableInfoMySQL, ColumnInfoMySQL, MetricInfoMySQL, ColumnMetricMySQL, DataRelationshipMySQL
+from models.datasource import DatasourceMySQL
+from repositories.datasource import DatasourceRepository
+from dtos.datasource import DatasourceCreate
+
+# 5 张派生表:主键已改为 (datasource_id, ...),用 init_data 重建时整体 drop 重来。
+_META_TABLES = [TableInfoMySQL, ColumnInfoMySQL, MetricInfoMySQL, ColumnMetricMySQL, DataRelationshipMySQL]
+
+
+async def ensure_meta_schema():
+    """重建 meta 库结构:drop 5 张派生表(主键变了) + 建 datasource 与 5 张表。
+    只动这几张表(不用 create_all),避免在 meta 库里建出 users/upload 等无关表。"""
+    async with meta_mysql_client.engine.begin() as conn:
+        for model in _META_TABLES:
+            await conn.run_sync(model.__table__.drop, checkfirst=True)
+        # datasource 存的是源数据(连接信息),只在缺失时建,绝不 drop —— 别把已注册的连接弄丢。
+        await conn.run_sync(DatasourceMySQL.__table__.create, checkfirst=True)
+        for model in _META_TABLES:
+            await conn.run_sync(model.__table__.create, checkfirst=True)
+    print(f"[OK] meta 库结构已重建(datasource + {len(_META_TABLES)} 张元数据表)")
+
+
+async def seed_default_datasource():
+    """把现有手工库登记为 ds_default(若不存在)。连接信息取自 app_config.db_dw。"""
+    async with meta_mysql_client.session() as session:
+        repo = DatasourceRepository(session)
+        async with session.begin():
+            if not await repo.exists(DEFAULT_DATASOURCE_ID):
+                dw = app_config.db_dw
+                await repo.add(DatasourceCreate(
+                    id=DEFAULT_DATASOURCE_ID,
+                    name="默认数据源(现有手工库)",
+                    host=dw.host, port=dw.port, username=dw.user,
+                    password=dw.password, default_database=dw.database,
+                ))
+                print(f"[OK] 已登记默认数据源 {DEFAULT_DATASOURCE_ID}")
+            else:
+                print(f"[skip] 默认数据源 {DEFAULT_DATASOURCE_ID} 已存在")
 
 fp = open("conf/meta_config.json", "r", encoding="utf-8")
 meta_config_dict = json.load(fp)
@@ -182,7 +221,10 @@ async def sync_dw_value_to_es(column_infos: list[ColumnInfo]):
 
 async def main():
     try:
-        # 1. 同步业务数据库结构到元数据库中
+        # 0. 重建 meta 库结构(主键变更) + 登记默认数据源 ds_default
+        await ensure_meta_schema()
+        await seed_default_datasource()
+        # 1. 同步业务数据库结构到元数据库中(所有行经 DTO 默认值打上 datasource_id=ds_default)
         column_infos, metric_infos = await sync_dw_to_meta_db()
         # 2. 将元数据库的字段同步到qdrant中
         await sync_meta_column_to_qdrant(column_infos)

@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
 from models.meta import ColumnInfoMySQL, MetricInfoMySQL, TableInfoMySQL, ColumnMetricMySQL, DataRelationshipMySQL
 from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric, DataRelationship
+from conf.app_config import DEFAULT_DATASOURCE_ID
 from sqlalchemy import text, and_, or_
 from typing import Any
 from decimal import Decimal
@@ -23,12 +24,10 @@ class MetaDBRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def clear_all(self):
-        await self.session.execute(delete(ColumnMetricMySQL))
-        await self.session.execute(delete(MetricInfoMySQL))
-        await self.session.execute(delete(ColumnInfoMySQL))
-        await self.session.execute(delete(TableInfoMySQL))
-        await self.session.execute(delete(DataRelationshipMySQL))
+    # 只清某个数据源的元数据,不再清全表(否则注册第 2 个源会清掉第 1 个)。
+    async def clear_all(self, datasource_id: str = DEFAULT_DATASOURCE_ID):
+        for model in (ColumnMetricMySQL, MetricInfoMySQL, ColumnInfoMySQL, TableInfoMySQL, DataRelationshipMySQL):
+            await self.session.execute(delete(model).where(model.datasource_id == datasource_id))
 
 #以下方法用于将ColumnInfo、TableInfo、MetricInfo和ColumnMetric对象添加到数据库中。
 # 每个方法都接受一个包含相应对象的列表，并将这些对象转换为对应的MySQL模型实例，
@@ -53,40 +52,47 @@ class MetaDBRepository:
     async def add_relationships(self, relationships: list[DataRelationship]):
         self.session.add_all([DataRelationshipMySQL(**rel.model_dump()) for rel in relationships])
 
-    # 读取全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
-    async def get_relationships(self) -> list[DataRelationship]:
-        rows = await self.session.scalars(select(DataRelationshipMySQL))
+    # 读取某数据源的全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
+    async def get_relationships(self, datasource_id: str = DEFAULT_DATASOURCE_ID) -> list[DataRelationship]:
+        stmt = select(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == datasource_id)
+        rows = await self.session.scalars(stmt)
         return [DataRelationship.model_validate(row) for row in rows]
 
-    async def get_column_info_by_id(self, column_id: str) -> ColumnInfo | None:
-        stmt = select(ColumnInfoMySQL).where(ColumnInfoMySQL.id == column_id)
+    async def get_column_info_by_id(self, column_id: str, datasource_id: str = DEFAULT_DATASOURCE_ID) -> ColumnInfo | None:
+        # id 只在单库内唯一,必须连 datasource_id 一起查。
+        stmt = select(ColumnInfoMySQL).where(
+            and_(ColumnInfoMySQL.datasource_id == datasource_id, ColumnInfoMySQL.id == column_id)
+        )
         column_info_mysql = await self.session.scalar(stmt)
         if column_info_mysql:
             #返回相应的ColumnInfo对象，如果没有找到对应的记录，则返回None。
             return ColumnInfo.model_validate(column_info_mysql)
         return None
-    
+
     # 根据table_id获取表的主外键信息
-    async def get_table_pfks_by_id(self, table_id: str) -> list[ColumnInfo]:
+    async def get_table_pfks_by_id(self, table_id: str, datasource_id: str = DEFAULT_DATASOURCE_ID) -> list[ColumnInfo]:
         # 根据table_id获取表的主外键
         stmt = select(ColumnInfoMySQL).where(
             and_(
+                ColumnInfoMySQL.datasource_id == datasource_id,
                 ColumnInfoMySQL.table_id == table_id,
                 ColumnInfoMySQL.role.in_(['primary_key', 'foreign_key'])
             )
         )
         column_info_mysqls = await self.session.scalars(stmt)
         return [ColumnInfo.model_validate(column_info_mysql) for column_info_mysql in column_info_mysqls]
-    
-    async def get_table_info_by_id(self, table_id: str) -> TableInfo | None:
+
+    async def get_table_info_by_id(self, table_id: str, datasource_id: str = DEFAULT_DATASOURCE_ID) -> TableInfo | None:
         #构造一个SQL查询语句，查询TableInfoMySQL表中id等于table_id的记录。
-        stmt = select(TableInfoMySQL).where(TableInfoMySQL.id == table_id)
+        stmt = select(TableInfoMySQL).where(
+            and_(TableInfoMySQL.datasource_id == datasource_id, TableInfoMySQL.id == table_id)
+        )
         #执行查询，并将结果存储在table_info_mysql变量中。
         table_info_mysql = await self.session.scalar(stmt)
         if table_info_mysql:
             #返回相应的TableInfo对象，如果没有找到对应的记录，则返回None。
             return TableInfo.model_validate(table_info_mysql)
-        return None    
+        return None
 
 #操作业务数据库的DWDBRepository类，提供了获取表格列类型和列值的方法。
 class DWDBRepository:
