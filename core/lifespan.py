@@ -10,8 +10,15 @@ from core.log import logger
 @asynccontextmanager
 async def lifespan(_: FastAPI):
 # ↑ yield 之前：应用启动时执行
-    # 幂等迁移:给 datasource 表补 build_status/last_error/table_count 列(存量源回填 ready)。
-    # 非破坏性,不动其它源的 meta;失败不阻断启动(表可能还没建,等 init_data)。
+    # 1) 幂等建库+建表:首次启动自动建好 meta/upload 库及其表,无需手动跑脚本(业务库 dw 不建)。
+    try:
+        from core.db_init import ensure_app_tables, ensure_databases
+        await ensure_databases()
+        await ensure_app_tables()
+    except Exception as exc:
+        logger.warning(f"自动建库/建表跳过/失败(不影响启动):{exc}")
+    # 2) 幂等迁移:给已存在的旧表补新列(datasource.build_status / column_info.sync 等)。
+    #    非破坏性;新建的表已含这些列,迁移则为 no-op。
     try:
         from repositories.datasource import ensure_datasource_columns
         from repositories.mysql import ensure_meta_columns
