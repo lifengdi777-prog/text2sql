@@ -2,7 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getDatasourceMeta, saveDatasourceMeta, saveDatasourceRelationships } from '@/services/datasource'
+import {
+  getDatasourceMeta,
+  saveDatasourceTables,
+  saveDatasourceMetrics,
+  saveDatasourceRelationships,
+} from '@/services/datasource'
 import type { DatasourceMeta, MetaColumn } from '@/types/datasource'
 
 const route = useRoute()
@@ -124,10 +129,7 @@ function removeMetric(idx: number) {
   meta.value?.metrics.splice(idx, 1)
 }
 
-// ── 表关系(单独编辑/保存,不从 DB 拉,直接写 data_relationship) ──────────
-const savingRel = ref(false)
-const relMsg = ref('')
-
+// ── 表关系(单独编辑,不从 DB 拉,直接写 data_relationship) ──────────
 const tableNames = computed(() => meta.value?.tables.map((t) => t.name) ?? [])
 function columnsOf(tableName: string): string[] {
   return meta.value?.tables.find((t) => t.name === tableName)?.columns.map((c) => c.name) ?? []
@@ -142,25 +144,10 @@ function removeRelation(idx: number) {
   meta.value?.relationships.splice(idx, 1)
 }
 
-async function saveRelations() {
-  if (!meta.value || savingRel.value) return
-  // 只保存四个端点都填了的边
-  const edges = meta.value.relationships.filter(
-    (r) => r.from_table && r.from_column && r.to_table && r.to_column,
-  )
-  savingRel.value = true
-  error.value = ''
-  relMsg.value = ''
-  try {
-    await saveDatasourceRelationships(id, edges)
-    meta.value.relationships = edges // 同步掉未填完的空行
-    relMsg.value = `已保存 ${edges.length} 条关系（即时生效）`
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '保存表关系失败'
-  } finally {
-    savingRel.value = false
-  }
-}
+// 顶部保存按钮文案随 Tab 变
+const saveLabel = computed(() =>
+  tab.value === 'tables' ? '保存表元数据' : tab.value === 'metrics' ? '保存指标信息' : '保存表关系',
+)
 
 function openConfirm() {
   if (!meta.value) return
@@ -179,13 +166,18 @@ async function doSave() {
   saving.value = true
   confirmError.value = ''
   try {
-    await saveDatasourceMeta(
-      id,
-      { tables: meta.value.tables, metrics: meta.value.metrics },
-      userPwd.value,
-      dbPwd.value,
-    )
-    // 后端异步重物化(重嵌 Qdrant/重灌 ES);回列表看状态(building→ready)
+    if (tab.value === 'tables') {
+      await saveDatasourceTables(id, meta.value.tables, userPwd.value, dbPwd.value)
+    } else if (tab.value === 'metrics') {
+      await saveDatasourceMetrics(id, meta.value.metrics, userPwd.value, dbPwd.value)
+    } else {
+      // 只存四个端点都填了的边
+      const edges = meta.value.relationships.filter(
+        (r) => r.from_table && r.from_column && r.to_table && r.to_column,
+      )
+      await saveDatasourceRelationships(id, edges, userPwd.value, dbPwd.value)
+    }
+    // 表/指标是异步重物化(回列表看 building→ready);关系即时生效。统一回数据源列表。
     router.push('/sources')
   } catch (e) {
     confirmError.value = e instanceof Error ? e.message : '保存失败'
@@ -215,22 +207,12 @@ onMounted(load)
         </div>
       </div>
       <button
-        v-if="tab !== 'relations'"
         type="button"
         class="rounded-xl bg-emerald-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="saving || loading || !meta"
         @click="openConfirm"
       >
-        保存
-      </button>
-      <button
-        v-else
-        type="button"
-        class="rounded-xl bg-emerald-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-        :disabled="savingRel || loading || !meta"
-        @click="saveRelations"
-      >
-        {{ savingRel ? '保存中…' : '保存关系' }}
+        {{ saveLabel }}
       </button>
     </div>
 
@@ -510,7 +492,6 @@ onMounted(load)
             ＋ 新增关系
           </button>
         </div>
-        <p v-if="relMsg" class="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{{ relMsg }}</p>
 
         <div class="flex-1 overflow-y-auto pr-1 pb-4">
           <p v-if="meta.relationships.length === 0" class="py-10 text-center text-sm text-slate-400">

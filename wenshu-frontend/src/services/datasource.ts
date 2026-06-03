@@ -86,32 +86,57 @@ export async function getDatasourceMeta(id: string): Promise<DatasourceMeta> {
   }
 }
 
-// 保存编辑后的元数据(后端异步重物化:重嵌 Qdrant / 重灌 ES)。
-// 需双重确认:登录账号密码 + 该数据源的数据库密码,后端校验通过才保存。
-export async function saveDatasourceMeta(
+// 三个保存各存各的、互不牵连,都需双密码(账号 + 数据库)。
+
+// 保存「表元数据」:写 table_info/column_info + 重嵌列向量 + 重灌 ES(异步)
+export async function saveDatasourceTables(
   id: string,
-  config: { tables: MetaTable[]; metrics: MetaMetric[] },
+  tables: MetaTable[],
   userPassword: string,
   dbPassword: string,
 ): Promise<void> {
   try {
-    await api.put(`/datasources/${id}/meta`, {
-      config,
+    await api.put(`/datasources/${id}/tables`, {
+      tables,
       user_password: userPassword,
       db_password: dbPassword,
     })
   } catch (err) {
-    throw toError(err, '保存元数据失败')
+    throw toError(err, '保存表元数据失败')
   }
 }
 
-// 单独保存表关系(只重写 data_relationship,即时生效,不重建索引)
+// 保存「指标信息」:写 metric_info/column_metric + 重嵌指标向量(异步)
+export async function saveDatasourceMetrics(
+  id: string,
+  metrics: MetaMetric[],
+  userPassword: string,
+  dbPassword: string,
+): Promise<void> {
+  try {
+    await api.put(`/datasources/${id}/metrics`, {
+      metrics,
+      user_password: userPassword,
+      db_password: dbPassword,
+    })
+  } catch (err) {
+    throw toError(err, '保存指标失败')
+  }
+}
+
+// 保存「表关系」:只重写 data_relationship,即时生效,不重建索引
 export async function saveDatasourceRelationships(
   id: string,
   relationships: MetaRelationship[],
+  userPassword: string,
+  dbPassword: string,
 ): Promise<void> {
   try {
-    await api.put(`/datasources/${id}/relationships`, { relationships })
+    await api.put(`/datasources/${id}/relationships`, {
+      relationships,
+      user_password: userPassword,
+      db_password: dbPassword,
+    })
   } catch (err) {
     throw toError(err, '保存表关系失败')
   }

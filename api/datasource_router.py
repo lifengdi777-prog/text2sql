@@ -15,8 +15,9 @@ from api.deps import get_current_user
 from api.schemas import (
     DatasourceBuildInput,
     DatasourceRegisterInput,
-    MetaUpdateInput,
+    MetricsUpdateInput,
     RelationshipsUpdateInput,
+    TablesUpdateInput,
 )
 from dtos.meta import DataRelationship
 from clients.es import es_client
@@ -32,7 +33,7 @@ from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 from scripts.generate_draft import generate_draft
-from scripts.materialize import materialize
+from scripts.materialize import materialize, materialize_metrics, materialize_tables
 from services.auth import get_user_by_id, verify_password
 
 router = APIRouter(prefix="/datasources")
@@ -182,42 +183,71 @@ async def build_datasource(datasource_id: str, data: DatasourceBuildInput,
     return {"status": "building"}
 
 
-@router.put("/{datasource_id}/meta")
-async def update_datasource_meta(datasource_id: str, data: MetaUpdateInput,
-                                 background: BackgroundTasks, user_id: str = Depends(get_current_user)):
-    """保存人工审核后的元数据。双重确认:登录账号密码 + 该数据源的数据库密码,都对才放行。
-    通过后异步重物化(description/alias 改了重嵌 Qdrant、sync 改了重灌 ES)。"""
-    # 1. 校验登录账号密码
+async def _verify_passwords(user_id: str, datasource_id: str, user_password: str, db_password: str):
+    """三个保存共用的双密码校验:登录账号密码 + 该数据源的数据库密码,任一错即抛。"""
     user = await get_user_by_id(int(user_id))
-    if user is None or not verify_password(data.user_password, user.password_hash):
+    if user is None or not verify_password(user_password, user.password_hash):
         raise HTTPException(status_code=403, detail="账号密码错误")
-    # 2. 校验该数据源的数据库密码(与注册时存的解密后比对)
     async with meta_mysql_client.session() as session:
         ds = await DatasourceRepository(session).get_by_id(datasource_id)
-        if ds is None:
-            raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
-        try:
-            db_ok = crypto.decrypt(ds.password_enc) == data.db_password
-        except Exception:  # noqa: BLE001
-            db_ok = False
-        if not db_ok:
-            raise HTTPException(status_code=403, detail="数据库密码错误")
-        ds.build_status = "building"
-        await session.commit()
-    # 编辑保存:rebuild_relationships=False —— 不从库重建关系,保留人维护的 data_relationship
-    background.add_task(_materialize_and_track, datasource_id, data.config, False)
-    logger.info(f"[/datasources] user_id={user_id} 保存元数据并重物化 {datasource_id}"
-                f"({len(data.config.tables)} 表 / {len(data.config.metrics)} 指标)")
+    if ds is None:
+        raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+    try:
+        db_ok = crypto.decrypt(ds.password_enc) == db_password
+    except Exception:  # noqa: BLE001
+        db_ok = False
+    if not db_ok:
+        raise HTTPException(status_code=403, detail="数据库密码错误")
+
+
+async def _run_save_tables(datasource_id: str, tables) -> None:
+    try:
+        stats = await materialize_tables(datasource_id, tables)
+        await _set_status(datasource_id, "ready", table_count=stats["tables"])
+        logger.info(f"[/datasources] {datasource_id} 保存表元数据完成: {stats}")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"[/datasources] {datasource_id} 保存表元数据失败")
+        await _set_status(datasource_id, "failed", last_error=str(exc))
+
+
+async def _run_save_metrics(datasource_id: str, metrics) -> None:
+    try:
+        stats = await materialize_metrics(datasource_id, metrics)
+        await _set_status(datasource_id, "ready")
+        logger.info(f"[/datasources] {datasource_id} 保存指标完成: {stats}")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"[/datasources] {datasource_id} 保存指标失败")
+        await _set_status(datasource_id, "failed", last_error=str(exc))
+
+
+@router.put("/{datasource_id}/tables")
+async def update_datasource_tables(datasource_id: str, data: TablesUpdateInput,
+                                   background: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    """保存「表元数据」(异步)。只写 table_info/column_info + 重嵌列向量 + 重灌 ES,不碰指标/关系。"""
+    await _verify_passwords(user_id, datasource_id, data.user_password, data.db_password)
+    await _set_status(datasource_id, "building")
+    background.add_task(_run_save_tables, datasource_id, data.tables)
+    logger.info(f"[/datasources] user_id={user_id} 保存表元数据 {datasource_id}({len(data.tables)} 表)")
+    return {"status": "building"}
+
+
+@router.put("/{datasource_id}/metrics")
+async def update_datasource_metrics(datasource_id: str, data: MetricsUpdateInput,
+                                    background: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    """保存「指标信息」(异步)。只写 metric_info/column_metric + 重嵌指标向量,不碰表/列/ES/关系。"""
+    await _verify_passwords(user_id, datasource_id, data.user_password, data.db_password)
+    await _set_status(datasource_id, "building")
+    background.add_task(_run_save_metrics, datasource_id, data.metrics)
+    logger.info(f"[/datasources] user_id={user_id} 保存指标 {datasource_id}({len(data.metrics)} 个)")
     return {"status": "building"}
 
 
 @router.put("/{datasource_id}/relationships")
 async def update_datasource_relationships(datasource_id: str, data: RelationshipsUpdateInput,
                                           user_id: str = Depends(get_current_user)):
-    """人工编辑表关系后整表替换。只重写 data_relationship,即时生效,不重建 Qdrant/ES。"""
+    """保存「表关系」整表替换。只重写 data_relationship,即时生效,不重建 Qdrant/ES。"""
+    await _verify_passwords(user_id, datasource_id, data.user_password, data.db_password)
     async with meta_mysql_client.session() as session:
-        if not await DatasourceRepository(session).exists(datasource_id):
-            raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
         repo = MetaDBRepository(session, datasource_id)
         async with session.begin():
             await repo.replace_relationships([

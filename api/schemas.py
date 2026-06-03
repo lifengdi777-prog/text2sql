@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from conf.meta_config import MetaConfig
+from conf.meta_config import MetaConfig, TableConfig, MetricConfig
 
 #这是一个 FastAPI 的请求体模型，用 Pydantic 定义前端传进来的数据结构。
 class QueryInput(BaseModel):
@@ -28,9 +28,17 @@ class DatasourceBuildInput(BaseModel):
     tables: list[str] = []
 
 
-class MetaUpdateInput(BaseModel):
-    """保存编辑后的元数据。需同时校验:登录账号密码 + 该数据源的数据库密码,过了才允许保存。"""
-    config: MetaConfig
+# 三个 Tab 各存各的,都要双密码(账号 + 数据库)。
+class TablesUpdateInput(BaseModel):
+    """保存「表元数据」:只写 table_info/column_info + 重嵌列向量 + 重灌 ES。"""
+    tables: list[TableConfig]
+    user_password: str
+    db_password: str
+
+
+class MetricsUpdateInput(BaseModel):
+    """保存「指标信息」:只写 metric_info/column_metric + 重嵌指标向量。"""
+    metrics: list[MetricConfig]
     user_password: str
     db_password: str
 
@@ -44,5 +52,7 @@ class RelationshipEdge(BaseModel):
 
 
 class RelationshipsUpdateInput(BaseModel):
-    """人工编辑「表关系」后整表替换。只写 data_relationship,不重建索引。"""
+    """保存「表关系」:只重写 data_relationship,不重建索引。"""
     relationships: list[RelationshipEdge] = []
+    user_password: str
+    db_password: str

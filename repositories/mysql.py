@@ -36,6 +36,16 @@ class MetaDBRepository:
         for model in models:
             await self.session.execute(delete(model).where(model.datasource_id == self.datasource_id))
 
+    # 只清「表+列」(保存表元数据时用,不动指标/关系)。
+    async def clear_tables(self):
+        for model in (ColumnInfoMySQL, TableInfoMySQL):
+            await self.session.execute(delete(model).where(model.datasource_id == self.datasource_id))
+
+    # 只清「指标+指标关联列」(保存指标时用,不动表/列/关系)。
+    async def clear_metrics(self):
+        for model in (ColumnMetricMySQL, MetricInfoMySQL):
+            await self.session.execute(delete(model).where(model.datasource_id == self.datasource_id))
+
 #以下方法用于将ColumnInfo、TableInfo、MetricInfo和ColumnMetric对象添加到数据库中。
 # 每个方法都接受一个包含相应对象的列表，并将这些对象转换为对应的MySQL模型实例，
 # 然后使用session.add_all()方法将它们添加到数据库会话中。
