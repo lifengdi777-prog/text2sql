@@ -109,6 +109,25 @@ class MetaDBRepository:
             return TableInfo.model_validate(table_info_mysql)
         return None
 
+# 幂等迁移:给已存在的 column_info 表补 sync 列(人工审核要可见可改),并按启发式回填存量行。
+# column_info 由 init_data 重建,但 UI 物化的源 meta 也在这张表里,故启动时单独补列更安全。
+async def ensure_meta_columns(engine) -> None:
+    free_text = "('text','tinytext','mediumtext','longtext','blob','tinyblob','mediumblob','longblob','json')"
+    async with engine.begin() as conn:
+        existing = set((await conn.execute(text(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='column_info'"
+        ))).scalars().all())
+        if not existing or "sync" in existing:
+            return
+        await conn.execute(text("ALTER TABLE column_info ADD COLUMN sync TINYINT(1) NULL"))
+        # 回填:维度 + 非自由文本 → 1,与 introspect 的 sync 默认启发式一致;其余 0
+        await conn.execute(text(
+            f"UPDATE column_info SET sync = CASE WHEN role='dimension' "
+            f"AND LOWER(type) NOT IN {free_text} THEN 1 ELSE 0 END WHERE sync IS NULL"
+        ))
+
+
 #操作业务数据库的DWDBRepository类，提供了获取表格列类型和列值的方法。
 class DWDBRepository:
     def __init__(self, session: AsyncSession):

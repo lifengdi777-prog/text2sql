@@ -51,7 +51,7 @@ async def _build_meta(datasource_id: str, config: MetaConfig, dw_repo: DWDBRepos
                 type=column_types[column.name], role=column.role,
                 examples=list(set(column_values[column.name])),
                 description=column.description, alias=column.alias,
-                table_id=table.name, datasource_id=datasource_id,
+                table_id=table.name, sync=column.sync, datasource_id=datasource_id,
             ))
 
     # 关系边走该库声明的外键(命名推断的兜底已在 introspect,这里以 DB 真实约束为准)。

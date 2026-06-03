@@ -79,7 +79,8 @@ async def sync_dw_to_meta_db() -> tuple[list[ColumnInfo], list[MetricInfo]]:
                         examples=examples,
                         description=column.description,
                         alias=column.alias,
-                        table_id=table_info.id
+                        table_id=table_info.id,
+                        sync=column.sync,
                     )
                     column_infos.append(column_info)
 

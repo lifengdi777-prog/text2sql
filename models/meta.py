@@ -1,4 +1,4 @@
-from sqlalchemy import String, Text, JSON
+from sqlalchemy import String, Text, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 #继承了Base类，Base类是一个SQLAlchemy ORM模型的基类，定义了四个类：TableInfoMySQL、ColumnInfoMySQL、MetricInfoMySQL和ColumnMetricMySQL。
 #每个类都对应数据库中的一张表，并定义了表的结构和字段属性。
@@ -31,6 +31,8 @@ class ColumnInfoMySQL(Base):
     description: Mapped[str | None] = mapped_column(Text,comment="列描述")
     alias: Mapped[dict | list | None] = mapped_column(JSON,comment="指标别名")
     table_id: Mapped[str | None] = mapped_column(String(64),comment="所属表编号")
+    # 该列的值是否灌入 ES 做值召回(人工可审核修改);改了需重灌 ES
+    sync: Mapped[bool] = mapped_column(Boolean, default=False, comment="值是否进ES")
 
 
 class MetricInfoMySQL(Base):

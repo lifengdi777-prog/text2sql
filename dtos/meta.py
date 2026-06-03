@@ -15,6 +15,8 @@ class ColumnInfo(BaseModel):
     description: str
     alias: list[str]
     table_id: str
+    # 值是否灌入 ES(人工可改);旧 Qdrant payload 没这字段时默认 False,不影响
+    sync: bool = False
     datasource_id: str = DEFAULT_DATASOURCE_ID
     model_config = ConfigDict(from_attributes=True)
 
