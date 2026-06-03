@@ -46,8 +46,11 @@ def _draft_path(datasource_id: str) -> Path:
 
 
 # ───────────────────────── ① 代码确定性探测 + 启发式 ─────────────────────────
-async def introspect(session) -> dict[str, Any]:
-    """只读 information_schema + 采样,产出每张表每列的物理事实 + 启发式猜测。"""
+async def introspect(session, tables: list[str] | None = None) -> dict[str, Any]:
+    """只读 information_schema + 采样,产出每张表每列的物理事实 + 启发式猜测。
+
+    tables 给定时只探测这些表(用户在向导里勾选的子集);为 None 则探测全库。
+    """
     repo = DWDBRepository(session)
 
     # 1. 表清单(含库里原有表注释)
@@ -58,6 +61,9 @@ async def introspect(session) -> dict[str, Any]:
     ))).fetchall()
     table_comments = {r[0]: (r[1] or "") for r in table_rows}
     table_names = [r[0] for r in table_rows]
+    if tables is not None:
+        allow = set(tables)
+        table_names = [t for t in table_names if t in allow]
 
     # 2. 列清单(类型 / 主键标记 / 库里原有列注释),按定义顺序
     col_rows = (await session.execute(text(
@@ -310,16 +316,18 @@ def merge_to_meta_config(schema: dict[str, Any], llm_out: dict[str, Any]) -> dic
 
 
 # ───────────────────────── 可复用入口:返回草稿 dict ─────────────────────────
-async def generate_draft(datasource_id: str = DEFAULT_DATASOURCE_ID) -> dict[str, Any]:
+async def generate_draft(datasource_id: str = DEFAULT_DATASOURCE_ID,
+                         tables: list[str] | None = None) -> dict[str, Any]:
     """对指定数据源产出 meta_config 草稿(introspect + LLM 起草 + 合并校验)。
 
+    tables 给定时只起草这些表(向导里勾选的子集);None 则全库。
     返回 {tables, metrics, _dropped_metrics}:tables/metrics 已可直接给前端审核;
-    _dropped_metrics 是被丢弃的幻觉指标(供报告)。**不写任何库、不碰 Qdrant/ES。**
+    _dropped_metrics 是被丢弃的幻觉指标(供报告)。**不写任何库、不碰 Qdrant/ES、不关连接。**
     连接经 client_registry 按 datasource_id 解析,任意已注册数据源都能用。
     """
     client = await client_registry.get_client(datasource_id)
     async with client.session() as session:
-        schema = await introspect(session)
+        schema = await introspect(session, tables)
     llm_out = await draft_semantics(schema)
     return merge_to_meta_config(schema, llm_out)
 

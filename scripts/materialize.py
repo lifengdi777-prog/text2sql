@@ -54,7 +54,9 @@ async def _build_meta(datasource_id: str, config: MetaConfig, dw_repo: DWDBRepos
                 table_id=table.name, datasource_id=datasource_id,
             ))
 
-    # 关系边走该库声明的外键(命名推断的兜底已在 introspect,这里以 DB 真实约束为准)
+    # 关系边走该库声明的外键(命名推断的兜底已在 introspect,这里以 DB 真实约束为准)。
+    # 只保留两端都在本次选中表里的边——用户只选了部分表时,别留指向未接入表的悬空边。
+    selected = {t.name for t in config.tables}
     col_desc = {ci.id: ci.description for ci in column_infos}
     fks = await dw_repo.get_foreign_keys()
     relationships = [DataRelationship(
@@ -62,7 +64,7 @@ async def _build_meta(datasource_id: str, config: MetaConfig, dw_repo: DWDBRepos
         to_table=fk["to_table"], to_column=fk["to_column"],
         description=col_desc.get(f'{fk["from_table"]}.{fk["from_column"]}'),
         datasource_id=datasource_id,
-    ) for fk in fks]
+    ) for fk in fks if fk["from_table"] in selected and fk["to_table"] in selected]
 
     metric_infos: list[MetricInfo] = []
     column_metrics: list[ColumnMetric] = []
@@ -140,6 +142,29 @@ async def _sync_es(datasource_id, value_infos: list[ValueInfo]):
     await es_repo.add_documents(value_infos)
 
 
+async def materialize(datasource_id: str, config: MetaConfig) -> dict:
+    """把确认后的 config 物化到一个数据源(供 API / CLI 复用)。
+
+    只动本 datasource_id(meta clear_all 本源 + Qdrant/ES delete_by_datasource 本源后重灌)。
+    **不关闭任何进程级客户端**(服务里要继续用),清理由 CLI 的 main() 负责。返回统计 dict。
+    """
+    client = await client_registry.get_client(datasource_id)
+    async with client.session() as session:
+        dw_repo = DWDBRepository(session)
+        table_infos, column_infos, metric_infos, column_metrics, relationships = \
+            await _build_meta(datasource_id, config, dw_repo)
+        value_infos = await _build_values(datasource_id, config, column_infos, dw_repo)
+
+    await _write_meta(datasource_id, table_infos, column_infos, metric_infos, column_metrics, relationships)
+    await _sync_qdrant(datasource_id, column_infos, metric_infos)
+    await _sync_es(datasource_id, value_infos)
+    return {
+        "tables": len(table_infos), "columns": len(column_infos),
+        "metrics": len(metric_infos), "relationships": len(relationships),
+        "values": len(value_infos),
+    }
+
+
 async def main():
     if len(sys.argv) < 2:
         print("用法: uv run python -m scripts.materialize <datasource_id> [config_path]")
@@ -153,22 +178,9 @@ async def main():
     print(f"数据源: {datasource_id}  配置: {config_path}")
 
     try:
-        # 需要 DW 连接的活全在这一个会话里做完
-        client = await client_registry.get_client(datasource_id)
-        async with client.session() as session:
-            dw_repo = DWDBRepository(session)
-            table_infos, column_infos, metric_infos, column_metrics, relationships = \
-                await _build_meta(datasource_id, config, dw_repo)
-            value_infos = await _build_values(datasource_id, config, column_infos, dw_repo)
-        print(f"  构建: {len(table_infos)} 表 / {len(column_infos)} 列 / {len(metric_infos)} 指标 / "
-              f"{len(relationships)} 关系 / {len(value_infos)} 个待索引值")
-
-        await _write_meta(datasource_id, table_infos, column_infos, metric_infos, column_metrics, relationships)
-        print("  ✓ meta 5 张表已写入(本源增量)")
-        await _sync_qdrant(datasource_id, column_infos, metric_infos)
-        print("  ✓ Qdrant 列/指标向量已写入(payload 带 datasource_id)")
-        await _sync_es(datasource_id, value_infos)
-        print("  ✓ ES 值索引已写入(doc 带 datasource_id)")
+        stats = await materialize(datasource_id, config)
+        print(f"  构建: {stats['tables']} 表 / {stats['columns']} 列 / {stats['metrics']} 指标 / "
+              f"{stats['relationships']} 关系 / {stats['values']} 个待索引值")
         print(f"[OK] 数据源 {datasource_id} 物化完成,可问数了。")
     finally:
         await client_registry.close_all()
