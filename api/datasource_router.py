@@ -128,23 +128,33 @@ async def get_datasource_meta(datasource_id: str, _: str = Depends(get_current_u
     }
 
 
+async def _set_status(datasource_id: str, status: str, **kw) -> None:
+    async with meta_mysql_client.session() as session:
+        async with session.begin():
+            await DatasourceRepository(session).set_build_status(datasource_id, status, **kw)
+
+
+async def _materialize_and_track(datasource_id: str, config: MetaConfig) -> None:
+    """物化给定 config(写 meta + 重嵌 Qdrant + 重灌 ES),并更新构建状态。build 和编辑保存共用。"""
+    try:
+        stats = await materialize(datasource_id, config)
+        await _set_status(datasource_id, "ready", table_count=stats["tables"])
+        logger.info(f"[/datasources] {datasource_id} 物化完成: {stats}")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"[/datasources] {datasource_id} 物化失败")
+        await _set_status(datasource_id, "failed", last_error=str(exc))
+
+
 async def _run_build(datasource_id: str, tables: list[str]) -> None:
-    """后台任务:生成草稿 → 物化,成功置 ready,失败置 failed(记 last_error)。"""
+    """后台任务:生成草稿 → 物化。草稿阶段失败也置 failed。"""
     try:
         draft = await generate_draft(datasource_id, tables or None)
         config = MetaConfig.model_validate({"tables": draft["tables"], "metrics": draft["metrics"]})
-        stats = await materialize(datasource_id, config)
-        async with meta_mysql_client.session() as session:
-            async with session.begin():
-                await DatasourceRepository(session).set_build_status(
-                    datasource_id, "ready", table_count=stats["tables"])
-        logger.info(f"[/datasources] {datasource_id} 构建完成: {stats}")
     except Exception as exc:  # noqa: BLE001
-        logger.exception(f"[/datasources] {datasource_id} 构建失败")
-        async with meta_mysql_client.session() as session:
-            async with session.begin():
-                await DatasourceRepository(session).set_build_status(
-                    datasource_id, "failed", last_error=str(exc))
+        logger.exception(f"[/datasources] {datasource_id} 草稿生成失败")
+        await _set_status(datasource_id, "failed", last_error=str(exc))
+        return
+    await _materialize_and_track(datasource_id, config)
 
 
 @router.post("/{datasource_id}/build")
@@ -159,6 +169,23 @@ async def build_datasource(datasource_id: str, data: DatasourceBuildInput,
             await repo.set_build_status(datasource_id, "building")
     background.add_task(_run_build, datasource_id, data.tables)
     logger.info(f"[/datasources] user_id={user_id} 触发构建 {datasource_id}(表数={len(data.tables) or '全部'})")
+    return {"status": "building"}
+
+
+@router.put("/{datasource_id}/meta")
+async def update_datasource_meta(datasource_id: str, config: MetaConfig,
+                                 background: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    """保存人工审核后的元数据:把编辑后的 config 重新物化(异步)。
+    description/alias 改了会重嵌 Qdrant、sync 改了会重灌 ES —— 全在 materialize 里完成。"""
+    async with meta_mysql_client.session() as session:
+        repo = DatasourceRepository(session)
+        async with session.begin():
+            if not await repo.exists(datasource_id):
+                raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+            await repo.set_build_status(datasource_id, "building")
+    background.add_task(_materialize_and_track, datasource_id, config)
+    logger.info(f"[/datasources] user_id={user_id} 保存元数据并重物化 {datasource_id}"
+                f"({len(config.tables)} 表 / {len(config.metrics)} 指标)")
     return {"status": "building"}
 
 
