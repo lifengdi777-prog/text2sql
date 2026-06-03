@@ -33,3 +33,16 @@ class MetaUpdateInput(BaseModel):
     config: MetaConfig
     user_password: str
     db_password: str
+
+
+class RelationshipEdge(BaseModel):
+    from_table: str
+    from_column: str
+    to_table: str
+    to_column: str
+    description: str | None = None
+
+
+class RelationshipsUpdateInput(BaseModel):
+    """人工编辑「表关系」后整表替换。只写 data_relationship,不重建索引。"""
+    relationships: list[RelationshipEdge] = []

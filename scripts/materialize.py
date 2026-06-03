@@ -35,7 +35,8 @@ def _draft_path(datasource_id: str) -> Path:
 
 
 # ── 1. 用 config + DW 连接,构建要写入的 meta 行(全带 datasource_id) ──────────
-async def _build_meta(datasource_id: str, config: MetaConfig, dw_repo: DWDBRepository):
+async def _build_meta(datasource_id: str, config: MetaConfig, dw_repo: DWDBRepository,
+                      rebuild_relationships: bool = True):
     table_infos: list[TableInfo] = []
     column_infos: list[ColumnInfo] = []
     for table in config.tables:
@@ -54,17 +55,19 @@ async def _build_meta(datasource_id: str, config: MetaConfig, dw_repo: DWDBRepos
                 table_id=table.name, sync=column.sync, datasource_id=datasource_id,
             ))
 
-    # 关系边走该库声明的外键(命名推断的兜底已在 introspect,这里以 DB 真实约束为准)。
+    # 关系边:仅"导入模式"从该库声明的外键种一次;"编辑模式"不重建(关系由人单独管)。
     # 只保留两端都在本次选中表里的边——用户只选了部分表时,别留指向未接入表的悬空边。
-    selected = {t.name for t in config.tables}
-    col_desc = {ci.id: ci.description for ci in column_infos}
-    fks = await dw_repo.get_foreign_keys()
-    relationships = [DataRelationship(
-        from_table=fk["from_table"], from_column=fk["from_column"],
-        to_table=fk["to_table"], to_column=fk["to_column"],
-        description=col_desc.get(f'{fk["from_table"]}.{fk["from_column"]}'),
-        datasource_id=datasource_id,
-    ) for fk in fks if fk["from_table"] in selected and fk["to_table"] in selected]
+    relationships: list[DataRelationship] = []
+    if rebuild_relationships:
+        selected = {t.name for t in config.tables}
+        col_desc = {ci.id: ci.description for ci in column_infos}
+        fks = await dw_repo.get_foreign_keys()
+        relationships = [DataRelationship(
+            from_table=fk["from_table"], from_column=fk["from_column"],
+            to_table=fk["to_table"], to_column=fk["to_column"],
+            description=col_desc.get(f'{fk["from_table"]}.{fk["from_column"]}'),
+            datasource_id=datasource_id,
+        ) for fk in fks if fk["from_table"] in selected and fk["to_table"] in selected]
 
     metric_infos: list[MetricInfo] = []
     column_metrics: list[ColumnMetric] = []
@@ -99,14 +102,17 @@ async def _build_values(datasource_id: str, config: MetaConfig,
 
 
 # ── 2. 写入(都是"只动本源"的增量) ──────────────────────────────────────────
-async def _write_meta(datasource_id, table_infos, column_infos, metric_infos, column_metrics, relationships):
+async def _write_meta(datasource_id, table_infos, column_infos, metric_infos, column_metrics,
+                      relationships, rebuild_relationships: bool = True):
     async with meta_mysql_client.session() as session:
         repo = MetaDBRepository(session, datasource_id)
         async with session.begin():
-            await repo.clear_all()  # 只清本 datasource_id 的 5 张表行
+            # 编辑模式不清/不写 data_relationship —— 保留人维护的关系
+            await repo.clear_all(include_relationships=rebuild_relationships)
             await repo.add_column_infos(column_infos)
             await repo.add_table_infos(table_infos)
-            await repo.add_relationships(relationships)
+            if rebuild_relationships:
+                await repo.add_relationships(relationships)
             await repo.add_column_metrics(column_metrics)
             await repo.add_metric_infos(metric_infos)
 
@@ -142,20 +148,23 @@ async def _sync_es(datasource_id, value_infos: list[ValueInfo]):
     await es_repo.add_documents(value_infos)
 
 
-async def materialize(datasource_id: str, config: MetaConfig) -> dict:
+async def materialize(datasource_id: str, config: MetaConfig, rebuild_relationships: bool = True) -> dict:
     """把确认后的 config 物化到一个数据源(供 API / CLI 复用)。
 
-    只动本 datasource_id(meta clear_all 本源 + Qdrant/ES delete_by_datasource 本源后重灌)。
-    **不关闭任何进程级客户端**(服务里要继续用),清理由 CLI 的 main() 负责。返回统计 dict。
+    rebuild_relationships:
+      - True(导入模式):从该库声明的外键种 data_relationship(首次接入用)。
+      - False(编辑模式):**不碰 data_relationship**,关系由人单独管,重物化不覆盖。
+    只动本 datasource_id;**不关闭任何进程级客户端**(服务里要继续用),清理由 CLI 的 main() 负责。
     """
     client = await client_registry.get_client(datasource_id)
     async with client.session() as session:
         dw_repo = DWDBRepository(session)
         table_infos, column_infos, metric_infos, column_metrics, relationships = \
-            await _build_meta(datasource_id, config, dw_repo)
+            await _build_meta(datasource_id, config, dw_repo, rebuild_relationships)
         value_infos = await _build_values(datasource_id, config, column_infos, dw_repo)
 
-    await _write_meta(datasource_id, table_infos, column_infos, metric_infos, column_metrics, relationships)
+    await _write_meta(datasource_id, table_infos, column_infos, metric_infos, column_metrics,
+                      relationships, rebuild_relationships)
     await _sync_qdrant(datasource_id, column_infos, metric_infos)
     await _sync_es(datasource_id, value_infos)
     return {

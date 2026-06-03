@@ -28,8 +28,12 @@ class MetaDBRepository:
         self.datasource_id = datasource_id
 
     # 只清本数据源的元数据,不再清全表(否则注册第 2 个源会清掉第 1 个)。
-    async def clear_all(self):
-        for model in (ColumnMetricMySQL, MetricInfoMySQL, ColumnInfoMySQL, TableInfoMySQL, DataRelationshipMySQL):
+    # include_relationships=False:编辑保存时保留 data_relationship(关系由人单独管,不随重物化重建)。
+    async def clear_all(self, include_relationships: bool = True):
+        models = [ColumnMetricMySQL, MetricInfoMySQL, ColumnInfoMySQL, TableInfoMySQL]
+        if include_relationships:
+            models.append(DataRelationshipMySQL)
+        for model in models:
             await self.session.execute(delete(model).where(model.datasource_id == self.datasource_id))
 
 #以下方法用于将ColumnInfo、TableInfo、MetricInfo和ColumnMetric对象添加到数据库中。
@@ -54,6 +58,14 @@ class MetaDBRepository:
     # 写入表关系(外键边),供连接路径补全/扇出检测使用。
     async def add_relationships(self, relationships: list[DataRelationship]):
         self.session.add_all([DataRelationshipMySQL(**rel.model_dump()) for rel in relationships])
+
+    # 人工编辑「表关系」专用:整表替换本数据源的关系(先删本源旧边,再写新边)。
+    # 只动 data_relationship,不碰别的表、不重建索引 —— 关系即时生效。
+    async def replace_relationships(self, relationships: list[DataRelationship]):
+        await self.session.execute(
+            delete(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == self.datasource_id)
+        )
+        await self.add_relationships(relationships)
 
     # 列出本数据源的全部表(给意图解析节点拼"当前数据库领域"上下文用)。
     async def get_all_tables(self) -> list[TableInfo]:

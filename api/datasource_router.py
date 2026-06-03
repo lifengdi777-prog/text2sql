@@ -12,7 +12,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import text
 
 from api.deps import get_current_user
-from api.schemas import DatasourceBuildInput, DatasourceRegisterInput, MetaUpdateInput
+from api.schemas import (
+    DatasourceBuildInput,
+    DatasourceRegisterInput,
+    MetaUpdateInput,
+    RelationshipsUpdateInput,
+)
+from dtos.meta import DataRelationship
 from clients.es import es_client
 from clients.mysql import MySQLClient, client_registry, meta_mysql_client
 from clients.qdrant import qdrant_client
@@ -136,10 +142,12 @@ async def _set_status(datasource_id: str, status: str, **kw) -> None:
             await DatasourceRepository(session).set_build_status(datasource_id, status, **kw)
 
 
-async def _materialize_and_track(datasource_id: str, config: MetaConfig) -> None:
-    """物化给定 config(写 meta + 重嵌 Qdrant + 重灌 ES),并更新构建状态。build 和编辑保存共用。"""
+async def _materialize_and_track(datasource_id: str, config: MetaConfig,
+                                 rebuild_relationships: bool = True) -> None:
+    """物化给定 config(写 meta + 重嵌 Qdrant + 重灌 ES),并更新构建状态。build 和编辑保存共用。
+    rebuild_relationships=False(编辑保存)时不重建 data_relationship —— 关系交给人单独管。"""
     try:
-        stats = await materialize(datasource_id, config)
+        stats = await materialize(datasource_id, config, rebuild_relationships)
         await _set_status(datasource_id, "ready", table_count=stats["tables"])
         logger.info(f"[/datasources] {datasource_id} 物化完成: {stats}")
     except Exception as exc:  # noqa: BLE001
@@ -196,10 +204,32 @@ async def update_datasource_meta(datasource_id: str, data: MetaUpdateInput,
             raise HTTPException(status_code=403, detail="数据库密码错误")
         ds.build_status = "building"
         await session.commit()
-    background.add_task(_materialize_and_track, datasource_id, data.config)
+    # 编辑保存:rebuild_relationships=False —— 不从库重建关系,保留人维护的 data_relationship
+    background.add_task(_materialize_and_track, datasource_id, data.config, False)
     logger.info(f"[/datasources] user_id={user_id} 保存元数据并重物化 {datasource_id}"
                 f"({len(data.config.tables)} 表 / {len(data.config.metrics)} 指标)")
     return {"status": "building"}
+
+
+@router.put("/{datasource_id}/relationships")
+async def update_datasource_relationships(datasource_id: str, data: RelationshipsUpdateInput,
+                                          user_id: str = Depends(get_current_user)):
+    """人工编辑表关系后整表替换。只重写 data_relationship,即时生效,不重建 Qdrant/ES。"""
+    async with meta_mysql_client.session() as session:
+        if not await DatasourceRepository(session).exists(datasource_id):
+            raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+        repo = MetaDBRepository(session, datasource_id)
+        async with session.begin():
+            await repo.replace_relationships([
+                DataRelationship(
+                    from_table=e.from_table, from_column=e.from_column,
+                    to_table=e.to_table, to_column=e.to_column,
+                    description=e.description, datasource_id=datasource_id,
+                )
+                for e in data.relationships
+            ])
+    logger.info(f"[/datasources] user_id={user_id} 更新表关系 {datasource_id}({len(data.relationships)} 条)")
+    return {"count": len(data.relationships)}
 
 
 @router.delete("/{datasource_id}")

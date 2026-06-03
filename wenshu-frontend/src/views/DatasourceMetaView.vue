@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getDatasourceMeta, saveDatasourceMeta } from '@/services/datasource'
+import { getDatasourceMeta, saveDatasourceMeta, saveDatasourceRelationships } from '@/services/datasource'
 import type { DatasourceMeta, MetaColumn } from '@/types/datasource'
 
 const route = useRoute()
@@ -22,7 +22,7 @@ const dbPwd = ref('')
 const confirmError = ref('')
 
 // ── Tab + 搜索 + 分页 ──────────────────────────────
-const tab = ref<'tables' | 'metrics'>('tables')
+const tab = ref<'tables' | 'metrics' | 'relations'>('tables')
 const tableSearch = ref('')
 const tablePage = ref(1)
 const TABLE_PAGE_SIZE = 5
@@ -124,6 +124,44 @@ function removeMetric(idx: number) {
   meta.value?.metrics.splice(idx, 1)
 }
 
+// ── 表关系(单独编辑/保存,不从 DB 拉,直接写 data_relationship) ──────────
+const savingRel = ref(false)
+const relMsg = ref('')
+
+const tableNames = computed(() => meta.value?.tables.map((t) => t.name) ?? [])
+function columnsOf(tableName: string): string[] {
+  return meta.value?.tables.find((t) => t.name === tableName)?.columns.map((c) => c.name) ?? []
+}
+
+function addRelation() {
+  meta.value?.relationships.push({
+    from_table: '', from_column: '', to_table: '', to_column: '', description: null,
+  })
+}
+function removeRelation(idx: number) {
+  meta.value?.relationships.splice(idx, 1)
+}
+
+async function saveRelations() {
+  if (!meta.value || savingRel.value) return
+  // 只保存四个端点都填了的边
+  const edges = meta.value.relationships.filter(
+    (r) => r.from_table && r.from_column && r.to_table && r.to_column,
+  )
+  savingRel.value = true
+  error.value = ''
+  relMsg.value = ''
+  try {
+    await saveDatasourceRelationships(id, edges)
+    meta.value.relationships = edges // 同步掉未填完的空行
+    relMsg.value = `已保存 ${edges.length} 条关系（即时生效）`
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '保存表关系失败'
+  } finally {
+    savingRel.value = false
+  }
+}
+
 function openConfirm() {
   if (!meta.value) return
   userPwd.value = ''
@@ -177,12 +215,22 @@ onMounted(load)
         </div>
       </div>
       <button
+        v-if="tab !== 'relations'"
         type="button"
         class="rounded-xl bg-emerald-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="saving || loading || !meta"
         @click="openConfirm"
       >
         保存
+      </button>
+      <button
+        v-else
+        type="button"
+        class="rounded-xl bg-emerald-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+        :disabled="savingRel || loading || !meta"
+        @click="saveRelations"
+      >
+        {{ savingRel ? '保存中…' : '保存关系' }}
       </button>
     </div>
 
@@ -207,6 +255,14 @@ onMounted(load)
           @click="tab = 'metrics'"
         >
           指标信息
+        </button>
+        <button
+          type="button"
+          class="-mb-px border-b-2 px-4 py-2 text-sm font-medium transition"
+          :class="tab === 'relations' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'"
+          @click="tab = 'relations'"
+        >
+          表关系
         </button>
       </div>
 
@@ -310,19 +366,6 @@ onMounted(load)
           </table>
         </div>
           </section>
-
-          <!-- 关系(只读) -->
-          <section
-            v-if="meta.relationships.length"
-            class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <h2 class="mb-2 text-sm font-semibold text-slate-800">外键关系（只读）</h2>
-            <ul class="space-y-1 text-xs text-slate-500">
-              <li v-for="(r, ri) in meta.relationships" :key="ri" class="font-mono">
-                {{ r.from_table }}.{{ r.from_column }} → {{ r.to_table }}.{{ r.to_column }}
-              </li>
-            </ul>
-          </section>
         </div>
 
         <!-- 表分页 -->
@@ -351,7 +394,7 @@ onMounted(load)
       </div>
 
       <!-- ===== 指标信息 ===== -->
-      <div v-else class="flex flex-1 flex-col overflow-hidden">
+      <div v-else-if="tab === 'metrics'" class="flex flex-1 flex-col overflow-hidden">
         <div class="mb-3 flex items-center justify-between gap-3">
           <div class="relative">
             <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
@@ -450,6 +493,75 @@ onMounted(load)
           >
             下一页
           </button>
+        </div>
+      </div>
+
+      <!-- ===== 表关系 ===== -->
+      <div v-else class="flex flex-1 flex-col overflow-hidden">
+        <div class="mb-3 flex items-start justify-between gap-3">
+          <p class="text-xs text-slate-500">
+            关系用于多表 JOIN 与扇出检测。首次接入会从数据库外键种入；此处可人工增删，点右上角「保存关系」<b>即时生效</b>（不重建索引）。
+          </p>
+          <button
+            type="button"
+            class="shrink-0 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-medium text-emerald-600 transition hover:bg-emerald-50"
+            @click="addRelation"
+          >
+            ＋ 新增关系
+          </button>
+        </div>
+        <p v-if="relMsg" class="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{{ relMsg }}</p>
+
+        <div class="flex-1 overflow-y-auto pr-1 pb-4">
+          <p v-if="meta.relationships.length === 0" class="py-10 text-center text-sm text-slate-400">
+            暂无关系，点右上角「新增关系」
+          </p>
+          <div
+            v-for="(r, ri) in meta.relationships"
+            :key="ri"
+            class="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm"
+          >
+            <select
+              v-model="r.from_table"
+              class="rounded border border-slate-200 px-2 py-1 outline-none focus:border-sky-300"
+              @change="r.from_column = ''"
+            >
+              <option value="" disabled>本表</option>
+              <option v-for="t in tableNames" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <span class="text-slate-400">.</span>
+            <select
+              v-model="r.from_column"
+              class="rounded border border-slate-200 px-2 py-1 outline-none focus:border-sky-300"
+            >
+              <option value="" disabled>列</option>
+              <option v-for="c in columnsOf(r.from_table)" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <span class="px-1 font-semibold text-slate-400">→</span>
+            <select
+              v-model="r.to_table"
+              class="rounded border border-slate-200 px-2 py-1 outline-none focus:border-sky-300"
+              @change="r.to_column = ''"
+            >
+              <option value="" disabled>目标表</option>
+              <option v-for="t in tableNames" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <span class="text-slate-400">.</span>
+            <select
+              v-model="r.to_column"
+              class="rounded border border-slate-200 px-2 py-1 outline-none focus:border-sky-300"
+            >
+              <option value="" disabled>列</option>
+              <option v-for="c in columnsOf(r.to_table)" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <button
+              type="button"
+              class="ml-auto rounded px-2 py-1 text-slate-400 transition hover:bg-slate-100 hover:text-rose-500"
+              @click="removeRelation(ri)"
+            >
+              删除
+            </button>
+          </div>
         </div>
       </div>
     </div>

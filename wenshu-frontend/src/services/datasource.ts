@@ -8,6 +8,7 @@ import type {
   DatasourceMeta,
   MetaTable,
   MetaMetric,
+  MetaRelationship,
 } from '@/types/datasource'
 
 // MySQL 数据源 REST(非流式)。身份走 JWT(Authorization: Bearer)。
@@ -101,5 +102,17 @@ export async function saveDatasourceMeta(
     })
   } catch (err) {
     throw toError(err, '保存元数据失败')
+  }
+}
+
+// 单独保存表关系(只重写 data_relationship,即时生效,不重建索引)
+export async function saveDatasourceRelationships(
+  id: string,
+  relationships: MetaRelationship[],
+): Promise<void> {
+  try {
+    await api.put(`/datasources/${id}/relationships`, { relationships })
+  } catch (err) {
+    throw toError(err, '保存表关系失败')
   }
 }
