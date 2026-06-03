@@ -81,6 +81,11 @@ function openChat(ds: DatasourceSummary) {
   router.push({ path: '/db', query: { datasource: ds.id, name: ds.name } })
 }
 
+function openMeta(ds: DatasourceSummary) {
+  if (ds.build_status !== 'ready') return
+  router.push({ path: `/sources/${ds.id}/meta`, query: { name: ds.name } })
+}
+
 function onCreate() {
   wizardOpen.value = true
 }
@@ -183,6 +188,15 @@ onUnmounted(stopPolling)
                 @click="onRemove(ds)"
               >
                 删除
+              </button>
+              <button
+                type="button"
+                class="rounded-lg px-2 py-1.5 text-xs text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                :disabled="ds.build_status !== 'ready'"
+                title="查看/修改元数据(描述/别名/角色/sync/指标)"
+                @click="openMeta(ds)"
+              >
+                编辑元数据
               </button>
               <button
                 type="button"

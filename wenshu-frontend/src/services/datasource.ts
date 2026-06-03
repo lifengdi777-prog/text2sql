@@ -5,6 +5,9 @@ import type {
   DatasourceSummary,
   DatasourceTable,
   DatasourceRegisterPayload,
+  DatasourceMeta,
+  MetaTable,
+  MetaMetric,
 } from '@/types/datasource'
 
 // MySQL 数据源 REST(非流式)。身份走 JWT(Authorization: Bearer)。
@@ -69,5 +72,27 @@ export async function buildDatasource(id: string, tables: string[]): Promise<voi
     await api.post(`/datasources/${id}/build`, { tables })
   } catch (err) {
     throw toError(err, '触发构建失败')
+  }
+}
+
+// 读取数据源元数据(供编辑页加载)
+export async function getDatasourceMeta(id: string): Promise<DatasourceMeta> {
+  try {
+    const { data } = await api.get<DatasourceMeta>(`/datasources/${id}/meta`)
+    return data
+  } catch (err) {
+    throw toError(err, '获取元数据失败')
+  }
+}
+
+// 保存编辑后的元数据(后端异步重物化:重嵌 Qdrant / 重灌 ES)
+export async function saveDatasourceMeta(
+  id: string,
+  payload: { tables: MetaTable[]; metrics: MetaMetric[] },
+): Promise<void> {
+  try {
+    await api.put(`/datasources/${id}/meta`, payload)
+  } catch (err) {
+    throw toError(err, '保存元数据失败')
   }
 }

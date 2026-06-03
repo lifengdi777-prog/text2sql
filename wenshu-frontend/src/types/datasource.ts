@@ -32,3 +32,42 @@ export interface DatasourceRegisterPayload {
   type?: string
   default_database?: string | null
 }
+
+// ── 元数据编辑(GET /meta 返回 / PUT /meta 提交) ──────────────────
+export type ColumnRole = 'primary_key' | 'foreign_key' | 'dimension' | 'measure'
+export type TableRole = 'dim' | 'fact' | 'bridge'
+
+export interface MetaColumn {
+  name: string // 只读
+  type: string // 只读
+  role: ColumnRole // primary_key/foreign_key 只读,其余可改
+  description: string
+  alias: string[]
+  sync: boolean
+  examples?: (string | number | null)[] // 只读
+}
+export interface MetaTable {
+  name: string // 只读
+  role: TableRole
+  description: string
+  columns: MetaColumn[]
+}
+export interface MetaMetric {
+  name: string
+  description: string
+  relevant_columns: string[]
+  alias: string[]
+}
+export interface MetaRelationship {
+  from_table: string
+  from_column: string
+  to_table: string
+  to_column: string
+  description: string | null
+}
+export interface DatasourceMeta {
+  datasource_id: string
+  tables: MetaTable[]
+  metrics: MetaMetric[]
+  relationships: MetaRelationship[]
+}

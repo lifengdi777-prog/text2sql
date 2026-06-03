@@ -23,6 +23,11 @@ const router = createRouter({
       component: () => import('@/views/DatasourceListView.vue'),
     },
     {
+      path: '/sources/:id/meta',
+      name: 'source-meta',
+      component: () => import('@/views/DatasourceMetaView.vue'),
+    },
+    {
       path: '/datasets',
       name: 'dataset-list',
       component: () => import('@/views/DatasetListView.vue'),
