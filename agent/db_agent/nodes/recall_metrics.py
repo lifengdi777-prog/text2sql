@@ -8,6 +8,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from agent.llm import fast_llm
 from dtos.meta import MetricInfo
 from clients.embedding import embedding_client
+from core.log import logger
 
 
 async def recall_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
@@ -26,8 +27,16 @@ async def recall_metrics(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     prompt = await load_prompt("extend_keywords_for_metric_recall")
     prompt_template = PromptTemplate(template=prompt, input_variables=['query'])
     chain = prompt_template | fast_llm | JsonOutputParser()
-    result: list[str] = await chain.ainvoke({"query": query}) # type: ignore
-    keywords = list(set((keywords or [] )+result))
+    # 关键词扩展失败/返回非列表时回退基础关键词,不拖垮整条召回(同 recall_columns)。
+    try:
+        result = await chain.ainvoke({"query": query})  # type: ignore
+        expanded = [w for w in result if isinstance(w, str)] if isinstance(result, list) else []
+        if not isinstance(result, list):
+            logger.warning(f"metric_recall 关键词扩展返回非列表,已忽略:{type(result).__name__}")
+    except Exception as exc:
+        expanded = []
+        logger.warning(f"metric_recall 关键词扩展失败,回退基础关键词:{exc}")
+    keywords = list(set((keywords or []) + expanded))
 
     print("metric_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
     

@@ -9,6 +9,7 @@ from clients.embedding import embedding_client
 from dtos.meta import ColumnInfo
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from core.log import logger
 
 #这一整个方法就是把用户的提问提取出关键词，然后用这些关键词去向量数据库里搜相关的字段信息
 async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
@@ -32,8 +33,17 @@ async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     #JsonOutputParser()负责把大模型返回的文本解析成 JSON
     chain = prompt_template | fast_llm | JsonOutputParser()
     #这一步是真正执行整条链，而且是异步执行。
-    result: list[str] = await chain.ainvoke({"query": query}) # type: ignore
-    keywords = list(set((keywords or [] )+result))
+    # 关键词扩展是"锦上添花":LLM/JSON 解析失败或返回非列表时,回退到基础关键词,
+    # 不让这一步拖垮整条召回(它跑挂会导致本次查询直接失败)。
+    try:
+        result = await chain.ainvoke({"query": query})  # type: ignore
+        expanded = [w for w in result if isinstance(w, str)] if isinstance(result, list) else []
+        if not isinstance(result, list):
+            logger.warning(f"column_recall 关键词扩展返回非列表,已忽略:{type(result).__name__}")
+    except Exception as exc:
+        expanded = []
+        logger.warning(f"column_recall 关键词扩展失败,回退基础关键词:{exc}")
+    keywords = list(set((keywords or []) + expanded))
 
     print("column_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
     
