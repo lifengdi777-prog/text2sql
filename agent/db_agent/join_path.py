@@ -100,7 +100,7 @@ def route_groups(
         return []
     adjacency, _ = _build_graph(relationships)
     present = {t.id for t in table_infos}
-    anchor = next((t.id for t in table_infos if t.role == "fact"), None) or next(iter(present))
+    anchor = next((t.id for t in table_infos if t.role == "fact"), None) or min(present)
     groups: list[list[list[str]]] = []
     for table_id in sorted(present):               # 排序:保证多组之间顺序稳定、可复现
         if table_id == anchor:
@@ -138,7 +138,7 @@ async def complete_join_path(
     adjacency, _ = _build_graph(relationships)
     present = {table_info.id for table_info in table_infos}
     # 以事实表为枢纽(星型/雪花的中心)；没有事实表时退化为以任一已选表为锚点。
-    anchor = next((t.id for t in table_infos if t.role == "fact"), None) or next(iter(present))
+    anchor = next((t.id for t in table_infos if t.role == "fact"), None) or min(present)
     # 候选路径参数:调用方显式传入则用传入值(merge 阶段传 0/1 做保守补救);
     # 未传则按数据源取(管理员在元数据编辑页可调;默认 1/3,稠密库可调大)。
     if max_extra is None or k is None:
