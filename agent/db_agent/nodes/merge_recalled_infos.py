@@ -96,10 +96,12 @@ async def merge_recalled_infos(state: WSAgentState, runtime: Runtime[WSAgentCont
                     columns=column_infos  # 召回的字段 + 指标/值关联的字段 + 补充的主外键
                 ))
 
-        # 1.6 连接路径补全:把"已选表→事实表"路径上缺失的中间表补进来,
+        # 1.6 连接路径补全(保守版):把"已选表→事实表"路径上缺失的中间表补进来,
         #     避免雪花多跳维表(如 city 所在的 factory)因中间表(workshop)未被召回而成孤岛、
         #     在 filter 阶段被当作"连不上的废表"误删(详见 join_path.complete_join_path)。
-        table_infos = await complete_join_path(table_infos, meta_db_repo)
+        #     此处 max_extra=0,k=1 只补最短路径:filter 前先少量补救,不把 schema 撑大;
+        #     真正的多候选路径消歧留到 filter 之后的 complete_join_path 节点(用数据源配置)。
+        table_infos = await complete_join_path(table_infos, meta_db_repo, max_extra=0, k=1)
 
     # 2. 处理指标信息
     metric_infos: list[MetricInfo] = [metric_info for metric_info in recalled_metrics]

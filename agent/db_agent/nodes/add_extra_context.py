@@ -44,8 +44,9 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
             line += f"  （{desc}）"
         join_lines.append(line)
     if join_lines:
-        db_info = f"{db_info}\n## 表之间的连接关系(JOIN 连接列优先严格按以下等式;括号内是该连接列的含义,有多条连接时据此对应用户问题选正确的那条;未列出的连接再依据列描述合理推断):\n" + \
-            "\n".join(f"- {line}" for line in join_lines)
+        db_info = f"{db_info}\n## 表之间的连接关系(JOIN 连接列优先严格按以下等式;括号内是该连接列的含义;未列出的连接再依据列描述合理推断):\n" + \
+            "\n".join(f"- {line}" for line in join_lines) + \
+            "\n注意:同一对表之间若列出多条连接关系(如下单日期/付款日期/发货日期分别指向日期表),必须根据括号内的字段含义结合用户问题只选其中一条来 JOIN,切勿同时用多条连接同一对表(否则会重复关联、造成行数膨胀或语义错误)。"
 
     # 获取当前时间
     now = datetime.now()

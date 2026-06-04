@@ -78,13 +78,23 @@ def _candidate_paths(adjacency, start, goal, max_extra: int = 1, k: int = 3) -> 
     return results[:k]
 
 
-async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo: MetaDBRepository) -> list[WSAgentTableInfoState]:
+async def complete_join_path(
+    table_infos: list[WSAgentTableInfoState],
+    meta_repo: MetaDBRepository,
+    max_extra: int | None = None,
+    k: int | None = None,
+) -> list[WSAgentTableInfoState]:
     """补全连接路径：把"已选表 → 事实表"路径上缺失的中间表补进来(只带主键/外键列)。
 
     例：问"各城市的实际产量"，召回到了 factory(city) 与 production_record，但漏了中间的
     workshop；本函数沿 factory→production_record 的最短路径把 workshop 补回，JOIN 才接得上。
 
     只新增"连接必需"的中间表，不引入无关表，因此交给 LLM 的仍是最小连通表集。
+
+    max_extra/k:候选路径枚举的"额外跳数"与"最多保留几条"。两段式调用:
+    - merge 阶段(filter 前)传 max_extra=0, k=1 → 退化为只补最短路径,保守补救,
+      避免在 filter 前就把 schema 撑大、增加 filter 误删的判断负担;
+    - filter 之后不传(=None) → 用数据源配置(默认 1/3),启用多候选路径消歧。
     """
     if not table_infos:
         return table_infos
@@ -96,8 +106,12 @@ async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo
     present = {table_info.id for table_info in table_infos}
     # 以事实表为枢纽(星型/雪花的中心)；没有事实表时退化为以任一已选表为锚点。
     anchor = next((t.id for t in table_infos if t.role == "fact"), None) or next(iter(present))
-    # 候选路径参数按数据源取(管理员在元数据编辑页可调;默认 1/3,稠密库可调大)。
-    max_extra, k = await meta_repo.get_join_config()
+    # 候选路径参数:调用方显式传入则用传入值(merge 阶段传 0/1 做保守补救);
+    # 未传则按数据源取(管理员在元数据编辑页可调;默认 1/3,稠密库可调大)。
+    if max_extra is None or k is None:
+        cfg_extra, cfg_k = await meta_repo.get_join_config()
+        max_extra = cfg_extra if max_extra is None else max_extra
+        k = cfg_k if k is None else k
 
     needed = set(present)
     for table_id in list(present):
