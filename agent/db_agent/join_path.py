@@ -78,6 +78,36 @@ def _candidate_paths(adjacency, start, goal, max_extra: int = 1, k: int = 3) -> 
     return results[:k]
 
 
+def route_groups(
+    table_infos: list[WSAgentTableInfoState],
+    relationships: list[DataRelationship],
+    max_extra: int,
+    k: int,
+) -> list[list[list[str]]]:
+    """枚举"有歧义"的连接路线分组,供 add_extra_context 按路径分组提示 LLM。
+
+    只返回 source→anchor 存在【≥2 条不同走法】的组(走法不同 = 经过的中间表序列不同);
+    单条路径(星型/雪花常态)不返回——那种情况扁平 JOIN 等式清单已足够,无需分组。
+
+    返回结构:[ group, ... ];每个 group = [ path, ... ];每个 path = [table_id, ...](节点序列)。
+    只算到事实表(anchor)的路径:星型/雪花里事实表是枢纽,覆盖现实里的路径歧义场景。
+    table_infos 已是最终表集,故输出与最终 SQL 可用的表一致;遍历按 id 排序保证组顺序确定。
+    """
+    if not table_infos or not relationships:
+        return []
+    adjacency, _ = _build_graph(relationships)
+    present = {t.id for t in table_infos}
+    anchor = next((t.id for t in table_infos if t.role == "fact"), None) or next(iter(present))
+    groups: list[list[list[str]]] = []
+    for table_id in sorted(present):               # 排序:保证多组之间顺序稳定、可复现
+        if table_id == anchor:
+            continue
+        paths = _candidate_paths(adjacency, table_id, anchor, max_extra=max_extra, k=k)
+        if len(paths) >= 2:                        # 只有真歧义(≥2 条不同走法)才成组
+            groups.append(paths)
+    return groups
+
+
 async def complete_join_path(
     table_infos: list[WSAgentTableInfoState],
     meta_repo: MetaDBRepository,

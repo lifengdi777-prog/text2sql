@@ -2,6 +2,7 @@ from csv import writer
 
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
+from agent.db_agent.join_path import route_groups
 from datetime import datetime
 from core.log import logger
 
@@ -26,6 +27,7 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
     ids = {t.id for t in table_infos}
     async with runtime.context.meta_repo() as meta_repo:
         relationships = await meta_repo.get_relationships()
+        max_extra, k = await meta_repo.get_join_config()
     # 取各列的描述给等式标上语义。来源是 meta 库 column_info.description(经召回/补全带进 table_infos),
     # 不是 data_relationship.description(那是边的备注、可能滞后);用 column_info 保证单一真相源。
     # 同一对表有多条连接(如发货地区/账单地区)时,大模型靠这括号里的含义 + 用户问题选对应的那条。
@@ -47,6 +49,40 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
         db_info = f"{db_info}\n## 表之间的连接关系(JOIN 连接列优先严格按以下等式;括号内是该连接列的含义;未列出的连接再依据列描述合理推断):\n" + \
             "\n".join(f"- {line}" for line in join_lines) + \
             "\n注意:同一对表之间若列出多条连接关系(如下单日期/付款日期/发货日期分别指向日期表),必须根据括号内的字段含义结合用户问题只选其中一条来 JOIN,切勿同时用多条连接同一对表(否则会重复关联、造成行数膨胀或语义错误)。"
+
+    # 候选连接路径分组:当某维表→事实表存在【多条经过不同中间表的走法】时(上面的扁平等式
+    # 是散的,LLM 看不出哪几条属于同一条路),按整条路径分组列出,引导其选【一整条】而非跨路径拼接。
+    # 单条路径(星型/雪花常态)route_groups 返回空,这段不出现,提示词与之前一致。
+    id2name = {t.id: t.name for t in table_infos}
+
+    def _edge_lines(u: str, v: str) -> list[str]:
+        # 取连接 u、v 两表的所有边(同一对表可能有多条);沿用上面的列描述标注语义。
+        out = []
+        for r in relationships:
+            if {r.from_table, r.to_table} != {u, v}:
+                continue
+            line = f"{r.from_table}.{r.from_column} = {r.to_table}.{r.to_column}"
+            desc = col_desc.get((r.from_table, r.from_column)) or col_desc.get((r.to_table, r.to_column))
+            if desc:
+                line += f"  （{desc}）"
+            out.append(line)
+        return out
+
+    group_sections = []
+    for paths in route_groups(table_infos, relationships, max_extra, k):
+        src = id2name.get(paths[0][0], paths[0][0])
+        dst = id2name.get(paths[0][-1], paths[0][-1])
+        block = [f"「{src}」连接到「{dst}」存在多条路径,请结合用户问题只选其中一条:"]
+        for pi, path in enumerate(paths, 1):
+            chain = " → ".join(id2name.get(t, t) for t in path)
+            block.append(f"  候选路径{pi}（{chain}）:")
+            for u, v in zip(path, path[1:]):
+                for el in _edge_lines(u, v):
+                    block.append(f"    - {el}")
+        group_sections.append("\n".join(block))
+    if group_sections:
+        db_info = f"{db_info}\n## 候选连接路径(以下端点之间有多条不同走法;只能选其中一条完整路径的全部等式,不要跨路径混用):\n" + \
+            "\n".join(group_sections)
 
     # 获取当前时间
     now = datetime.now()
