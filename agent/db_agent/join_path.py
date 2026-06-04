@@ -10,6 +10,9 @@
 """
 from collections import deque
 
+import sqlglot
+from sqlglot import exp
+
 from agent.schemas import WSAgentTableInfoState
 from dtos.meta import DataRelationship
 from repositories.mysql import MetaDBRepository
@@ -221,3 +224,68 @@ def detect_fanout(table_infos: list[WSAgentTableInfoState], relationships: list[
         f"各组结果存在重叠、不可跨组相加。若该度量无法唯一归因到该维度（缺少分摊比例字段），"
         f"应改用 COUNT(DISTINCT ...) 等不受扇出影响的口径，或在结果中明确说明数值含重复。"
     )
+
+
+def extract_used_relationships(
+    sql: str,
+    table_infos: list[WSAgentTableInfoState],
+    relationships: list[DataRelationship],
+    dialect: str = "mysql",
+) -> list[DataRelationship]:
+    """从生成的 SQL 里解析出"实际 JOIN 用到的关系边",作为 detect_fanout 的输入,
+    使扇出判断对应 LLM【真正选择的那条连接路径】,而非泛泛的最短/全部候选路径。
+
+    做法:用 sqlglot 解析 → 收集表引用(别名→真名)→ 找出 ON/WHERE 里"两侧分属不同表的
+    等值条件"所连接的【表对】→ 取 data_relationship 中端点正好落在这些表对上的边。
+    只按【表对】匹配,不纠结具体列:同一对表的多条边方向一致,扇出结论相同(逐列匹配反而脆)。
+
+    归一:data_relationship 用表 id;SQL 里 LLM 可能写 id 或 name(显示名),故把 id/name 都
+    映射回 id,无论 SQL 用哪种写法都能对上。
+
+    局限(均偏保守、宁漏勿误):
+    - 列未用表名/别名限定(如 ON region_id = id)→ 无法定位表对,该连接漏检;
+    - LLM 自造的、data_relationship 里没有的连接 → 不在边集,无从判断其基数,跳过;
+    - SQL 解析失败 → 返回空(交由 validate_sql 暴露语法问题,本步不报扇出)。
+    """
+    if not sql or not sql.strip():
+        return []
+    try:
+        stmt = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return []
+    if stmt is None:
+        return []
+
+    # 表 id / name(及其小写) → 规范 id
+    norm: dict[str, str] = {}
+    for t in table_infos:
+        for key in (t.id, t.name):
+            if key:
+                norm[key] = t.id
+                norm[key.lower()] = t.id
+    # 限定前缀(别名或表名) → 真实表名
+    alias2real: dict[str, str] = {}
+    for tbl in stmt.find_all(exp.Table):
+        alias2real[tbl.alias_or_name] = tbl.name
+        if tbl.name:
+            alias2real[tbl.name] = tbl.name
+
+    def resolve(col: exp.Column) -> str | None:
+        q = col.table                          # 列的限定前缀(别名/表名);无限定则无法定位
+        if not q:
+            return None
+        real = alias2real.get(q, q)
+        return norm.get(real) or norm.get(real.lower())
+
+    pairs: set[frozenset] = set()
+    for eq in stmt.find_all(exp.EQ):           # ON / WHERE 里的等值条件都算(兼容隐式 JOIN)
+        l, r = eq.this, eq.expression
+        if isinstance(l, exp.Column) and isinstance(r, exp.Column):
+            a, b = resolve(l), resolve(r)
+            if a and b and a != b:
+                pairs.add(frozenset((a, b)))
+
+    return [
+        rel for rel in relationships
+        if frozenset((rel.from_table, rel.to_table)) in pairs
+    ]

@@ -15,10 +15,8 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
     async with runtime.context.dw_repo() as dw_db_repo:
         db_infos = await dw_db_repo.get_db_info()
     db_info = f"当前数据库类型：{db_infos['dialect']}，编码：{db_infos['charset']}，版本号：{db_infos['version']}"
-    # 若扇出检测发现"事实度量经一对多/多对多关系聚合到某维度会重复计算"，把警告随上下文一并交给
-    # generate_sql(沿用现有 {db_info} 槽位，不改提示词模板)，提醒它避免直接 SUM 或改用可归因口径。
-    if state.fanout_warning:
-        db_info = f"{db_info}\n{state.fanout_warning}"
+    # 注:扇出检测已挪到 generate_sql 之后(detect_fanout 节点解析 SQL 看实选路径),
+    # 故此处不再注入 fanout_warning——这一步只负责把连接关系/时间等上下文交给 generate_sql。
 
     # 表连接关系:把当前表集合涉及的外键边(声明的 + ER 图人工维护的,统一来自 data_relationship)
     # 显式交给 generate_sql,让它照等式写 JOIN ON,而不是靠列描述/命名去猜

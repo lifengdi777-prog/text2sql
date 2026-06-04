@@ -93,25 +93,27 @@ graph_builder.add_edge("merge_recalled_infos", "filter_tables")
 #filter_metrics 与 filter_tables 同为 merge 的并行分支，两者在 complete_join_path 汇合(屏障)：
 #  必须让两条分支等长地在同一节点汇合，否则 add_extra_context 会被两条不等长路径触发两次，
 #  导致 generate_sql/execute_sql 跑两遍、两个分支同时写 sql_result 而报 InvalidUpdateError。
-#汇合后单链推进：complete_join_path(补回被剪掉的连接中间表) → detect_fanout(扇出检测) → add_extra_context。
+#汇合后单链推进：complete_join_path(补回被剪掉的连接中间表) → add_extra_context → generate_sql。
+#  扇出检测挪到 SQL 生成之后(detect_fanout 改为解析 SQL 看 LLM 实选路径),故此处不再经过它。
 graph_builder.add_edge("filter_metrics", "complete_join_path")
 graph_builder.add_edge("filter_tables", "complete_join_path")
-graph_builder.add_edge("complete_join_path", "detect_fanout")
-#扇出风险分叉：检测到扇出 → fanout_clarify 发 guide_queries 并结束本轮(让用户重新明确口径,
-#  下一次提问是全新运行,自动重过 parse_query_intention);无风险 → 正常进入 add_extra_context。
+graph_builder.add_edge("complete_join_path", "add_extra_context")
+#汇合之后直接生成 SQL：JOIN 由 generate_sql 依据 table_infos 里的主外键描述自行连接。
+graph_builder.add_edge("add_extra_context", "generate_sql")
+#SQL 生成后做扇出检测:从 SQL 解析出 LLM 实际选用的连接路径,判断是否经一对多/多对多扇出。
+graph_builder.add_edge("generate_sql", "detect_fanout")
+#扇出风险分叉：实选路径含扇出 → fanout_clarify 发 guide_queries 打断本轮(让用户重新明确口径,
+#  下一次提问是全新运行,自动重过 parse_query_intention);无风险 → 进入 validate_sql 正常校验。
 def route_after_fanout(state: WSAgentState):
-    return "fanout_clarify" if state.fanout_warning else "add_extra_context"
+    return "fanout_clarify" if state.fanout_warning else "validate_sql"
 
 graph_builder.add_conditional_edges(
     "detect_fanout",
     route_after_fanout,
-    {"fanout_clarify": "fanout_clarify", "add_extra_context": "add_extra_context"},
+    {"fanout_clarify": "fanout_clarify", "validate_sql": "validate_sql"},
 )
 graph_builder.add_edge("fanout_clarify", END)
-#汇合之后直接生成 SQL：JOIN 由 generate_sql 依据 table_infos 里的主外键描述自行连接。
-graph_builder.add_edge("add_extra_context", "generate_sql")
 #校验生成的SQL是否正确，是否符合规范。
-graph_builder.add_edge("generate_sql", "validate_sql")
 
 #SQL 校正的最大重试次数：超过后即便仍未通过也不再校正，避免无限循环。
 MAX_CORRECT_ATTEMPTS = 3
