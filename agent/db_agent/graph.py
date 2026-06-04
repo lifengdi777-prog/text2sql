@@ -64,7 +64,7 @@ graph_builder.add_node("interpret_result", interpret_result)
 graph_builder.add_edge(START, "parse_query_intention")
 #根据当前 state 的内容，决定下一步走哪个节点。
 def judge(state: WSAgentState):
-    print(f"should_continue: {state.should_continue}")
+    logger.info(f"should_continue: {state.should_continue}")
     #如果should_continue为True，继续执行extract_keywords节点；如果为False，结束流程。
     if state.should_continue:
         return "extract_keywords"

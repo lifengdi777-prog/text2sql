@@ -34,7 +34,7 @@ async def recall_values(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         logger.warning(f"value_recall 关键词扩展失败,回退基础关键词:{exc}")
     keywords = list(set((keywords or []) + expanded))
 
-    print("value_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
+    logger.info(f"value_recall 基础版关键词 + 大模型拓展后的关键词: {keywords}")
     
     # 召回值：ES 文本检索本身不需要 embedding，所有关键词的 search 并行发出
     recalled_values_mapping: dict[str, ValueInfo] = {}

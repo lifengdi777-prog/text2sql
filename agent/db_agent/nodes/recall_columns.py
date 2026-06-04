@@ -45,7 +45,7 @@ async def recall_columns(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         logger.warning(f"column_recall 关键词扩展失败,回退基础关键词:{exc}")
     keywords = list(set((keywords or []) + expanded))
 
-    print("column_recall 基础版关键词 + 大模型拓展后的关键词:", keywords)
+    logger.info(f"column_recall 基础版关键词 + 大模型拓展后的关键词: {keywords}")
     
     # 召回字段：批量 embedding（一次 API 往返）+ 并行向量检索（asyncio.gather）
     recalled_columns_mapping: dict[str, ColumnInfo] = {}

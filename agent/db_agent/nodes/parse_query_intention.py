@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from agent.llm import llm
 from agent.prompts import load_prompt
 from langchain.messages import SystemMessage, HumanMessage
+from core.log import logger
 
 
 class ParseQueryResult(BaseModel):
@@ -97,7 +98,7 @@ async def parse_query_intention(state: WSAgentState, runtime: Runtime[WSAgentCon
             )
         )
 
-        print("解析用户意图结果:", result)
+        logger.info(f"解析用户意图结果: {result}")
 
         update: dict = {
             "should_continue": result.should_continue,
