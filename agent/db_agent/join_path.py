@@ -74,7 +74,7 @@ async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo
         if path:
             needed.update(path)
 
-    # 把缺失的中间表补进来：只取主键+外键列，足够 generate_sql 写出 JOIN，且上下文增量极小。
+    # 把缺失的中间表补进来：先带主键+外键(按 role)列。
     for table_id in needed - present:
         table_info = await meta_repo.get_table_info_by_id(table_id)
         if table_info is None:
@@ -87,6 +87,22 @@ async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo
             description=table_info.description,
             columns=pfk_columns,
         ))
+
+    # 关键:补「关系边端点列」。无 FK 约束时这些列的 role 可能是 dimension/measure(不是 foreign_key),
+    # 按 role 筛会漏掉 JOIN 列。但只要 data_relationship(可由 ER 图人工维护)里有边,就必须把端点列带上,
+    # 与 role 无关。对所有表(已选 + 新补)都补,且只补"两端都在最终表集合里"的边涉及的列。
+    final_ids = {t.id for t in table_infos}
+    for t in table_infos:
+        edge_cols: set[str] = set()
+        for rel in relationships:
+            if rel.from_table == t.id and rel.to_table in final_ids:
+                edge_cols.add(rel.from_column)
+            if rel.to_table == t.id and rel.from_table in final_ids:
+                edge_cols.add(rel.to_column)
+        missing = [n for n in edge_cols if n not in {c.name for c in t.columns}]
+        if missing:
+            t.columns.extend(await meta_repo.get_columns_by_names(t.id, missing))
+
     return table_infos
 
 

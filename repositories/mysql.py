@@ -95,6 +95,17 @@ class MetaDBRepository:
         rows = await self.session.scalars(stmt)
         return [ColumnInfo.model_validate(row) for row in rows]
 
+    # 按列名取某表的若干列(连接路径补全用:关系边端点列可能 role 不是外键,需按名直接取)。
+    async def get_columns_by_names(self, table_id: str, names: list[str]) -> list[ColumnInfo]:
+        if not names:
+            return []
+        ids = [f"{table_id}.{n}" for n in names]
+        stmt = select(ColumnInfoMySQL).where(
+            and_(ColumnInfoMySQL.datasource_id == self.datasource_id, ColumnInfoMySQL.id.in_(ids))
+        )
+        rows = await self.session.scalars(stmt)
+        return [ColumnInfo.model_validate(row) for row in rows]
+
     # 读取本数据源的全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
     async def get_relationships(self) -> list[DataRelationship]:
         stmt = select(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == self.datasource_id)

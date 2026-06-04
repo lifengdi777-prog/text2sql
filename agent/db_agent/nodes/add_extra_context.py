@@ -19,6 +19,22 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
     if state.fanout_warning:
         db_info = f"{db_info}\n{state.fanout_warning}"
 
+    # 表连接关系:把当前表集合涉及的外键边(声明的 + ER 图人工维护的,统一来自 data_relationship)
+    # 显式交给 generate_sql,让它照等式写 JOIN ON,而不是靠列描述/命名去猜
+    # ——尤其数据源没建 FK 约束、关系全靠人工 ER 维护时,这一步是 JOIN 写对的关键。
+    table_infos = state.table_infos or []
+    ids = {t.id for t in table_infos}
+    async with runtime.context.meta_repo() as meta_repo:
+        relationships = await meta_repo.get_relationships()
+    join_lines = [
+        f"{r.from_table}.{r.from_column} = {r.to_table}.{r.to_column}"
+        for r in relationships
+        if r.from_table in ids and r.to_table in ids
+    ]
+    if join_lines:
+        db_info = f"{db_info}\n## 表之间的连接关系(写 JOIN 时严格按这些等式,不要自己猜连接列):\n" + \
+            "\n".join(f"- {line}" for line in join_lines)
+
     # 获取当前时间
     now = datetime.now()
     now_str = now.strftime("%Y-%m-%d %H:%M:%S")
