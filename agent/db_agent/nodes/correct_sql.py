@@ -18,8 +18,8 @@ async def correct_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     error = state.error
 
     query = state.messages[-1].content
-    table_infos = state.table_infos
-    metric_infos = state.metric_infos
+    table_infos = state.table_infos or []
+    metric_infos = state.metric_infos or []
     date_info = state.date_info
     db_info = state.db_info
 
@@ -30,8 +30,10 @@ async def correct_sql(state: WSAgentState, runtime: Runtime[WSAgentContext]):
         "query": query,
         "sql": sql,
         "error": error,
-        "table_infos": table_infos,
-        "metric_infos": metric_infos,
+        # 与 generate_sql 对齐:传 model_dump() 的 dict 列表(而非原始 pydantic 对象),
+        # 保证校正阶段喂给 LLM 的表/指标格式与生成阶段完全一致。
+        "table_infos": [table_info.model_dump() for table_info in table_infos],
+        "metric_infos": [metric_info.model_dump() for metric_info in metric_infos],
         "date_info": date_info,
         "db_info": db_info
     })
