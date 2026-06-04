@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from langchain.messages import HumanMessage, SystemMessage
@@ -33,7 +34,9 @@ def _compute_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     numeric_summary: dict[str, Any] = {}
     for col in numeric_cols:
-        vals = [r[col] for r in rows if isinstance(r.get(col), (int, float))]
+        # Decimal 不是 int/float 的子类,而 MySQL 的 SUM()/AVG() 及金额/数量列常返回 Decimal,
+        # 必须显式纳入,否则大结果集(>50 行)走本分支时数值列统计全空(与 chart_agent.analyzer 一致)。
+        vals = [r[col] for r in rows if isinstance(r.get(col), (int, float, Decimal))]
         if vals:
             numeric_summary[col] = {
                 "sum": sum(vals),
@@ -48,7 +51,7 @@ def _compute_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         key = numeric_cols[0]
         top_rows = sorted(
             rows,
-            key=lambda r: r[key] if isinstance(r.get(key), (int, float)) else float("-inf"),
+            key=lambda r: r[key] if isinstance(r.get(key), (int, float, Decimal)) else float("-inf"),
             reverse=True,
         )[:TOP_N]
 
