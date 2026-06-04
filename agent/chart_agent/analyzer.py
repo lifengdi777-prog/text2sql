@@ -78,8 +78,8 @@ def analyze(rows: list[dict[str, Any]]) -> DataShape:
 SUPPORTED_CHART_TYPES = ["line", "multi_line", "bar", "stacked_bar", "pie", "table"]
 
 # 可读性硬上限(enforce_limits 用真实基数事后校验)
-_PIE_MAX_CARD = 10
-_BAR_MAX_CARD = 30
+_PIE_MAX_CARD = 8
+_BAR_MAX_CARD = 8
 _SERIES_MAX_CARD = 8   # 多系列(multi_line/stacked_bar)的系列数上限
 
 # 比率/均价类指标的列名特征:这类是「逐组各自的比率」,不是可加的份额
