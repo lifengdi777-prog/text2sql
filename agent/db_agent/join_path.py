@@ -278,14 +278,39 @@ def extract_used_relationships(
         return norm.get(real) or norm.get(real.lower())
 
     pairs: set[frozenset] = set()
+    # 同时记录"带列限定"的连接,供下面还原共享父表的近道边。
+    col_pairs: list[tuple[tuple[str, str], tuple[str, str]]] = []
     for eq in stmt.find_all(exp.EQ):           # ON / WHERE 里的等值条件都算(兼容隐式 JOIN)
         l, r = eq.this, eq.expression
         if isinstance(l, exp.Column) and isinstance(r, exp.Column):
             a, b = resolve(l), resolve(r)
             if a and b and a != b:
                 pairs.add(frozenset((a, b)))
+                col_pairs.append(((a, l.name), (b, r.name)))
 
-    return [
+    # 直接匹配:SQL 连接的表对正好是 data_relationship 里登记过的边。
+    used = [
         rel for rel in relationships
         if frozenset((rel.from_table, rel.to_table)) in pairs
     ]
+
+    # 还原「共享父表的近道边」:LLM 有时绕过中间维表,直接用同一外键列把两个【都引用该维表】的表
+    # 连起来(如 production_record.product_id = product_supplier.product_id,二者都引用 product)。
+    # 这种边不在 data_relationship 里,会被上面的直接匹配丢弃,导致事实表与图断开、扇出漏检
+    # ——同一问题换条等价写法就检测不到。此处把它还原成等价的两条登记边(A→P 与 B→P),
+    # 让 detect_fanout 仍能看到"经桥接表/共同父表"那一跳一对多,基数判断与走规范路径时一致。
+    direct = {frozenset((rel.from_table, rel.to_table)) for rel in used}
+    seen = {id(rel) for rel in used}
+    for (ta, ca), (tb, cb) in col_pairs:
+        if frozenset((ta, tb)) in direct:
+            continue                                       # 已是直接登记边,无需还原
+        # A.ca 与 B.cb 是否(作为外键)引用了同一个父表 P
+        parents_a = {rel.to_table: rel for rel in relationships if rel.from_table == ta and rel.from_column == ca}
+        parents_b = {rel.to_table: rel for rel in relationships if rel.from_table == tb and rel.from_column == cb}
+        for shared in parents_a.keys() & parents_b.keys():
+            for rel in (parents_a[shared], parents_b[shared]):
+                if id(rel) not in seen:
+                    used.append(rel)
+                    seen.add(id(rel))
+
+    return used
