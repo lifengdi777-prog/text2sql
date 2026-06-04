@@ -26,13 +26,25 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
     ids = {t.id for t in table_infos}
     async with runtime.context.meta_repo() as meta_repo:
         relationships = await meta_repo.get_relationships()
-    join_lines = [
-        f"{r.from_table}.{r.from_column} = {r.to_table}.{r.to_column}"
-        for r in relationships
-        if r.from_table in ids and r.to_table in ids
-    ]
+    # 取各列的描述给等式标上语义。来源是 meta 库 column_info.description(经召回/补全带进 table_infos),
+    # 不是 data_relationship.description(那是边的备注、可能滞后);用 column_info 保证单一真相源。
+    # 同一对表有多条连接(如发货地区/账单地区)时,大模型靠这括号里的含义 + 用户问题选对应的那条。
+    col_desc = {
+        (t.id, c.name): c.description
+        for t in table_infos for c in t.columns
+    }
+    join_lines = []
+    for r in relationships:
+        if r.from_table not in ids or r.to_table not in ids:
+            continue
+        line = f"{r.from_table}.{r.from_column} = {r.to_table}.{r.to_column}"
+        # 优先用外键列(from)的描述;缺失再退用被引用列(to)的
+        desc = col_desc.get((r.from_table, r.from_column)) or col_desc.get((r.to_table, r.to_column))
+        if desc:
+            line += f"  （{desc}）"
+        join_lines.append(line)
     if join_lines:
-        db_info = f"{db_info}\n## 表之间的连接关系(JOIN 连接列优先严格按以下等式;若某个需要的连接未在下方列出,再依据列描述合理推断):\n" + \
+        db_info = f"{db_info}\n## 表之间的连接关系(JOIN 连接列优先严格按以下等式;括号内是该连接列的含义,有多条连接时据此对应用户问题选正确的那条;未列出的连接再依据列描述合理推断):\n" + \
             "\n".join(f"- {line}" for line in join_lines)
 
     # 获取当前时间
