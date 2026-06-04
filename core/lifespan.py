@@ -23,9 +23,11 @@ async def lifespan(_: FastAPI):
         from repositories.datasource import ensure_datasource_columns
         from repositories.mysql import ensure_meta_columns
         from repositories.conversation import ensure_conversation_columns
+        from services.auth import ensure_admin_user
         await ensure_datasource_columns(meta_mysql_client.engine)
         await ensure_meta_columns(meta_mysql_client.engine)
         await ensure_conversation_columns()  # upload 库:给 conversations 补 datasource_id
+        await ensure_admin_user()  # upload 库:给 users 补 role 列 + 确保存在 admin/admin 管理员
     except Exception as exc:
         logger.warning(f"列迁移跳过/失败(不影响启动):{exc}")
     # 配置了对象存储就确保 bucket 存在(上传功能用;没配则跳过,不影响原 DW 路径)

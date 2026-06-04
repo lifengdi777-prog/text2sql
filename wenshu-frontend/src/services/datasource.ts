@@ -53,8 +53,19 @@ export async function registerDatasource(
   }
 }
 
-export async function deleteDatasource(id: string): Promise<void> {
-  await api.delete(`/datasources/${id}`)
+// 删除数据源:破坏性操作,需双密码(账号 + 数据库)。
+export async function deleteDatasource(
+  id: string,
+  userPassword: string,
+  dbPassword: string,
+): Promise<void> {
+  try {
+    await api.delete(`/datasources/${id}`, {
+      data: { user_password: userPassword, db_password: dbPassword },
+    })
+  } catch (err) {
+    throw toError(err, '删除数据源失败')
+  }
 }
 
 // 列出该数据源默认库里的表(向导第③步勾选用)

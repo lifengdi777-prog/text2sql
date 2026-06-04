@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import { getToken } from '@/lib/authToken'
+import { getStoredUser, getToken } from '@/lib/authToken'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -26,6 +26,7 @@ const router = createRouter({
       path: '/sources/:id/meta',
       name: 'source-meta',
       component: () => import('@/views/DatasourceMetaView.vue'),
+      meta: { requiresAdmin: true },   // 编辑元数据仅管理员可进(后端写接口也已 require_admin)
     },
     {
       path: '/datasets',
@@ -56,6 +57,11 @@ router.beforeEach((to) => {
   }
   if (to.name === 'login' && authed) {
     return { path: '/db' }
+  }
+  // 管理员专属路由:非管理员(含本地登录态无 role)挡回数据源列表。
+  // 仅前端体验防护;后端对应写接口已 require_admin 兜底。
+  if (to.meta.requiresAdmin && getStoredUser()?.role !== 'admin') {
+    return { path: '/sources' }
   }
   return true
 })

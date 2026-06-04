@@ -6,8 +6,10 @@ import DatasourceWizard from '@/components/DatasourceWizard.vue'
 import DatasourcePreviewModal from '@/components/DatasourcePreviewModal.vue'
 import { deleteDatasource, listDatasources } from '@/services/datasource'
 import type { DatasourceSummary } from '@/types/datasource'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()   // auth.isAdmin 控制数据源管理按钮(新建/编辑/删除)显隐
 const wizardOpen = ref(false)
 
 const sources = ref<DatasourceSummary[]>([])
@@ -17,6 +19,9 @@ const search = ref('')
 
 const deleteTarget = ref<DatasourceSummary | null>(null)
 const deleting = ref(false)
+const delPwdUser = ref('')   // 删除确认:账号密码
+const delPwdDb = ref('')     // 删除确认:该源数据库密码
+const deleteError = ref('')
 
 // 当前展开「⋯」菜单的卡片 id(同时只开一个);null=全关
 const menuFor = ref<string | null>(null)
@@ -123,20 +128,30 @@ function onCreated() {
 
 function onRemove(ds: DatasourceSummary) {
   deleteTarget.value = ds
+  delPwdUser.value = ''
+  delPwdDb.value = ''
+  deleteError.value = ''
 }
 function closeDelete() {
-  if (!deleting.value) deleteTarget.value = null
+  if (deleting.value) return
+  deleteTarget.value = null
+  delPwdUser.value = ''
+  delPwdDb.value = ''
+  deleteError.value = ''
 }
 async function confirmDelete() {
   const ds = deleteTarget.value
   if (!ds || deleting.value) return
   deleting.value = true
+  deleteError.value = ''
   try {
-    await deleteDatasource(ds.id)
+    await deleteDatasource(ds.id, delPwdUser.value, delPwdDb.value)
     deleteTarget.value = null
+    delPwdUser.value = ''
+    delPwdDb.value = ''
     await reload()
   } catch (e) {
-    loadError.value = e instanceof Error ? e.message : '删除失败'
+    deleteError.value = e instanceof Error ? e.message : '删除失败'
   } finally {
     deleting.value = false
   }
@@ -162,6 +177,7 @@ onUnmounted(stopPolling)
           />
         </div>
         <button
+          v-if="auth.isAdmin"
           type="button"
           class="inline-flex h-10 items-center gap-1.5 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white transition hover:bg-emerald-600"
           @click="onCreate"
@@ -247,7 +263,7 @@ onUnmounted(stopPolling)
                 开启问数
               </button>
 
-              <div class="relative">
+              <div v-if="auth.isAdmin" class="relative">
                 <button
                   type="button"
                   class="inline-flex h-7 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
@@ -312,6 +328,29 @@ onUnmounted(stopPolling)
           确定删除「<span class="font-medium text-slate-700">{{ deleteTarget.name }}</span
           >」？将一并清除它的元数据、向量与值索引，不可恢复。
         </p>
+        <div class="mt-4 space-y-3">
+          <div>
+            <label class="mb-1 block text-xs text-slate-500">账号密码</label>
+            <input
+              v-model="delPwdUser"
+              type="password"
+              autocomplete="off"
+              placeholder="当前登录账号的密码"
+              class="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-300"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs text-slate-500">数据库密码</label>
+            <input
+              v-model="delPwdDb"
+              type="password"
+              autocomplete="off"
+              placeholder="该数据源的数据库密码"
+              class="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-rose-300"
+            />
+          </div>
+          <p v-if="deleteError" class="text-xs text-rose-500">{{ deleteError }}</p>
+        </div>
         <div class="mt-4 flex justify-end gap-2">
           <button
             type="button"
@@ -324,7 +363,7 @@ onUnmounted(stopPolling)
           <button
             type="button"
             class="rounded-xl bg-rose-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-600 disabled:bg-rose-300"
-            :disabled="deleting"
+            :disabled="deleting || !delPwdUser || !delPwdDb"
             @click="confirmDelete"
           >
             {{ deleting ? '删除中…' : '删除' }}

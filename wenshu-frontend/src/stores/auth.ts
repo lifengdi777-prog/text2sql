@@ -11,6 +11,8 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(getStoredUser())
 
   const isAuthenticated = computed(() => !!token.value)
+  // 是否管理员:仅 role==='admin' 为真;缺省/普通用户均为 false(数据源管理按钮据此显隐)
+  const isAdmin = computed(() => user.value?.role === 'admin')
 
   function applyToken(newToken: string, newUser: AuthUser) {
     token.value = newToken
@@ -47,5 +49,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, user, isAuthenticated, login, register, logout, refreshMe }
+  return { token, user, isAuthenticated, isAdmin, login, register, logout, refreshMe }
 })

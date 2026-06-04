@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 from fastapi import HTTPException
+from sqlalchemy import text
 
 from conf.app_config import app_config
 from models.user import UserMySQL
@@ -120,3 +121,36 @@ async def get_user_by_id(user_id: int) -> UserMySQL | None:
     async with Session() as session:
         repo = UserRepository(session)
         return await repo.get_by_id(user_id)
+
+
+# ───────── 启动迁移 + 管理员引导 ──────────────────────────
+async def ensure_admin_user() -> None:
+    """启动时:给 users 表幂等补 role 列,并确保存在一个 admin/admin 管理员账号。
+
+    - 旧库(users 无 role 列)→ ALTER 补列;新库 ensure_app_tables 已按模型建好该列。
+    - 没有 admin 账号 → 建一个(username=admin, password=admin);已存在 → 确保其 role=admin。
+    """
+    Session = get_session_factory()
+    async with Session() as session:
+        cols = set((await session.execute(text(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users'"
+        ))).scalars().all())
+        if cols and "role" not in cols:
+            await session.execute(text(
+                "ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'"
+            ))
+            await session.commit()
+
+        # 默认管理员密码(≥6 位,满足前端登录/后端注册的密码长度校验)。
+        ADMIN_PASSWORD = "admin123"
+        repo = UserRepository(session)
+        admin = await repo.get_by_username("admin")
+        if admin is None:
+            admin = await repo.create("admin", hash_password(ADMIN_PASSWORD))
+        elif verify_password("admin", admin.password_hash):
+            # 一次性修复:之前误建的 5 位 'admin' 密码不合规,重置为合规默认密码。
+            # 仅当密码仍是旧的 'admin' 时才重置;管理员日后改过密码不会被覆盖。
+            admin.password_hash = hash_password(ADMIN_PASSWORD)
+        admin.role = "admin"   # 新建或存量,都确保是管理员
+        await session.commit()

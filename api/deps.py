@@ -9,11 +9,11 @@
 返回值统一是 str(user.id),与 upload_datasets.user_id 存的值对齐,
 ownership 校验(require_owned_dataset)直接比对即可。
 """
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 from models.upload import UploadDatasetMySQL
 from repositories.upload import UploadDatasetRepository
-from services.auth import decode_access_token, decode_access_token_username
+from services.auth import decode_access_token, decode_access_token_username, get_user_by_id
 from services.excel_ingest import get_session_factory
 
 
@@ -42,6 +42,18 @@ async def get_current_username(authorization: str | None = Header(default=None))
     老 token 无 name 字段 → 返回 None(调用方退回用 id)。token 无效/过期 → 401。
     """
     return decode_access_token_username(_extract_bearer_token(authorization))
+
+
+async def require_admin(user_id: str = Depends(get_current_user)) -> str:
+    """管理员校验:用于数据源的增/删/改/重建等管理操作。
+
+    实时查库判角色(不依赖 token 里的角色),撤销管理员权限可立即生效。
+    非管理员 → 403。返回 user_id,供路由继续用(日志/审计)。
+    """
+    user = await get_user_by_id(int(user_id))
+    if user is None or getattr(user, "role", "user") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user_id
 
 
 async def require_owned_dataset(dataset_id: int, user_id: str) -> UploadDatasetMySQL:

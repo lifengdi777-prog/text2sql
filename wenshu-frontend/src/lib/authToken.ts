@@ -10,6 +10,7 @@ const USER_KEY = 'wenshu.user'
 export interface AuthUser {
   id: number
   username: string
+  role?: 'admin' | 'user'   // 老登录态可能没有,缺省按非管理员处理(安全默认)
 }
 
 export function getToken(): string | null {

@@ -157,7 +157,7 @@ onUnmounted(stopPolling)
           @click="uploadOpen = true"
         >
           <span aria-hidden="true">＋</span>
-          新建数据源
+          新建数据集
         </button>
       </div>
     </div>
@@ -172,7 +172,7 @@ onUnmounted(stopPolling)
       >
         <span class="text-4xl" aria-hidden="true">📂</span>
         <p class="text-sm text-slate-500">
-          {{ search ? '没有匹配的数据集' : '还没有数据集，点击右上角「新建数据源」上传 Excel' }}
+          {{ search ? '没有匹配的数据集' : '还没有数据集，点击右上角「新建数据集」上传 Excel' }}
         </p>
       </div>
 

@@ -56,3 +56,9 @@ class RelationshipsUpdateInput(BaseModel):
     relationships: list[RelationshipEdge] = []
     user_password: str
     db_password: str
+
+
+class DatasourceDeleteInput(BaseModel):
+    """删除数据源:需账号密码 + 该源数据库密码双重确认(破坏性操作)。"""
+    user_password: str
+    db_password: str

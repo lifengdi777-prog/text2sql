@@ -93,7 +93,7 @@ async function submit() {
   >
     <div class="w-full max-w-md rounded-3xl border border-white/70 bg-white p-6 shadow-2xl">
       <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-slate-900">新建数据源</h2>
+        <h2 class="text-lg font-semibold text-slate-900">新建数据集</h2>
         <button
           type="button"
           class="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"

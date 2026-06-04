@@ -11,9 +11,10 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import text
 
-from api.deps import get_current_user
+from api.deps import get_current_user, require_admin
 from api.schemas import (
     DatasourceBuildInput,
+    DatasourceDeleteInput,
     DatasourceRegisterInput,
     MetricsUpdateInput,
     RelationshipsUpdateInput,
@@ -52,7 +53,7 @@ async def _test_connectivity(cfg: DBConfig) -> None:
 
 
 @router.post("")
-async def register_datasource(data: DatasourceRegisterInput, user_id: str = Depends(get_current_user)):
+async def register_datasource(data: DatasourceRegisterInput, user_id: str = Depends(require_admin)):
     # 1. 先测连通(用填进来的明文密码),连不上直接 400,不留垃圾记录
     cfg = DBConfig(
         host=data.host, port=data.port, user=data.username,
@@ -170,7 +171,7 @@ async def _run_build(datasource_id: str, tables: list[str]) -> None:
 
 @router.post("/{datasource_id}/build")
 async def build_datasource(datasource_id: str, data: DatasourceBuildInput,
-                           background: BackgroundTasks, user_id: str = Depends(get_current_user)):
+                           background: BackgroundTasks, user_id: str = Depends(require_admin)):
     """接入(草稿+物化)。异步执行:立即置 building 并返回,前端轮询 GET /datasources 看状态。"""
     async with meta_mysql_client.session() as session:
         repo = DatasourceRepository(session)
@@ -222,7 +223,7 @@ async def _run_save_metrics(datasource_id: str, metrics) -> None:
 
 @router.put("/{datasource_id}/tables")
 async def update_datasource_tables(datasource_id: str, data: TablesUpdateInput,
-                                   background: BackgroundTasks, user_id: str = Depends(get_current_user)):
+                                   background: BackgroundTasks, user_id: str = Depends(require_admin)):
     """保存「表元数据」(异步)。只写 table_info/column_info + 重嵌列向量 + 重灌 ES,不碰指标/关系。"""
     await _verify_passwords(user_id, datasource_id, data.user_password, data.db_password)
     await _set_status(datasource_id, "building")
@@ -233,7 +234,7 @@ async def update_datasource_tables(datasource_id: str, data: TablesUpdateInput,
 
 @router.put("/{datasource_id}/metrics")
 async def update_datasource_metrics(datasource_id: str, data: MetricsUpdateInput,
-                                    background: BackgroundTasks, user_id: str = Depends(get_current_user)):
+                                    background: BackgroundTasks, user_id: str = Depends(require_admin)):
     """保存「指标信息」(异步)。只写 metric_info/column_metric + 重嵌指标向量,不碰表/列/ES/关系。"""
     await _verify_passwords(user_id, datasource_id, data.user_password, data.db_password)
     await _set_status(datasource_id, "building")
@@ -244,7 +245,7 @@ async def update_datasource_metrics(datasource_id: str, data: MetricsUpdateInput
 
 @router.put("/{datasource_id}/relationships")
 async def update_datasource_relationships(datasource_id: str, data: RelationshipsUpdateInput,
-                                          user_id: str = Depends(get_current_user)):
+                                          user_id: str = Depends(require_admin)):
     """保存「表关系」整表替换。只重写 data_relationship,即时生效,不重建 Qdrant/ES。"""
     await _verify_passwords(user_id, datasource_id, data.user_password, data.db_password)
     async with meta_mysql_client.session() as session:
@@ -263,7 +264,10 @@ async def update_datasource_relationships(datasource_id: str, data: Relationship
 
 
 @router.delete("/{datasource_id}")
-async def delete_datasource(datasource_id: str, user_id: str = Depends(get_current_user)):
+async def delete_datasource(datasource_id: str, data: DatasourceDeleteInput,
+                            user_id: str = Depends(require_admin)):
+    # 破坏性操作:管理员身份 + 账号密码 + 该源数据库密码,三重确认后才删。
+    await _verify_passwords(user_id, datasource_id, data.user_password, data.db_password)
     async with meta_mysql_client.session() as session:
         async with session.begin():
             ds_repo = DatasourceRepository(session)
