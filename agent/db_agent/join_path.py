@@ -16,6 +16,7 @@ from sqlglot import exp
 from agent.schemas import WSAgentTableInfoState
 from dtos.meta import DataRelationship
 from repositories.mysql import MetaDBRepository
+from core.log import logger
 
 
 def _build_graph(relationships: list[DataRelationship]):
@@ -146,16 +147,28 @@ async def complete_join_path(
         max_extra = cfg_extra if max_extra is None else max_extra
         k = cfg_k if k is None else k
 
+    id2name = {t.id: t.name for t in table_infos}
     needed = set(present)
+    unreachable: list[str] = []
     for table_id in list(present):
         if table_id == anchor:
             continue
         # 枚举候选路径:单条(星型/雪花常态)直接并入;多条(稠密图/多重关系)把各候选路径的表【全部】并入,
         # 之后 add_extra_context 会把这些表之间的边连同列描述都列给 LLM,由 LLM 按用户问题选对应的那条路。
-        for path in _candidate_paths(adjacency, table_id, anchor, max_extra=max_extra, k=k):
+        paths = _candidate_paths(adjacency, table_id, anchor, max_extra=max_extra, k=k)
+        if not paths:
+            # 与锚点不连通:补不出中间表,最终 SQL 可能接不上该表或产生笛卡尔积。
+            # 这里只告警不强行处理(可能是召回带进的无关表,也可能是 ER 图缺边),交由后续校验暴露。
+            unreachable.append(table_id)
+            continue
+        for path in paths:
             needed.update(path)
+    if unreachable:
+        names = "、".join(id2name.get(i, i) for i in unreachable)
+        logger.warning(f"补全连接路径:表「{names}」无法连到锚点「{id2name.get(anchor, anchor)}」,未补中间表,JOIN 可能接不上")
 
     # 把缺失的中间表补进来：先带主键+外键(按 role)列。
+    added: list[str] = []
     for table_id in needed - present:
         table_info = await meta_repo.get_table_info_by_id(table_id)
         if table_info is None:
@@ -168,6 +181,10 @@ async def complete_join_path(
             description=table_info.description,
             columns=pfk_columns,
         ))
+        added.append(table_info.name)
+    if added:
+        # 稠密图/多候选时一次可能补进多张,记录便于排查"为何 SQL 里冒出这些表"。
+        logger.info(f"补全连接路径:新增中间表 = {added}")
 
     # 关键:补「关系边端点列」。无 FK 约束时这些列的 role 可能是 dimension/measure(不是 foreign_key),
     # 按 role 筛会漏掉 JOIN 列。但只要 data_relationship(可由 ER 图人工维护)里有边,就必须把端点列带上,
