@@ -71,10 +71,10 @@ def _candidate_paths(adjacency, start, goal, max_extra: int = 1, k: int = 3) -> 
             continue
         if len(path) - 1 >= limit:                 # 超过跳数上限,剪枝(保证枚举有界)
             continue
-        for neighbor in adjacency.get(node, ()):
+        for neighbor in sorted(adjacency.get(node, ())):  # 排序遍历:adjacency 是 set,顺序不固定
             if neighbor not in path:               # 简单路径:不绕回已在路径上的节点
                 stack.append(path + [neighbor])
-    results.sort(key=len)                          # 短路径优先
+    results.sort(key=lambda p: (len(p), p))        # 短路径优先;同长度按节点序列字典序定序,保证可复现
     return results[:k]
 
 
