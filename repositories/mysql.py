@@ -106,6 +106,17 @@ class MetaDBRepository:
         rows = await self.session.scalars(stmt)
         return [ColumnInfo.model_validate(row) for row in rows]
 
+    # 读本数据源的 JOIN 选路参数 (max_extra, k);行不存在/字段空则用默认 (1, 3)。
+    async def get_join_config(self) -> tuple[int, int]:
+        from models.datasource import DatasourceMySQL
+        ds = await self.session.scalar(
+            select(DatasourceMySQL).where(DatasourceMySQL.id == self.datasource_id)
+        )
+        if ds is None:
+            return (1, 3)
+        return (ds.join_max_extra if ds.join_max_extra is not None else 1,
+                ds.join_k if ds.join_k is not None else 3)
+
     # 读取本数据源的全部表关系(边集很小,直接全量取出，在内存里建图跑 BFS)。
     async def get_relationships(self) -> list[DataRelationship]:
         stmt = select(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == self.datasource_id)

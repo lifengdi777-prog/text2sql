@@ -178,7 +178,10 @@ async function doSave() {
       const edges = meta.value.relationships.filter(
         (r) => r.from_table && r.from_column && r.to_table && r.to_column,
       )
-      await saveDatasourceRelationships(id, edges, userPwd.value, dbPwd.value)
+      await saveDatasourceRelationships(
+        id, edges, userPwd.value, dbPwd.value,
+        meta.value.join_max_extra, meta.value.join_k,
+      )
     }
     // 表/指标是异步重物化(回列表看 building→ready);关系即时生效。统一回数据源列表。
     router.push('/sources')
@@ -516,6 +519,26 @@ onMounted(load)
               ＋ 新增关系
             </button>
           </div>
+        </div>
+
+        <!-- JOIN 选路参数(每数据源,管理员可调):随「保存表关系」一起存 -->
+        <div class="mb-3 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5">
+          <span class="text-xs font-semibold text-slate-600">JOIN 选路</span>
+          <label class="flex items-center gap-2 text-xs text-slate-500">
+            候选额外跳数
+            <input
+              v-model.number="meta.join_max_extra" type="number" min="0" max="5"
+              class="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
+            />
+          </label>
+          <label class="flex items-center gap-2 text-xs text-slate-500">
+            候选最多条数
+            <input
+              v-model.number="meta.join_k" type="number" min="1" max="10"
+              class="h-8 w-16 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
+            />
+          </label>
+          <span class="text-xs text-slate-400">默认 1 / 3;稠密或"一表多重关系"的库可调大,普通星型/雪花库保持默认即可</span>
         </div>
 
         <!-- ER 图视图:拖线增 / 点线删,共用 meta.relationships -->

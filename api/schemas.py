@@ -56,6 +56,9 @@ class RelationshipsUpdateInput(BaseModel):
     relationships: list[RelationshipEdge] = []
     user_password: str
     db_password: str
+    # JOIN 选路参数(随表关系一起存到数据源):候选路径"最短+max_extra"跳内、最多 k 条
+    max_extra: int = 1
+    k: int = 3
 
 
 class DatasourceDeleteInput(BaseModel):

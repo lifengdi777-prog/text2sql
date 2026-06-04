@@ -49,6 +49,35 @@ def _shortest_path(adjacency, start, goal):
     return None
 
 
+def _candidate_paths(adjacency, start, goal, max_extra: int = 1, k: int = 3) -> list[list[str]]:
+    """枚举 start→goal 的候选路径(节点列表的列表),短的优先,最多 k 条。
+
+    取最短跳数 L,收所有"跳数 ≤ L+max_extra"的简单路径(节点不重复)。
+    - 只有一条连通路径时 → 只返回它(等价 _shortest_path,星型/雪花的常态);
+    - 有多条不同表路径时 → 返回若干候选,交给上层把它们都带进表集、由 LLM 按列描述选对那条。
+    不可达返回 []。max_extra=0 即退化为"只要最短"。
+    """
+    base = _shortest_path(adjacency, start, goal)
+    if base is None:
+        return []
+    limit = (len(base) - 1) + max_extra            # 跳数上限 = 最短 + max_extra
+    results: list[list[str]] = []
+    stack: list[list[str]] = [[start]]
+    while stack:
+        path = stack.pop()
+        node = path[-1]
+        if node == goal:
+            results.append(path)
+            continue
+        if len(path) - 1 >= limit:                 # 超过跳数上限,剪枝(保证枚举有界)
+            continue
+        for neighbor in adjacency.get(node, ()):
+            if neighbor not in path:               # 简单路径:不绕回已在路径上的节点
+                stack.append(path + [neighbor])
+    results.sort(key=len)                          # 短路径优先
+    return results[:k]
+
+
 async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo: MetaDBRepository) -> list[WSAgentTableInfoState]:
     """补全连接路径：把"已选表 → 事实表"路径上缺失的中间表补进来(只带主键/外键列)。
 
@@ -67,13 +96,16 @@ async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo
     present = {table_info.id for table_info in table_infos}
     # 以事实表为枢纽(星型/雪花的中心)；没有事实表时退化为以任一已选表为锚点。
     anchor = next((t.id for t in table_infos if t.role == "fact"), None) or next(iter(present))
+    # 候选路径参数按数据源取(管理员在元数据编辑页可调;默认 1/3,稠密库可调大)。
+    max_extra, k = await meta_repo.get_join_config()
 
     needed = set(present)
     for table_id in list(present):
         if table_id == anchor:
             continue
-        path = _shortest_path(adjacency, table_id, anchor)
-        if path:
+        # 枚举候选路径:单条(星型/雪花常态)直接并入;多条(稠密图/多重关系)把各候选路径的表【全部】并入,
+        # 之后 add_extra_context 会把这些表之间的边连同列描述都列给 LLM,由 LLM 按用户问题选对应的那条路。
+        for path in _candidate_paths(adjacency, table_id, anchor, max_extra=max_extra, k=k):
             needed.update(path)
 
     # 把缺失的中间表补进来：先带主键+外键(按 role)列。

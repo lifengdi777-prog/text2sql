@@ -103,8 +103,10 @@ async def get_datasource_meta(datasource_id: str, _: str = Depends(get_current_u
     """组装该数据源的元数据(5 表)给编辑页:表/列(含只读的 type/examples + 可改的 desc/alias/role/sync)
     + 指标 + 关系(只读)。"""
     async with meta_mysql_client.session() as session:
-        if not await DatasourceRepository(session).exists(datasource_id):
+        ds = await DatasourceRepository(session).get_by_id(datasource_id)
+        if ds is None:
             raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
+        join_max_extra, join_k = ds.join_max_extra, ds.join_k   # JOIN 选路参数,回显给编辑页
         meta_repo = MetaDBRepository(session, datasource_id)
         tables = await meta_repo.get_all_tables()
         columns = await meta_repo.get_all_columns()
@@ -135,6 +137,8 @@ async def get_datasource_meta(datasource_id: str, _: str = Depends(get_current_u
              "to_table": r.to_table, "to_column": r.to_column, "description": r.description}
             for r in relationships
         ],
+        "join_max_extra": join_max_extra,
+        "join_k": join_k,
     }
 
 
@@ -259,6 +263,8 @@ async def update_datasource_relationships(datasource_id: str, data: Relationship
                 )
                 for e in data.relationships
             ])
+            # JOIN 选路参数随表关系一起存(同一事务)
+            await DatasourceRepository(session).set_join_config(datasource_id, data.max_extra, data.k)
     logger.info(f"[/datasources] user_id={user_id} 更新表关系 {datasource_id}({len(data.relationships)} 条)")
     return {"count": len(data.relationships)}
 

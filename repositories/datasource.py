@@ -52,6 +52,14 @@ class DatasourceRepository:
         await self.session.delete(ds)
         return True
 
+    async def set_join_config(self, datasource_id: str, max_extra: int, k: int) -> None:
+        """更新该数据源的 JOIN 选路参数(随"保存表关系"一起存)。"""
+        ds = await self.get_by_id(datasource_id)
+        if ds is None:
+            return
+        ds.join_max_extra = max_extra
+        ds.join_k = k
+
     async def set_build_status(self, datasource_id: str, build_status: str,
                                table_count: int | None = None, last_error: str | None = None) -> None:
         ds = await self.get_by_id(datasource_id)
@@ -79,7 +87,10 @@ class DatasourceRepository:
 # 幂等迁移:给已存在的 datasource 表补 build_status/last_error/table_count 列,并把存量行回填为 ready。
 # datasource 表不随 init_data 重建(里面是连接源数据),所以这几列单独在应用启动时迁移补上。
 async def ensure_datasource_columns(engine) -> None:
-    cols = {"build_status": "VARCHAR(16) NULL", "last_error": "TEXT NULL", "table_count": "INT NULL"}
+    cols = {
+        "build_status": "VARCHAR(16) NULL", "last_error": "TEXT NULL", "table_count": "INT NULL",
+        "join_max_extra": "INT NOT NULL DEFAULT 1", "join_k": "INT NOT NULL DEFAULT 3",
+    }
     async with engine.begin() as conn:
         existing = set((await conn.execute(text(
             "SELECT COLUMN_NAME FROM information_schema.COLUMNS "

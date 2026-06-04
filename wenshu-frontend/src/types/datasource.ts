@@ -70,4 +70,6 @@ export interface DatasourceMeta {
   tables: MetaTable[]
   metrics: MetaMetric[]
   relationships: MetaRelationship[]
+  join_max_extra: number // JOIN 选路:候选路径"最短+max_extra"跳内(默认1,稠密库可调大)
+  join_k: number // JOIN 选路:候选路径最多条数(默认3)
 }

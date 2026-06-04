@@ -141,12 +141,16 @@ export async function saveDatasourceRelationships(
   relationships: MetaRelationship[],
   userPassword: string,
   dbPassword: string,
+  maxExtra: number,
+  k: number,
 ): Promise<void> {
   try {
     await api.put(`/datasources/${id}/relationships`, {
       relationships,
       user_password: userPassword,
       db_password: dbPassword,
+      max_extra: maxExtra,
+      k,
     })
   } catch (err) {
     throw toError(err, '保存表关系失败')
