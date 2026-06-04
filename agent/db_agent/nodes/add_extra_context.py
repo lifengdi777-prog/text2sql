@@ -32,7 +32,7 @@ async def add_extra_context(state: WSAgentState, runtime: Runtime[WSAgentContext
         if r.from_table in ids and r.to_table in ids
     ]
     if join_lines:
-        db_info = f"{db_info}\n## 表之间的连接关系(写 JOIN 时严格按这些等式,不要自己猜连接列):\n" + \
+        db_info = f"{db_info}\n## 表之间的连接关系(JOIN 连接列优先严格按以下等式;若某个需要的连接未在下方列出,再依据列描述合理推断):\n" + \
             "\n".join(f"- {line}" for line in join_lines)
 
     # 获取当前时间
