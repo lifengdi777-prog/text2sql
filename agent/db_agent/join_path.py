@@ -11,9 +11,11 @@
 from collections import deque
 
 from agent.schemas import WSAgentTableInfoState
+from dtos.meta import DataRelationship
+from repositories.mysql import MetaDBRepository
 
 
-def _build_graph(relationships):
+def _build_graph(relationships: list[DataRelationship]):
     """由外键边构建：无向邻接表(用于找路径) + 有向边集合(用于判方向/扇出)。
 
     directed 中的 (a, b) 表示 a 是多的一方、b 是一的一方(a.from_column 引用 b)。
@@ -47,7 +49,7 @@ def _shortest_path(adjacency, start, goal):
     return None
 
 
-async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo) -> list[WSAgentTableInfoState]:
+async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo: MetaDBRepository) -> list[WSAgentTableInfoState]:
     """补全连接路径：把"已选表 → 事实表"路径上缺失的中间表补进来(只带主键/外键列)。
 
     例：问"各城市的实际产量"，召回到了 factory(city) 与 production_record，但漏了中间的
@@ -106,7 +108,7 @@ async def complete_join_path(table_infos: list[WSAgentTableInfoState], meta_repo
     return table_infos
 
 
-def detect_fanout(table_infos: list[WSAgentTableInfoState], relationships) -> str | None:
+def detect_fanout(table_infos: list[WSAgentTableInfoState], relationships: list[DataRelationship]) -> str | None:
     """扇出检测：若 事实表 → 某维度表 的连接路径含"一 → 多"跳(逆 FK 方向/经桥接表)，
     则按该维度对事实度量做 SUM/COUNT 会重复计算。返回警告文本；无风险返回 None。
 
