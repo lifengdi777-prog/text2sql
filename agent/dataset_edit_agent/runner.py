@@ -57,6 +57,11 @@ def _snapshot_with_ops(info: dict, active_ops: list[str]) -> str:
             lines.append(f'### Sheet "{s}"(当前 {prev["total"]} 行)\n列:{cols}')
             for r in prev["rows"][:3]:
                 lines.append("  样例:" + json.dumps(r, ensure_ascii=False, default=str))
+            # 显式标出汇总行(合计/小计…),让 LLM 聚合时能 WHERE 排除、或定位更新它
+            for e in (wb.lineage.get(s) or {}).get("extra_rows") or []:
+                vals = e.get("values") or {}
+                lines.append("  汇总行(聚合时用 WHERE 排除它):"
+                             + json.dumps(vals, ensure_ascii=False, default=str))
         return "\n".join(lines) or "(无数据)"
     finally:
         wb.close()
