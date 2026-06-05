@@ -841,27 +841,42 @@ onBeforeUnmount(() => {
           <!-- 操作栏:查看 SQL / 导出 CSV(成功且有 SQL 或有结果行时显示) -->
           <div
             v-if="message.status === 'success' && (message.sql || shouldShowResult(message.result))"
-            class="mt-6 flex flex-wrap items-center gap-2"
+            class="mt-6 flex flex-wrap items-center gap-2.5"
           >
             <button
               v-if="message.sql"
               type="button"
-              class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+              class="group inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
               @click="toggleSql(message)"
             >
+              <!-- code 图标 -->
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
               查看 SQL
-              <span class="text-[10px]" aria-hidden="true">{{ isSqlExpanded(message) ? '▲' : '▼' }}</span>
+              <svg
+                class="h-3.5 w-3.5 text-slate-400 transition-transform group-hover:text-sky-500"
+                :class="isSqlExpanded(message) ? 'rotate-180' : ''"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </button>
 
             <button
               v-if="shouldShowResult(message.result)"
               type="button"
-              class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
               @click="exportCsv(message)"
             >
-
+              <!-- 下载图标 -->
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
               导出数据
-              <span aria-hidden="true">⬇</span>
             </button>
 
             <!-- 按需生成图表:有结果且尚未出图时显示;生成后(echarts 图)自动隐藏 -->
@@ -869,11 +884,27 @@ onBeforeUnmount(() => {
               v-if="shouldShowResult(message.result) && !isEChartsType(message.chartConfig?.chart_type)"
               type="button"
               :disabled="chartLoading[message.id]"
-              class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
               @click="onGenerateChart(message)"
             >
+              <!-- 加载中:旋转 spinner;否则柱状图图标 -->
+              <svg
+                v-if="chartLoading[message.id]"
+                class="h-3.5 w-3.5 animate-spin"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"
+              >
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <svg
+                v-else
+                class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+              >
+                <path d="M3 3v18h18" />
+                <path d="M18 17V9" />
+                <path d="M13 17V5" />
+                <path d="M8 17v-3" />
+              </svg>
               {{ chartLoading[message.id] ? '生成中…' : '生成图表' }}
-              <span aria-hidden="true">📊</span>
             </button>
           </div>
 
@@ -881,9 +912,13 @@ onBeforeUnmount(() => {
                由 chartConfig 派生,历史回放同样会显示。 -->
           <p
             v-if="message.status === 'success' && isUnchartable(message)"
-            class="mt-2 inline-flex items-center gap-1 text-xs text-amber-600"
+            class="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700"
           >
-            <span aria-hidden="true">⚠️</span>
+            <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
             该数据无法生成图表
           </p>
 
