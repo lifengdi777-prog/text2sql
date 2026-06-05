@@ -2,12 +2,15 @@
 
 export type EditCellValue = string | number | boolean | null
 
-// 单 sheet 的当前预览(后端 EditWorkbook.preview + sheet 名)
+// 单 sheet 的一页预览(后端 EditWorkbook.preview 分页)
 export interface EditSheetPreview {
   sheet: string
   columns: string[]
   rows: Record<string, EditCellValue>[]
   total: number
+  page: number // 0-based
+  size: number
+  pages: number
 }
 
 // 已应用的一条操作(用于重建历史气泡)
@@ -54,6 +57,9 @@ export interface EditSummary {
   renames: string[] // ["旧→新", ...]
   // 落库的明细(列:旧→新,截前若干条),供刷新后历史气泡还原
   changes?: EditCellChange[]
+  // 建汇总表时:新表名 + 行数(决策 9)
+  created_sheet?: string
+  rows?: number
 }
 
 // 应用变更 finish 事件里的 diff(已截断)

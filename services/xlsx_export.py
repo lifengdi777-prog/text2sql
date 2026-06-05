@@ -16,8 +16,10 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from openpyxl.styles import Font
+
 from services import object_store
-from services.duckdb_edit import EXCEL_ROW, EditWorkbook, diff_sheet
+from services.duckdb_edit import EXCEL_ROW, ROW_ID, EditWorkbook, diff_sheet
 
 
 # ───────────────────────── §6.1 镜像原列表示 ─────────────────────────
@@ -128,6 +130,25 @@ def patch_sheet(ws: Worksheet, diff: dict, final_df: pd.DataFrame,
                     cell._style = copy(ws.cell(r - 1, c)._style)
 
 
+def _write_new_sheet(wb, name: str, df: pd.DataFrame) -> None:
+    """把编辑态新建的 sheet(如汇总)整张写进工作簿:表头加粗 + 逐行写值。
+
+    新 sheet 没有原件样式要保(决策 9),自己定个干净格式即可。
+    """
+    cols = [c for c in df.columns if c not in (ROW_ID, EXCEL_ROW)]
+    title = str(name)[:31] or "汇总"          # Excel sheet 名 ≤31 字符
+    if title in wb.sheetnames:                # 重复导出 → 先删旧的重写
+        del wb[title]
+    ws = wb.create_sheet(title=title)
+    for j, c in enumerate(cols, start=1):
+        cell = ws.cell(1, j, c)
+        cell.font = Font(bold=True)
+    for i, (_, row) in enumerate(df.iterrows(), start=2):
+        for j, c in enumerate(cols, start=1):
+            v = row[c]
+            ws.cell(i, j, None if (v is None or (isinstance(v, float) and pd.isna(v))) else v)
+
+
 # ───────────────────────── 高层编排 ─────────────────────────
 def _find_original_key(folder: str) -> str | None:
     """在 ds_{id}/original/ 下找留档的原件 key(取第一个 .xlsx)。"""
@@ -161,20 +182,28 @@ def export_with_info(info: dict, active_ops: list[str]) -> tuple[str, bytes]:
     edited = EditWorkbook.from_dataset(info)
     try:
         edited.replay(active_ops)
-        diffs = {
-            s: diff_sheet(base.current(s), edited.current(s), edited.lineage.get(s))
-            for s in edited.sheets()
-        }
-        finals = {s: edited.current(s) for s in edited.sheets()}
-        lineages = {s: edited.lineage.get(s) or {} for s in edited.sheets()}
+        base_sheets = set(base.sheets())
+        patches: dict[str, tuple[dict, pd.DataFrame, dict]] = {}  # 原有 sheet → diff-patch
+        new_sheets: dict[str, pd.DataFrame] = {}                  # 新建 sheet(汇总)→ 全新写
+        for s in edited.sheets():
+            final_df = edited.current(s)
+            if s in base_sheets:
+                patches[s] = (
+                    diff_sheet(base.current(s), final_df, edited.lineage.get(s)),
+                    final_df, edited.lineage.get(s) or {},
+                )
+            else:
+                new_sheets[s] = final_df
     finally:
         base.close()
         edited.close()
 
     wb = load_workbook(io.BytesIO(original_bytes))
-    for sheet, diff in diffs.items():
+    for sheet, (diff, final_df, lineage) in patches.items():
         if sheet in wb.sheetnames:
-            patch_sheet(wb[sheet], diff, finals[sheet], lineages[sheet])
+            patch_sheet(wb[sheet], diff, final_df, lineage)
+    for sheet, final_df in new_sheets.items():
+        _write_new_sheet(wb, sheet, final_df)
     wb.calculation.fullCalcOnLoad = True  # 留存公式让 Excel 打开时重算
 
     buf = io.BytesIO()

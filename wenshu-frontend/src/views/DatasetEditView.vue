@@ -8,6 +8,7 @@ import {
   undoEdit,
   discardEditSession,
   downloadEdit,
+  previewPage,
 } from '@/services/dataset_edit'
 import type { EditSheetPreview, EditTurn, EditOpRecord } from '@/types/datasetEdit'
 
@@ -16,29 +17,50 @@ const router = useRouter()
 const datasetId = Number(route.params.id)
 
 const sessionId = ref<number | null>(null)
-const sheets = ref<EditSheetPreview[]>([])
-const activeSheet = ref<string>('')
+const sheets = ref<EditSheetPreview[]>([]) // 各 sheet 第0页(用于 tab:名称+行数)
+const view = ref<EditSheetPreview | null>(null) // 当前展示的那一页
+const pageBusy = ref(false)
 const opsCount = ref(0)
 
 const turns = ref<EditTurn[]>([])
 const input = ref('')
 const sending = ref(false)
-const busy = ref(false) // 撤销/下载等 REST 操作中
+const busy = ref(false) // 撤销/下载等
 const loadError = ref('')
 const loading = ref(true)
 
-const current = computed(() => sheets.value.find((s) => s.sheet === activeSheet.value) ?? null)
+const activeSheet = computed(() => view.value?.sheet ?? '')
 
 const EXAMPLES = ['把某列的空值填成 0', '删掉状态为停机的行', '新增一列“达标”', '把“产量”这列改名为“月产量”']
 
+// 设置 sheet 列表,并把 view 定位到(之前的或第一个)sheet 的第 0 页
 function setSheets(list: EditSheetPreview[]) {
   sheets.value = list
-  if (!list.find((s) => s.sheet === activeSheet.value)) {
-    activeSheet.value = list[0]?.sheet ?? ''
+  const cur = view.value?.sheet
+  view.value = list.find((s) => s.sheet === cur) ?? list[0] ?? null
+}
+
+async function loadPage(sheet: string, page: number) {
+  if (!sessionId.value) return
+  pageBusy.value = true
+  try {
+    view.value = await previewPage(datasetId, sessionId.value, sheet, page)
+  } finally {
+    pageBusy.value = false
   }
 }
 
-// 用已应用的操作日志重建历史气泡(刷新/重进后仍能看到做过什么)
+function selectSheet(sheet: string) {
+  if (sheet !== view.value?.sheet) void loadPage(sheet, 0)
+}
+function prevPage() {
+  if (view.value && view.value.page > 0) void loadPage(view.value.sheet, view.value.page - 1)
+}
+function nextPage() {
+  if (view.value && view.value.page < view.value.pages - 1)
+    void loadPage(view.value.sheet, view.value.page + 1)
+}
+
 function historyFromOps(ops: EditOpRecord[]): EditTurn[] {
   return ops.map((o) => ({
     id: `op-${o.seq}`,
@@ -48,15 +70,8 @@ function historyFromOps(ops: EditOpRecord[]): EditTurn[] {
     reason: null,
     status: 'success' as const,
     summary: o.affected,
-    // 用落库的明细还原"列:旧→新"(直播时来自流,刷新后来自 affected.changes)
     diff: o.affected?.changes?.length
-      ? {
-          cell_changes: o.affected.changes,
-          deleted: [],
-          renames: [],
-          added_cols: [],
-          dropped_cols: [],
-        }
+      ? { cell_changes: o.affected.changes, deleted: [], renames: [], added_cols: [], dropped_cols: [] }
       : null,
     preview: null,
     pendingSql: null,
@@ -94,19 +109,19 @@ async function send(instruction: string, confirmed: boolean) {
       sessionId.value,
       instruction.trim(),
       confirmed,
+      view.value?.sheet ?? null, // 当前选中的 sheet → 默认操作对象
       { onStep: upsertTurn },
     )
-    // 应用成功 → 用受影响 sheet 的预览刷新左栏 + 计数 +1
+    // 应用成功 → 用受影响 sheet 的预览页刷新左栏(新增行时后端已给末页),更新 tab 行数 + 计数
     if (last.status === 'success' && last.preview) {
       const pv = last.preview
-      const idx = sheets.value.findIndex((s) => s.sheet === pv.sheet)
-      if (idx >= 0) sheets.value[idx] = pv
-      else sheets.value.push(pv)
-      activeSheet.value = pv.sheet
+      const tab = sheets.value.find((s) => s.sheet === pv.sheet)
+      if (tab) tab.total = pv.total // 同步 tab 行数(增删行后变化)
+      else sheets.value.push(pv) // 新建的汇总 sheet → 加一个 tab
+      view.value = pv
       opsCount.value += 1
     }
   } catch (e) {
-    // 网络/请求异常:把仍在流式中的那条标记为失败
     const t = [...turns.value].reverse().find((x) => x.status === 'streaming')
     if (t) {
       t.status = 'error'
@@ -122,7 +137,6 @@ function onSend() {
   input.value = ''
   void send(text, false)
 }
-
 function onConfirm(turn: EditTurn) {
   void send(turn.instruction, true)
 }
@@ -134,7 +148,7 @@ async function onUndo() {
     const resp = await undoEdit(datasetId, sessionId.value)
     opsCount.value = resp.ops_count
     setSheets(resp.sheets)
-    turns.value = historyFromOps(resp.ops) // 撤销后历史与实际应用的 op 对齐
+    turns.value = historyFromOps(resp.ops)
   } finally {
     busy.value = false
   }
@@ -226,7 +240,7 @@ async function onDiscard() {
                 ? 'bg-indigo-50 font-semibold text-indigo-600'
                 : 'text-slate-500 hover:bg-slate-50'
             "
-            @click="activeSheet = s.sheet"
+            @click="selectSheet(s.sheet)"
           >
             {{ s.sheet }}
             <span class="ml-1 text-xs text-slate-400">{{ s.total }}</span>
@@ -234,11 +248,11 @@ async function onDiscard() {
         </div>
         <!-- 表格 -->
         <div class="min-h-0 flex-1 overflow-auto">
-          <table v-if="current" class="w-full text-left text-xs">
+          <table v-if="view" class="w-full text-left text-xs">
             <thead class="sticky top-0 bg-slate-50 text-slate-500">
               <tr>
                 <th
-                  v-for="col in current.columns"
+                  v-for="col in view.columns"
                   :key="col"
                   class="whitespace-nowrap px-3 py-2 font-medium"
                 >
@@ -247,9 +261,9 @@ async function onDiscard() {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              <tr v-for="(row, ri) in current.rows" :key="ri" class="hover:bg-slate-50/60">
+              <tr v-for="(row, ri) in view.rows" :key="ri" class="hover:bg-slate-50/60">
                 <td
-                  v-for="col in current.columns"
+                  v-for="col in view.columns"
                   :key="col"
                   class="whitespace-nowrap px-3 py-1.5 text-slate-700"
                 >
@@ -259,6 +273,29 @@ async function onDiscard() {
             </tbody>
           </table>
           <p v-else class="py-10 text-center text-sm text-slate-400">无数据</p>
+        </div>
+        <!-- 分页 -->
+        <div
+          v-if="view && view.pages > 1"
+          class="flex items-center justify-center gap-3 border-t border-slate-200 px-3 py-2 text-xs text-slate-500"
+        >
+          <button
+            type="button"
+            class="rounded-lg border border-slate-200 px-2.5 py-1 transition hover:bg-slate-50 disabled:opacity-40"
+            :disabled="pageBusy || view.page <= 0"
+            @click="prevPage"
+          >
+            上一页
+          </button>
+          <span>第 {{ view.page + 1 }} / {{ view.pages }} 页 · 共 {{ view.total }} 行</span>
+          <button
+            type="button"
+            class="rounded-lg border border-slate-200 px-2.5 py-1 transition hover:bg-slate-50 disabled:opacity-40"
+            :disabled="pageBusy || view.page >= view.pages - 1"
+            @click="nextPage"
+          >
+            下一页
+          </button>
         </div>
       </section>
 
@@ -311,23 +348,25 @@ async function onDiscard() {
 
               <!-- 成功摘要 -->
               <div v-else-if="t.status === 'success' && t.summary" class="mt-1.5 text-emerald-600">
-                ✓ 已应用:改 {{ t.summary.changed }} 格 · 删 {{ t.summary.deleted }} 行
-                <template v-if="t.summary.new_rows">· 加 {{ t.summary.new_rows }} 行</template>
-                <template v-if="t.summary.added_cols.length">· 加列 {{ t.summary.added_cols.join('、') }}</template>
-                <template v-if="t.summary.dropped_cols.length">· 删列 {{ t.summary.dropped_cols.join('、') }}</template>
-                <template v-if="t.summary.renames.length">· 改名 {{ t.summary.renames.join('、') }}</template>
-                <!-- 具体改值 -->
-                <ul v-if="t.diff && t.diff.cell_changes.length" class="mt-1 space-y-0.5 text-[11px] text-slate-500">
-                  <li v-for="(c, ci) in t.diff.cell_changes.slice(0, 5)" :key="ci">
-                    {{ c.col }}: {{ c.old }} → {{ c.new }}
-                  </li>
-                </ul>
+                <template v-if="t.summary.created_sheet">
+                  ✓ 已生成汇总表「{{ t.summary.created_sheet }}」({{ t.summary.rows }} 行)
+                </template>
+                <template v-else>
+                  ✓ 已应用:改 {{ t.summary.changed }} 格 · 删 {{ t.summary.deleted }} 行
+                  <template v-if="t.summary.new_rows">· 加 {{ t.summary.new_rows }} 行</template>
+                  <template v-if="t.summary.added_cols.length">· 加列 {{ t.summary.added_cols.join('、') }}</template>
+                  <template v-if="t.summary.dropped_cols.length">· 删列 {{ t.summary.dropped_cols.join('、') }}</template>
+                  <template v-if="t.summary.renames.length">· 改名 {{ t.summary.renames.join('、') }}</template>
+                  <ul v-if="t.diff && t.diff.cell_changes.length" class="mt-1 space-y-0.5 text-[11px] text-slate-500">
+                    <li v-for="(c, ci) in t.diff.cell_changes.slice(0, 5)" :key="ci">
+                      {{ c.col }}: {{ c.old }} → {{ c.new }}
+                    </li>
+                  </ul>
+                </template>
               </div>
 
               <!-- 失败 -->
-              <div v-else-if="t.status === 'error'" class="mt-1.5 text-rose-500">
-                ✕ {{ t.error }}
-              </div>
+              <div v-else-if="t.status === 'error'" class="mt-1.5 text-rose-500">✕ {{ t.error }}</div>
 
               <!-- 查看 SQL -->
               <details v-if="t.sql" class="mt-1.5">

@@ -34,15 +34,28 @@ router = APIRouter(prefix="/dataset")
 class EditMessageBody(BaseModel):
     instruction: str
     confirmed: bool = False
+    active_sheet: str | None = None  # 用户当前选中的 sheet tab → 默认操作对象
 
 
 # ───────────────────────── 同步辅助(走 to_thread)─────────────────────────
-def _preview_all(info: dict, active_ops: list[str], limit: int = 100) -> list[dict]:
-    """物化 + 重放 active op → 各 sheet 当前预览。"""
+def _preview_all(info: dict, active_ops: list[str], size: int = 20) -> list[dict]:
+    """物化 + 重放 active op → 各 sheet 第 0 页预览(初始渲染用)。"""
     wb = EditWorkbook.from_dataset(info)
     try:
         wb.replay(active_ops)
-        return [{"sheet": s, **wb.preview(s, limit)} for s in wb.sheets()]
+        return [wb.preview(s, page=0, size=size) for s in wb.sheets()]
+    finally:
+        wb.close()
+
+
+def _preview_one(info: dict, active_ops: list[str], sheet: str, page: int, size: int) -> dict:
+    """物化 + 重放 → 指定 sheet 的某一页(翻页用)。"""
+    wb = EditWorkbook.from_dataset(info)
+    try:
+        wb.replay(active_ops)
+        if sheet not in wb.sheets() and wb.sheets():
+            sheet = wb.sheets()[0]
+        return wb.preview(sheet, page=page, size=size)
     finally:
         wb.close()
 
@@ -91,6 +104,22 @@ async def discard_session(dataset_id: int, session_id: int,
     return {"ok": True}
 
 
+# ───────────────────────── 分页预览 ─────────────────────────
+@router.get("/{dataset_id}/edit/{session_id}/preview")
+async def preview_page(dataset_id: int, session_id: int, sheet: str,
+                       page: int = 0, size: int = 20,
+                       user_id: str = Depends(get_current_user)):
+    await require_owned_dataset(dataset_id, user_id)
+    Session = get_session_factory()
+    async with Session() as s:
+        repo = DatasetEditRepository(s)
+        if await repo.get_owned(session_id, user_id) is None:
+            raise HTTPException(status_code=404, detail="编辑会话不存在")
+        active_ops = await repo.active_sql(session_id)
+    info = await get_dataset_info(dataset_id)
+    return await asyncio.to_thread(_preview_one, info, active_ops, sheet, page, size)
+
+
 # ───────────────────────── 一轮编辑(SSE)─────────────────────────
 @router.post("/{dataset_id}/edit/{session_id}/message")
 async def edit_message(dataset_id: int, session_id: int, body: EditMessageBody,
@@ -105,7 +134,8 @@ async def edit_message(dataset_id: int, session_id: int, body: EditMessageBody,
         yield f"data: {json.dumps({'session_id': session_id})}\n\n"
         try:
             async for step in run_edit_message(dataset_id, session_id,
-                                               body.instruction, body.confirmed):
+                                               body.instruction, body.confirmed,
+                                               active_sheet=body.active_sheet):
                 yield f"data: {step.model_dump_json()}\n\n"
         except Exception as exc:  # 不让异常冲断 SSE,发 error 卡优雅收尾
             logger.exception(f"编辑流异常(session={session_id}):{exc}")

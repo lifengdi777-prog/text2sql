@@ -125,18 +125,35 @@ class EditWorkbook:
 
     # ---- 读 ----
     def sheets(self) -> list[str]:
-        return list(self.lineage.keys())
+        """当前所有 sheet(表):数据 sheet 原序在前,新建的汇总 sheet 在后。
+
+        查 DuckDB 实际存在的表,这样 replay 中 CREATE 出来的汇总表也会被列出。
+        """
+        existing = {r[0] for r in self.con.execute("SHOW TABLES").fetchall()}
+        ordered = [s for s in self.lineage if s in existing]
+        ordered += [t for t in existing if t not in self.lineage]
+        return ordered
 
     def current(self, sheet: str) -> pd.DataFrame:
         """当前态全表(含血缘列),供 diff 比对。"""
         return self.con.execute(f"SELECT * FROM {_q(sheet)}").fetch_df()
 
-    def preview(self, sheet: str, limit: int = 100) -> dict:
-        """对外预览:隐藏血缘列,返回 {columns, rows, total}。"""
+    def preview(self, sheet: str, page: int = 0, size: int = 20) -> dict:
+        """对外分页预览:隐藏血缘列,返回某一页。
+
+        返回 {sheet, columns, rows, total, page, size, pages}。page 0-based,自动夹紧到合法范围。
+        分页让大表也能完整翻看(含追加到表尾的新增行 → 翻到末页即可看到)。
+        """
         df = self.current(sheet)
         cols = _data_cols(df)
-        view = df[cols].head(limit)
-        return {"columns": cols, "rows": _df_to_rows(view), "total": int(len(df))}
+        total = int(len(df))
+        pages = max(1, (total + size - 1) // size)
+        page = max(0, min(page, pages - 1))
+        view = df[cols].iloc[page * size : page * size + size]
+        return {
+            "sheet": sheet, "columns": cols, "rows": _df_to_rows(view),
+            "total": total, "page": page, "size": size, "pages": pages,
+        }
 
     def columns_now(self, sheet: str) -> list[str]:
         """当前数据列(DDL 改过列后,喂给 LLM 的实时结构用,不含血缘列)。"""
@@ -162,6 +179,11 @@ def diff_sheet(before: pd.DataFrame, after: pd.DataFrame, lineage: dict | None) 
       added_cols / dropped_cols / renames                   —— 列结构变化
     rename 检测:dropped 列 D 与 added 列 N 若逐行值全相等 → 视为重命名(避免删列丢数据)。
     """
+    # 防御:无 __row_id 的 sheet(汇总等生成表)无法按行 diff → 返回空 diff(由上层当"重新生成"处理)
+    if ROW_ID not in before.columns or ROW_ID not in after.columns:
+        return {"cell_changes": [], "deleted": [], "new_rows": [],
+                "added_cols": [], "dropped_cols": [], "renames": []}
+
     cols0, cols1 = _data_cols(before), _data_cols(after)
     raw_added = [c for c in cols1 if c not in cols0]
     raw_dropped = [c for c in cols0 if c not in cols1]

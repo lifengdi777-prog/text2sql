@@ -66,6 +66,7 @@ def validate_edit_sql(sql: str, known_sheets: set[str]) -> EditSQLCheck:
 
     op_kinds: set[str] = set()
     tables_all: set[str] = set()
+    create_targets: set[str] = set()
     needs_confirm = False
 
     for st in statements:
@@ -73,12 +74,23 @@ def validate_edit_sql(sql: str, known_sheets: set[str]) -> EditSQLCheck:
         if kind:
             op_kinds.add(kind)
 
-        # 表:必须都是已知 sheet
+        # CREATE 的目标表是「新建的汇总 sheet」,允许是新名字,不参与"必须已知"校验;
+        # 但不能用 CREATE 覆盖已有数据 sheet。
+        create_target = None
+        if isinstance(st, exp.Create) and st.this is not None:
+            create_target = st.this.name
+            create_targets.add(create_target)
+            if create_target in known_sheets:
+                issues.append(f"不能用 CREATE 覆盖已有数据表「{create_target}」(请换个汇总表名)")
+
+        # 其余引用的表:必须都是已知 sheet(CREATE 目标除外)
         st_tables = {t.name for t in st.find_all(exp.Table)}
         for t in st_tables:
+            if t == create_target:
+                continue
             if t not in known_sheets:
                 issues.append(f"引用了未知的表「{t}」(只能操作本数据集的 sheet)")
-        tables_all |= st_tables
+        tables_all |= st_tables - ({create_target} if create_target else set())
 
         # 读写文件函数
         for fn in st.find_all(exp.Func):
@@ -99,13 +111,20 @@ def validate_edit_sql(sql: str, known_sheets: set[str]) -> EditSQLCheck:
         if isinstance(st, (exp.Update, exp.Delete)) and st.args.get("where") is None:
             needs_confirm = True
 
-    # 跨 sheet:整条指令涉及的(已知)表 > 1 → 拦
+    # 跨 sheet:整条指令涉及的(已知)源表 > 1 → 拦(CREATE 目标不算源)
     known_touched = tables_all & known_sheets
     if len(known_touched) > 1:
         issues.append(f"暂不支持跨 sheet 操作(本次涉及:{', '.join(sorted(known_touched))})")
 
-    target_sheet = next(iter(known_touched)) if len(known_touched) == 1 else None
-    mutating = op_kinds & {"insert", "update", "delete", "alter"}
+    # target_sheet:建汇总表 → 取新建的汇总表名;否则取唯一的已知源表
+    if create_targets:
+        target_sheet = next(iter(create_targets))
+    elif len(known_touched) == 1:
+        target_sheet = next(iter(known_touched))
+    else:
+        target_sheet = None
+
+    mutating = op_kinds & {"insert", "update", "delete", "alter", "summary"}
     if not mutating:
         op_type = "select" if op_kinds else "unknown"
     elif len(mutating) == 1:
@@ -141,7 +160,13 @@ def _classify(st: exp.Expression, issues: list[str]) -> str | None:
             issues.append(f"ALTER 只支持加列/删列/改列名,检测到不支持的操作:{bad}")
             return None
         return "alter"
-    issues.append(f"不允许的语句类型:{type(st).__name__}(只能增删改 / 加删改列 / 查询)")
+    # 受控建汇总表:只放行 CREATE [OR REPLACE] TABLE … AS SELECT(决策 9),其它 CREATE 一律拦
+    if isinstance(st, exp.Create):
+        if st.args.get("kind") == "TABLE" and isinstance(st.expression, exp.Select):
+            return "summary"
+        issues.append('只支持 CREATE TABLE "汇总" AS SELECT …(建汇总表),不支持其它 CREATE')
+        return None
+    issues.append(f"不允许的语句类型:{type(st).__name__}(只能增删改 / 加删改列 / 建汇总表 / 查询)")
     return None
 
 

@@ -48,6 +48,21 @@ export async function undoEdit(datasetId: number, sessionId: number): Promise<Ed
   return data
 }
 
+/** 翻页:取某 sheet 的某一页(0-based)。 */
+export async function previewPage(
+  datasetId: number,
+  sessionId: number,
+  sheet: string,
+  page: number,
+  size = 20,
+): Promise<EditSheetPreview> {
+  const { data } = await editApi.get<EditSheetPreview>(
+    `/dataset/${datasetId}/edit/${sessionId}/preview`,
+    { params: { sheet, page, size } },
+  )
+  return data
+}
+
 export async function discardEditSession(datasetId: number, sessionId: number): Promise<void> {
   await editApi.delete(`/dataset/${datasetId}/edit/${sessionId}`)
 }
@@ -122,6 +137,7 @@ export async function streamEditMessage(
   sessionId: number,
   instruction: string,
   confirmed: boolean,
+  activeSheet: string | null,
   opts: StreamOpts,
 ): Promise<EditTurn> {
   let turn: EditTurn = {
@@ -144,7 +160,7 @@ export async function streamEditMessage(
   let rest = ''
   await editSse.post(
     `/dataset/${datasetId}/edit/${sessionId}/message`,
-    { instruction, confirmed },
+    { instruction, confirmed, active_sheet: activeSheet },
     {
       signal: opts.signal,
       onDownloadProgress: (pe) => {

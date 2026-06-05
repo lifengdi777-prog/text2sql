@@ -52,7 +52,7 @@ def _snapshot_with_ops(info: dict, active_ops: list[str]) -> str:
         wb.replay(active_ops)
         lines: list[str] = []
         for s in wb.sheets():
-            prev = wb.preview(s, 5)
+            prev = wb.preview(s, page=0, size=5)
             cols = ", ".join(f'"{c}"' for c in prev["columns"])
             lines.append(f'### Sheet "{s}"(当前 {prev["total"]} 行)\n列:{cols}')
             for r in prev["rows"][:3]:
@@ -83,8 +83,17 @@ def _apply_and_diff(info: dict, active_ops: list[str], new_sql: str,
         sheet = target if target in after.sheets() else (after.sheets()[0] if after.sheets() else None)
         if sheet is None:
             return {"ok": False, "error": "无可用 sheet"}
+        # 汇总/生成的 sheet(无血缘、无 __row_id)→ 不做单元格 diff,当作"已生成汇总表"。
+        # 用"是否有血缘"判,而非"before 里有没有"——否则二次重建已存在的汇总表会误走 diff 崩。
+        if sheet not in after.lineage:
+            return {"ok": True, "created": True, "sheet": sheet,
+                    "preview": after.preview(sheet), "rows": int(len(after.current(sheet)))}
         diff = diff_sheet(before.current(sheet), after.current(sheet), after.lineage.get(sheet))
-        return {"ok": True, "diff": diff, "preview": after.preview(sheet), "sheet": sheet}
+        # 有新增行 → 预览跳到末页(新行追加在表尾,这样用户一眼看到);否则给第 0 页
+        pv = after.preview(sheet)
+        if diff["new_rows"] and pv["pages"] > 1:
+            pv = after.preview(sheet, page=pv["pages"] - 1)
+        return {"ok": True, "diff": diff, "preview": pv, "sheet": sheet}
     finally:
         before.close()
         after.close()
@@ -102,15 +111,21 @@ def _summary(diff: dict) -> dict:
 
 
 # ───────────────────────── LLM:生成 / 修正 ─────────────────────────
-async def _gen(instruction: str, current_md: str, last_sql: str = "",
-               issues: list[str] | None = None) -> _SQLDraft:
+async def _gen(instruction: str, current_md: str, active_sheet: str | None = None,
+               last_sql: str = "", issues: list[str] | None = None) -> _SQLDraft:
     structured = llm.with_structured_output(_SQLDraft, method="json_mode")
+    # 当前选中的 sheet = 默认操作对象(点哪个 tab 就改哪个),除非用户明确点名别的表
+    scope = (
+        f"# 当前选中的 sheet:「{active_sheet}」\n"
+        f"**默认所有操作都针对这个 sheet**(聚合则 FROM 它生成新汇总表);"
+        f"只有当用户在指令里明确点名了其它 sheet 时才操作那个。\n\n"
+    ) if active_sheet else ""
     if issues:
-        user = (f"# 当前数据\n{current_md}\n\n# 你上一轮的 SQL(有问题)\n{last_sql}\n\n"
+        user = (scope + f"# 当前数据\n{current_md}\n\n# 你上一轮的 SQL(有问题)\n{last_sql}\n\n"
                 f"# 校验/执行报告(逐条修复)\n" + "\n".join(f"- {x}" for x in issues) +
                 f"\n\n# 用户指令\n{instruction}\n\n请输出修正后的完整 DuckDB SQL(JSON)。")
     else:
-        user = (f"# 当前数据(各 sheet 结构 + 样例)\n{current_md}\n\n"
+        user = (scope + f"# 当前数据(各 sheet 结构 + 样例)\n{current_md}\n\n"
                 f"# 用户指令\n{instruction}\n\n请输出一条或多条 DuckDB SQL(JSON)。")
     return await structured.ainvoke([SystemMessage(content=_prompt()), HumanMessage(content=user)])  # type: ignore
 
@@ -118,6 +133,7 @@ async def _gen(instruction: str, current_md: str, last_sql: str = "",
 # ───────────────────────── 主流程 ─────────────────────────
 async def run_edit_message(
     dataset_id: int, session_id: int, instruction: str, confirmed: bool,
+    active_sheet: str | None = None,
 ) -> AsyncIterator[WSStepInfo]:
     info = await get_dataset_info(dataset_id)
     if info is None or info.get("status") != "ready":
@@ -134,8 +150,8 @@ async def run_edit_message(
     yield WSStepInfo(step="理解指令", status="running")
     current_md = await asyncio.to_thread(_snapshot_with_ops, info, active_ops)
 
-    # 生成 → 校验 ⇄ 修正(含试执行绑定校验)
-    draft = await _gen(instruction, current_md)
+    # 生成 → 校验 ⇄ 修正(含试执行绑定校验)。active_sheet = 用户当前选中的 tab
+    draft = await _gen(instruction, current_md, active_sheet)
     sql = (draft.sql or "").strip()
     yield WSStepInfo(step="生成变更", status="success", data={"sql": sql, "reason": draft.reason})
 
@@ -148,7 +164,7 @@ async def run_edit_message(
                 return
             yield WSStepInfo(step=f"修正变更(第 {attempt + 1} 次)", status="running",
                              data={"issues": check.issues})
-            draft = await _gen(instruction, current_md, sql, check.issues)
+            draft = await _gen(instruction, current_md, active_sheet, sql, check.issues)
             sql = (draft.sql or "").strip()
             continue
 
@@ -162,14 +178,37 @@ async def run_edit_message(
                 return
             yield WSStepInfo(step=f"修正变更(第 {attempt + 1} 次)", status="running",
                              data={"error": result["error"]})
-            draft = await _gen(instruction, current_md, sql, [f"执行失败:{result['error']}"])
+            draft = await _gen(instruction, current_md, active_sheet, sql, [f"执行失败:{result['error']}"])
             sql = (draft.sql or "").strip()
             continue
 
-        diff, preview, sheet = result["diff"], result["preview"], result["sheet"]
-        summary = _summary(diff)
+        sheet, preview = result["sheet"], result["preview"]
 
-        # 破坏性且未确认 → 发待确认卡(带真实影响数),不落库
+        if result.get("created"):
+            # 新建汇总 sheet:无单元格 diff,摘要标 created_sheet + 行数
+            summary = {"changed": 0, "deleted": 0, "new_rows": 0, "added_cols": [],
+                       "dropped_cols": [], "renames": [],
+                       "created_sheet": sheet, "rows": result["rows"]}
+            affected = summary
+            diff_event = None
+        else:
+            diff = result["diff"]
+            summary = _summary(diff)
+            affected = {  # 摘要 + 明细 changes,供刷新后历史还原"列:旧→新"
+                **summary,
+                "changes": [
+                    {"col": c["col"], "old": c["old"], "new": c["new"]}
+                    for c in diff["cell_changes"][:20]
+                ],
+            }
+            diff_event = {  # 截断,避免超大
+                "cell_changes": diff["cell_changes"][:100],
+                "deleted": diff["deleted"][:100],
+                "renames": diff["renames"],
+                "added_cols": diff["added_cols"], "dropped_cols": diff["dropped_cols"],
+            }
+
+        # 破坏性且未确认 → 发待确认卡(带真实影响数),不落库(建汇总表不会触发)
         if check.needs_confirm and not confirmed:
             yield WSStepInfo(step="待确认", status="success", finish=True, data={
                 "needs_confirm": True, "sql": check.normalized_sql,
@@ -178,14 +217,6 @@ async def run_edit_message(
             })
             return
 
-        # 落 op 日志(affected 摘要 + 明细 changes,供刷新后历史还原"列:旧→新")
-        affected = {
-            **summary,
-            "changes": [
-                {"col": c["col"], "old": c["old"], "new": c["new"]}
-                for c in diff["cell_changes"][:20]
-            ],
-        }
         async with Session() as s:
             repo = DatasetEditRepository(s)
             await repo.add_op(session_id, nl=instruction, sql=check.normalized_sql,
@@ -194,13 +225,6 @@ async def run_edit_message(
             await s.commit()
 
         yield WSStepInfo(step="应用变更", status="success", finish=True, sql=check.normalized_sql, data={
-            "summary": summary,
-            "diff": {  # 截断,避免超大
-                "cell_changes": diff["cell_changes"][:100],
-                "deleted": diff["deleted"][:100],
-                "renames": diff["renames"],
-                "added_cols": diff["added_cols"], "dropped_cols": diff["dropped_cols"],
-            },
-            "preview": preview, "sheet": sheet,
+            "summary": summary, "diff": diff_event, "preview": preview, "sheet": sheet,
         })
         return
