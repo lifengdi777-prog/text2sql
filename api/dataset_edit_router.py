@@ -19,7 +19,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
-from agent.dataset_edit_agent.runner import run_edit_message
+from langchain.messages import HumanMessage
+
+from agent.dataset_edit_agent.graph import dataset_edit_graph
+from agent.dataset_edit_agent.schemas import DatasetEditContext, DatasetEditState
 from api.deps import get_current_user, require_owned_dataset
 from core.log import logger
 from repositories.dataset_edit import DatasetEditRepository
@@ -130,13 +133,21 @@ async def edit_message(dataset_id: int, session_id: int, body: EditMessageBody,
         if await DatasetEditRepository(s).get_owned(session_id, user_id) is None:
             raise HTTPException(status_code=404, detail="编辑会话不存在")
 
+    state = DatasetEditState(
+        messages=[HumanMessage(content=body.instruction)],
+        dataset_id=dataset_id, session_id=session_id,
+        active_sheet=body.active_sheet, confirmed=body.confirmed,
+    )
+    context = DatasetEditContext(user_id=user_id)
+
     async def _sse():
         yield f"data: {json.dumps({'session_id': session_id})}\n\n"
         try:
-            async for step in run_edit_message(dataset_id, session_id,
-                                               body.instruction, body.confirmed,
-                                               active_sheet=body.active_sheet):
-                yield f"data: {step.model_dump_json()}\n\n"
+            # subgraphs=True 让节点内 stream_writer 的 WSStepInfo 冒泡上来
+            async for _ns, chunk in dataset_edit_graph.astream(
+                input=state, context=context, stream_mode="custom", subgraphs=True,
+            ):
+                yield f"data: {chunk.model_dump_json()}\n\n"
         except Exception as exc:  # 不让异常冲断 SSE,发 error 卡优雅收尾
             logger.exception(f"编辑流异常(session={session_id}):{exc}")
             from agent.schemas import WSStepInfo
