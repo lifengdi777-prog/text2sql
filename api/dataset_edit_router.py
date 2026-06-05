@@ -41,24 +41,32 @@ class EditMessageBody(BaseModel):
 
 
 # ───────────────────────── 同步辅助(走 to_thread)─────────────────────────
+def _original_sheets(info: dict) -> set[str]:
+    """原文件自带的 sheet 名(来自数据集 schema);其余都是编辑中新建的(汇总/宽表)。"""
+    return set(((info.get("schema") or {}).get("sheets") or {}).keys())
+
+
 def _preview_all(info: dict, active_ops: list[str], size: int = 20) -> list[dict]:
-    """物化 + 重放 active op → 各 sheet 第 0 页预览(初始渲染用)。"""
+    """物化 + 重放 active op → 各 sheet 第 0 页预览(初始渲染用)。created 标记新建 sheet(可删)。"""
+    original = _original_sheets(info)
     wb = EditWorkbook.from_dataset(info)
     try:
         wb.replay(active_ops)
-        return [wb.preview(s, page=0, size=size) for s in wb.sheets()]
+        return [{**wb.preview(s, page=0, size=size), "created": s not in original}
+                for s in wb.sheets()]
     finally:
         wb.close()
 
 
 def _preview_one(info: dict, active_ops: list[str], sheet: str, page: int, size: int) -> dict:
     """物化 + 重放 → 指定 sheet 的某一页(翻页用)。"""
+    original = _original_sheets(info)
     wb = EditWorkbook.from_dataset(info)
     try:
         wb.replay(active_ops)
         if sheet not in wb.sheets() and wb.sheets():
             sheet = wb.sheets()[0]
-        return wb.preview(sheet, page=page, size=size)
+        return {**wb.preview(sheet, page=page, size=size), "created": sheet not in original}
     finally:
         wb.close()
 
@@ -178,6 +186,45 @@ async def undo(dataset_id: int, session_id: int,
     info = await get_dataset_info(dataset_id)
     sheets = await asyncio.to_thread(_preview_all, info, active_ops)
     return {"undone": undone is not None, "ops_count": len(active_ops),
+            "sheets": sheets, "ops": ops_payload}
+
+
+# ───────────────────────── 删除新建的 sheet ─────────────────────────
+@router.delete("/{dataset_id}/edit/{session_id}/sheet")
+async def delete_sheet(dataset_id: int, session_id: int, name: str,
+                       user_id: str = Depends(get_current_user)):
+    """删除编辑中**新建**的 sheet(汇总/宽表):撤销所有作用于它的操作(及对应历史),原文件 sheet 不可删。
+
+    返回结构与 undo 一致(sheets + ops),前端据此刷新 tab 与历史。
+    """
+    await require_owned_dataset(dataset_id, user_id)
+    info = await get_dataset_info(dataset_id)
+    if name in _original_sheets(info):
+        raise HTTPException(status_code=400, detail="原文件的工作表不能删除,只能删除编辑中新建的表")
+
+    Session = get_session_factory()
+    async with Session() as s:
+        repo = DatasetEditRepository(s)
+        if await repo.get_owned(session_id, user_id) is None:
+            raise HTTPException(status_code=404, detail="编辑会话不存在")
+
+        count = await repo.deactivate_sheet_ops(session_id, name)
+        if count == 0:
+            raise HTTPException(status_code=404, detail=f"未找到可删除的工作表「{name}」")
+        await repo.touch(session_id)
+
+        active_ops = await repo.active_sql(session_id)
+        ops_payload = _ops_payload(await repo.list_ops(session_id, active_only=True))
+        # 提交前试重放:若该表被其它表依赖(删后重放失败)→ 回滚,提示先删依赖方
+        try:
+            sheets = await asyncio.to_thread(_preview_all, info, active_ops)
+        except Exception as exc:
+            await s.rollback()
+            logger.warning(f"删 sheet「{name}」后重放失败,已回滚(session={session_id}):{exc}")
+            raise HTTPException(status_code=409, detail="该表被其它表引用,请先删除依赖它的表")
+        await s.commit()
+
+    return {"deleted": True, "removed_ops": count, "ops_count": len(active_ops),
             "sheets": sheets, "ops": ops_payload}
 
 

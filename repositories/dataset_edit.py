@@ -103,6 +103,22 @@ class DatasetEditRepository:
         op.active = False
         return op
 
+    async def deactivate_sheet_ops(self, session_id: int, sheet: str) -> int:
+        """删新建 sheet:把所有作用于该 sheet 的生效 op 置 active=False(= 撤销创建/修改它的那些步)。
+
+        返回置无效的条数(0 表示该 sheet 没有对应操作 → 多半不存在)。
+        """
+        ops = list((await self.session.scalars(
+            select(DatasetEditOp).where(
+                DatasetEditOp.session_id == session_id,
+                DatasetEditOp.active.is_(True),
+                DatasetEditOp.target_sheet == sheet,
+            )
+        )).all())
+        for op in ops:
+            op.active = False
+        return len(ops)
+
     async def delete_by_dataset(self, dataset_id: int) -> int:
         """删数据集时连带清理:删该数据集所有会话及其 op。返回删除的会话数。"""
         sess_ids = list((await self.session.scalars(

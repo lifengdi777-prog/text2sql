@@ -67,6 +67,27 @@ export async function discardEditSession(datasetId: number, sessionId: number): 
   await editApi.delete(`/dataset/${datasetId}/edit/${sessionId}`)
 }
 
+/** 删除新建的 sheet(汇总/宽表):撤销作用于它的所有操作 + 对应历史。返回与 undo 同构(sheets+ops)。 */
+export async function deleteEditSheet(
+  datasetId: number,
+  sessionId: number,
+  name: string,
+): Promise<EditUndoResp> {
+  try {
+    const { data } = await editApi.delete<EditUndoResp>(
+      `/dataset/${datasetId}/edit/${sessionId}/sheet`,
+      { params: { name } },
+    )
+    return data
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const detail = (err.response?.data as { detail?: string } | undefined)?.detail
+      throw new Error(detail || err.message || '删除失败')
+    }
+    throw err
+  }
+}
+
 /** 下载保样式 xlsx:取 blob → 触发浏览器下载。 */
 export async function downloadEdit(datasetId: number, sessionId: number): Promise<void> {
   const res = await editApi.get(`/dataset/${datasetId}/edit/${sessionId}/download`, {

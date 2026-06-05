@@ -9,6 +9,8 @@ export interface EditSheetPreview {
   rows: Record<string, EditCellValue>[]
   // 与 rows 一一对应的行 id(用于把 diff 精确映射到单元格做高亮);汇总表为空
   row_ids?: string[]
+  // 是否为编辑中新建的 sheet(汇总/宽表)→ 可删除;原文件 sheet 为 false/缺省
+  created?: boolean
   total: number
   page: number // 0-based
   size: number
