@@ -311,6 +311,8 @@ function exportCsv(message: AgentReplyMessage) {
 
 // ── 按需图表:默认只展示表格,用户点「生成图表」才调后端出图 ──
 const chartLoading = ref<Record<string, boolean>>({})
+// 出图后若后端只能给表格(无法画出任何图表),记下提示语,在按钮旁告知用户。
+const chartNotice = ref<Record<string, string>>({})
 
 // 该回复对应的用户问题(图表标题用):取它前面最近一条 user 消息
 function questionFor(message: AgentReplyMessage): string {
@@ -335,11 +337,16 @@ function displayConfig(message: AgentReplyMessage): ChartConfig | null {
 async function onGenerateChart(message: AgentReplyMessage) {
   if (!shouldShowResult(message.result) || chartLoading.value[message.id]) return
   chartLoading.value = { ...chartLoading.value, [message.id]: true }
+  chartNotice.value = { ...chartNotice.value, [message.id]: '' }
   try {
     const cfg = await generateChart(message.result, questionFor(message))
     if (cfg) {
       const idx = messages.value.findIndex((m) => m.id === message.id)
       if (idx !== -1) messages.value[idx] = { ...(messages.value[idx] as AgentReplyMessage), chartConfig: cfg }
+      // 后端只能给表格(line/bar/pie 等都画不出)→ 提醒用户该数据无法生成图表
+      if (!isEChartsType(cfg.chart_type)) {
+        chartNotice.value = { ...chartNotice.value, [message.id]: '该数据无法生成图表' }
+      }
     }
   } catch {
     /* 出图失败静默,用户可重试 */
@@ -851,6 +858,15 @@ onBeforeUnmount(() => {
               <span aria-hidden="true">📊</span>
             </button>
           </div>
+
+          <!-- 出图后若无法生成任何图表,提醒用户(仍保留表格展示) -->
+          <p
+            v-if="chartNotice[message.id]"
+            class="mt-2 inline-flex items-center gap-1 text-xs text-amber-600"
+          >
+            <span aria-hidden="true">⚠️</span>
+            {{ chartNotice[message.id] }}
+          </p>
 
           <!-- SQL 展开区:等宽显示真正执行的 SQL + 复制按钮 -->
           <div
