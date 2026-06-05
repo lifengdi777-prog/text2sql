@@ -603,8 +603,10 @@ async def delete_dataset(dataset_id: int) -> bool:
         except Exception as exc:
             logger.warning(f"对象存储清理 dataset {dataset_id} 失败:{exc}")
 
-    # MySQL 行
+    # MySQL 行 + 连带清理「智能助手」编辑会话/操作日志(编辑结果不回写源,删源即全清)
     async with Session() as session:
+        from repositories.dataset_edit import DatasetEditRepository
+        await DatasetEditRepository(session).delete_by_dataset(dataset_id)
         repo = UploadDatasetRepository(session)
         await repo.delete(dataset_id)
         await session.commit()
