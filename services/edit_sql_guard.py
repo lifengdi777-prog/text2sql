@@ -7,6 +7,7 @@
   - SELECT / UNION(对当前编辑态提问)
   - INSERT / UPDATE / DELETE(增删改;INSERT 必须显式列出列名)
   - ALTER TABLE … ADD COLUMN / DROP COLUMN / RENAME COLUMN(决策 2:加/删/改列)
+  - ALTER TABLE … ALTER COLUMN … TYPE …(改列类型,清洗时修数据类型;只放行带新类型的)
 
 拦截:
   - DROP TABLE / CREATE / ATTACH / COPY / PRAGMA / SET / 其它命令类语句
@@ -37,7 +38,7 @@ _BLOCKED_FUNCS = {
     "read_text", "read_blob", "glob", "parquet_metadata", "parquet_schema",
 }
 
-# ALTER 只放行这三类 action(对应加列 / 删列 / 改列名)
+# ALTER 只放行这几类 action(加列 / 删列 / 改列名);改列类型另在 _classify 里按"带新类型"放行。
 _ALLOWED_ALTER_ACTIONS = {"ColumnDef", "Drop", "RenameColumn"}
 
 # 顶层语句白名单(其余一律拦)
@@ -158,9 +159,15 @@ def _classify(st: exp.Expression, issues: list[str]) -> str | None:
         return "delete"
     if isinstance(st, exp.Alter):
         actions = st.args.get("actions") or []
-        bad = [type(a).__name__ for a in actions if type(a).__name__ not in _ALLOWED_ALTER_ACTIONS]
-        if bad:
-            issues.append(f"ALTER 只支持加列/删列/改列名,检测到不支持的操作:{bad}")
+        for a in actions:
+            name = type(a).__name__
+            if name in _ALLOWED_ALTER_ACTIONS:
+                continue
+            # ALTER COLUMN … TYPE …:清洗时修列类型(如文本数字转 INTEGER)。只放行"带新类型"的,
+            # 不放行 SET/DROP DEFAULT、SET/DROP NOT NULL(本场景用不上,且易出意外)。
+            if name == "AlterColumn" and a.args.get("dtype") is not None:
+                continue
+            issues.append(f"ALTER 只支持加列/删列/改列名/改列类型,检测到不支持的操作:{name}")
             return None
         return "alter"
     # 受控建汇总表:只放行 CREATE [OR REPLACE] TABLE … AS SELECT(决策 9),其它 CREATE 一律拦

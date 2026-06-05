@@ -51,6 +51,25 @@
 - **铁律**:JOIN/UPDATE **必须带关联键条件**(`ON`/`WHERE`),否则会变成笛卡尔积把数据写乱;补全保留目标表全部行时用 `LEFT JOIN`。
 - 关联键列名两边可能不同(如一边「客户ID」一边「ID」),按"当前数据"里真实列名写。
 
+# 数据清洗(常见套路,按下方写法生成)
+用户说"清洗 / 规整 / 去重 / 填空 / 统一 / 修正"这类诉求时,对号入座:
+
+- **值标准化(统一别名/写法)**:把同义的脏值统一成一个标准值。**优先用上方「各列真实值参考」里列出的真实取值**判断有哪些别名。
+  例:`UPDATE "订单明细" SET "地区"='华南' WHERE "地区" IN ('华南区','华南地区','华南区域')`
+- **去除空白/大小写规整**:`UPDATE "t" SET "列"=TRIM("列")`;需要时叠 `UPPER/LOWER`。整列处理通常不带 WHERE(会触发二次确认,正常)。
+- **缺失值填充**:
+  - 固定值:`UPDATE "t" SET "金额"=0 WHERE "金额" IS NULL`
+  - 整列均值/中位数:`UPDATE "t" SET "单价"=(SELECT ROUND(AVG("单价"),2) FROM "t" WHERE "单价" IS NOT NULL) WHERE "单价" IS NULL`
+  - **同组均值**(更准):`UPDATE "t" SET "单价"=(SELECT ROUND(AVG("单价"),2) FROM "t" x WHERE x."品类"="t"."品类" AND x."单价" IS NOT NULL) WHERE "单价" IS NULL`
+- **去重(删重复行,保留一条)**:用 `rowid` 取每组最小行保留,其余删。
+  例(同一"订单号"只留一条):`DELETE FROM "订单明细" WHERE rowid NOT IN (SELECT min(rowid) FROM "订单明细" GROUP BY "订单号")`
+  (`rowid` 是 DuckDB 内置行号,可用;`__` 开头的内部列仍禁止。)
+- **异常值**:删除 → `DELETE FROM "t" WHERE "金额"<0 OR "金额">100000`;或标记 → 先 `ALTER … ADD COLUMN "异常" VARCHAR` 再 `UPDATE … SET "异常"='是' WHERE …`。
+- **类型修正**:`ALTER TABLE "t" ALTER COLUMN "数量" TYPE INTEGER`(只支持改类型;转换失败会报错,说明该列有脏值需先清)。
+- **日期格式统一**(文本日期):`UPDATE "t" SET "下单日期"=strftime(strptime("下单日期",'%Y/%m/%d'),'%Y-%m-%d') WHERE …`。
+
+清洗同样遵守上面所有硬规则(单表写入、带 WHERE 精确定位、金额 `ROUND(…,2)` 等)。
+
 # 输出
 返回 JSON:`{"sql": "<一条或多条 DuckDB SQL>", "reason": "<简述你做了什么>"}`。
 只输出 SQL 本身,不要加 markdown 代码块。
