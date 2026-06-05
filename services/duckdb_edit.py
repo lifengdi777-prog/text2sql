@@ -77,17 +77,32 @@ class EditWorkbook:
     def _materialize(self, name: str, df: pd.DataFrame, lin: dict | None) -> None:
         df = df.copy()
         n = len(df)
+        lin = lin or {}
         # row_origin:原始 Excel 行号;缺失/长度不符 → 退化为顺序行号(2 起,header 占 1 行)
-        row_origin = (lin or {}).get("row_origin")
+        row_origin = lin.get("row_origin")
         if not row_origin or len(row_origin) != n:
             row_origin = list(range(2, 2 + n))
         # __row_id 用 'x'+excel_row(原始行稳定可复现);__excel_row 供回写定位
         df.insert(0, EXCEL_ROW, [int(r) for r in row_origin])
         df.insert(0, ROW_ID, [f"x{int(r)}" for r in row_origin])
+        # 加回被剔除的合计/汇总行(仅编辑可见;问数 parquet 不含它们 → 问数零影响)。
+        # 它们带原始 excel_row,故是"原件已存在的行",编辑后导出走改值/删行(写回原位),不是新增行。
+        extra = lin.get("extra_rows") or []
+        if extra:
+            data_cols = [c for c in df.columns if c not in META_COLS]
+            rows = []
+            for e in extra:
+                vals = e.get("values") or {}
+                row = {c: vals.get(c) for c in data_cols}
+                row[EXCEL_ROW] = int(e["excel_row"])
+                row[ROW_ID] = f"x{int(e['excel_row'])}"
+                rows.append(row)
+            extra_df = pd.DataFrame(rows, columns=df.columns)
+            df = pd.concat([df, extra_df], ignore_index=True)
         self.con.register("_src", df)
         self.con.execute(f"CREATE TABLE {_q(name)} AS SELECT * FROM _src")
         self.con.unregister("_src")
-        self.lineage[name] = lin or {}
+        self.lineage[name] = lin
 
     # ---- 编辑 ----
     def replay(self, ops: list[str]) -> None:

@@ -120,14 +120,17 @@ def _normalize_columns(cols: list[Any]) -> list[str]:
     return out
 
 
-def _drop_total_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """删 小计/合计/总计 行:任一单元格精确等于关键词就删。"""
+def _total_row_mask(df: pd.DataFrame) -> pd.Series:
+    """标出 小计/合计/总计 行:任一单元格精确等于关键词即判为汇总行。返回布尔 Series。
+
+    问数会丢弃这些行(避免聚合重复计算);智能助手则把它们加回可编辑表(见 clean_sheet)。
+    """
     def is_total(row: pd.Series) -> bool:
         for v in row:
             if isinstance(v, str) and v.strip().lower() in _TOTAL_KEYWORDS:
                 return True
         return False
-    return df[~df.apply(is_total, axis=1)]
+    return df.apply(is_total, axis=1)
 
 
 # 日期特征:含 2025-01 / 2025/1 / 2025年 / 时:分 之类才值得尝试日期解析
@@ -205,23 +208,38 @@ def clean_sheet(
     # 3) 列名规整(只重命名,不改顺序/数量)→ 建 列名→Excel列号 映射
     df.columns = _normalize_columns(list(df.columns))
     col_excel = {name: surviving_excel_cols[k] for k, name in enumerate(df.columns)}
-    # 4) 删合计行(保留 index 标签)
-    df = _drop_total_rows(df)
-    if df.empty:
-        return None, None
-    # 5) 类型清洗
+    # 4) 标出合计/汇总行(剔除前按字符串匹配),但**先不删**
+    total_mask = _total_row_mask(df)
+    # 5) 类型清洗:对**含合计行的全表**做,保证合计行的数值列(如 "48,080")也被解析成数字,
+    #    这样后面把合计行加回编辑表时列类型与明细一致(否则混入文本会让整列退化成 VARCHAR)。
     for c in df.columns:
         df[c] = _coerce_column(df[c])
-    # 6) reset 前捕获行来源:index 标签是原始 0-based 读入位置 → + offset 得 1-based Excel 行
-    row_origin = [int(p) + data_start_excel_row for p in df.index]
-    df = df.reset_index(drop=True)
+    # 6) 拆分:kept = 明细(进 parquet,问数只看它);dropped = 合计行(只记进血缘给编辑加回)
+    kept = df[~total_mask]
+    if kept.empty:
+        return None, None
+    dropped = df[total_mask]
+    # 合计行:记下原始 Excel 行号 + 各列值(供 duckdb_edit 物化时加回可编辑表)。
+    # 问数 parquet 仍只含 kept,完全不受影响。
+    extra_rows = [
+        {
+            "excel_row": int(idx) + data_start_excel_row,
+            "values": {col: _jsonable(dropped.at[idx, col]) for col in dropped.columns},
+        }
+        for idx in dropped.index
+    ]
+    # reset 前捕获明细行来源:index 标签是原始 0-based 读入位置 → + offset 得 1-based Excel 行
+    row_origin = [int(p) + data_start_excel_row for p in kept.index]
+    kept = kept.reset_index(drop=True)
     lineage = {
         "header_row": data_start_excel_row - 1,
         "data_start_row": data_start_excel_row,
         "row_origin": row_origin,
         "col_excel": col_excel,
+        # 被剔除的合计/汇总行(问数不读;编辑物化时加回,使其可见可改)
+        "extra_rows": extra_rows,
     }
-    return df, lineage
+    return kept, lineage
 
 
 # ───────── Profile ─────────────────────────────────────
