@@ -15,10 +15,12 @@ import json
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+from typing import Literal
+
 from langchain.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from agent.llm import llm
+from agent.llm import fast_llm, llm
 from agent.schemas import WSStepInfo
 from core.log import logger
 from repositories.dataset_edit import DatasetEditRepository
@@ -29,19 +31,55 @@ from services.excel_ingest import get_session_factory
 
 MAX_RETRY = 2
 _PROMPT = Path("agent/dataset_edit_agent/prompts/edit_sql_generator.md")
-_PROMPT_CACHE: str | None = None
+_INTENT_PROMPT = Path("agent/dataset_edit_agent/prompts/edit_intent.md")
+_PROMPT_CACHE: dict[str, str] = {}
+
+
+def _read(path: Path) -> str:
+    key = str(path)
+    if key not in _PROMPT_CACHE:
+        _PROMPT_CACHE[key] = path.read_text(encoding="utf-8")
+    return _PROMPT_CACHE[key]
 
 
 def _prompt() -> str:
-    global _PROMPT_CACHE
-    if _PROMPT_CACHE is None:
-        _PROMPT_CACHE = _PROMPT.read_text(encoding="utf-8")
-    return _PROMPT_CACHE
+    return _read(_PROMPT)
 
 
 class _SQLDraft(BaseModel):
     sql: str
     reason: str = ""
+
+
+class _EditIntent(BaseModel):
+    kind: Literal["edit", "query", "chitchat"]
+    reply: str = ""
+
+
+_GUIDE_QUERY = "这看起来是查询 / 分析问题。智能助手只负责「改数据」——查询、统计请用「开启问数」;想看当前数据直接翻左边预览表即可。"
+_GUIDE_CHITCHAT = "你好!我是数据编辑助手,可以帮你改这份表 —— 比如改某个值、删符合条件的行、加一列、生成汇总。说说你想怎么改?"
+
+
+def _schema_brief(info: dict) -> str:
+    """从 info 提取轻量结构(sheet: 列名…),供意图分类用,无需物化。"""
+    sheets = (info.get("schema") or {}).get("sheets") or {}
+    parts = []
+    for name, s in sheets.items():
+        cols = [str(c.get("name")) for c in (s.get("columns") or [])]
+        parts.append(f"{name}: " + ", ".join(cols))
+    return "\n".join(parts) or "(无结构)"
+
+
+async def _classify_intent(instruction: str, schema_brief: str) -> _EditIntent:
+    """前置意图分类(轻量 fast_llm):edit / query / chitchat。失败默认 edit,不误伤正常编辑。"""
+    structured = fast_llm.with_structured_output(_EditIntent, method="json_mode")
+    user = f"# 数据集结构\n{schema_brief}\n\n# 用户输入\n{instruction}"
+    try:
+        sysp = _read(_INTENT_PROMPT)
+        return await structured.ainvoke([SystemMessage(content=sysp), HumanMessage(content=user)])  # type: ignore
+    except Exception as exc:
+        logger.warning(f"编辑意图分类失败,默认按编辑处理:{exc}")
+        return _EditIntent(kind="edit")
 
 
 # ───────────────────────── 同步:物化 / 试应用(走 to_thread)─────────────────────────
@@ -157,12 +195,24 @@ async def run_edit_message(
     # 原始数据 sheet:不可被 CREATE 覆盖(protected)
     data_sheets = set((info.get("schema") or {}).get("sheets", {}).keys())
 
+    # 意图识别(前置,只用结构、不物化):闲聊 / 查询 → 直接短路引导,不生成执行 SQL
+    yield WSStepInfo(step="意图识别", status="running")
+    intent = await _classify_intent(instruction, _schema_brief(info))
+    if intent.kind == "query":
+        yield WSStepInfo(step="意图识别", status="success", finish=True,
+                         data={"guidance": intent.reply or _GUIDE_QUERY})
+        return
+    if intent.kind == "chitchat":
+        yield WSStepInfo(step="意图识别", status="success", finish=True,
+                         data={"guidance": intent.reply or _GUIDE_CHITCHAT})
+        return
+    yield WSStepInfo(step="意图识别", status="success")  # edit → 继续
+
     # 取已应用的 op(重放基线)
     Session = get_session_factory()
     async with Session() as s:
         active_ops = await DatasetEditRepository(s).active_sql(session_id)
 
-    yield WSStepInfo(step="理解指令", status="running")
     current_md, all_sheets = await asyncio.to_thread(
         _snapshot_with_ops, info, active_ops, active_sheet)
     # 可引用的表 = 当前会话的所有 sheet(含已建的汇总表)→ 否则读不了自己建的汇总表
@@ -185,6 +235,14 @@ async def run_edit_message(
             draft = await _gen(instruction, current_md, active_sheet, sql, check.issues)
             sql = (draft.sql or "").strip()
             continue
+
+        # 纯查询(LLM 产出 SELECT)= 查询意图 → 智能助手不办,引导去「开启问数」,不落库
+        if check.op_type == "select":
+            yield WSStepInfo(step="提示", status="success", finish=True, data={
+                "guidance": "这看起来是查询 / 分析类问题。智能助手只负责「改数据」——"
+                            "查询、统计分析请用「开启问数」;想看当前数据直接翻左边预览表即可。",
+            })
+            return
 
         # 试执行(绑定校验)+ 算 diff
         result = await asyncio.to_thread(

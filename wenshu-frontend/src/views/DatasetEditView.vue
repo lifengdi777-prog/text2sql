@@ -77,6 +77,7 @@ function historyFromOps(ops: EditOpRecord[]): EditTurn[] {
     pendingSql: null,
     hint: null,
     error: null,
+    guidance: null,
   }))
 }
 
@@ -363,6 +364,11 @@ async function onDiscard() {
                     </li>
                   </ul>
                 </template>
+              </div>
+
+              <!-- 查询类 → 引导去问数 -->
+              <div v-else-if="t.guidance" class="mt-1.5 rounded-lg bg-sky-50 p-2 text-[11px] text-sky-700">
+                💡 {{ t.guidance }}
               </div>
 
               <!-- 失败 -->

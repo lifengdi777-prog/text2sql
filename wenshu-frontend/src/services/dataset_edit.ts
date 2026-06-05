@@ -109,6 +109,11 @@ function applyEvent(turn: EditTurn, ev: Record<string, unknown>): EditTurn {
     next.sql = (data.sql as string) ?? null
     next.reason = (data.reason as string) ?? null
   }
+  if (data && typeof data.guidance === 'string') {
+    next.guidance = data.guidance as string
+    next.status = 'success'
+    return next
+  }
   if (step === '待确认' && data) {
     next.status = 'need_confirm'
     next.pendingSql = (data.sql as string) ?? null
@@ -153,6 +158,7 @@ export async function streamEditMessage(
     pendingSql: null,
     hint: null,
     error: null,
+    guidance: null,
   }
   opts.onStep(turn)
 

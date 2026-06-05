@@ -86,4 +86,5 @@ export interface EditTurn {
   pendingSql: string | null // need_confirm 时待执行的 SQL
   hint: string | null
   error: string | null
+  guidance: string | null // 查询类问题 → 引导去「开启问数」的提示
 }
