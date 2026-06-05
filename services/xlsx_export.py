@@ -107,8 +107,25 @@ def patch_sheet(ws: Worksheet, diff: dict, final_df: pd.DataFrame,
                      reverse=True):
         ws.delete_rows(er, 1)
 
-    # 注:new_rows(新增整行)暂未在原件物理 insert —— MVP 先支持改/删/加列,
-    # 新增行的保样式插入留待后续(需 clone 邻行样式 + 处理 excel_row 偏移)。TODO。
+    # ⑥ 新增行:追加到表尾。新行无原始 excel_row,按**当前表头**(经加/删/改列后的实际列)
+    #    匹配列名写值,样式克隆上一行,数值按 §6.1 镜像原列。
+    new_rows = diff.get("new_rows") or []
+    if new_rows:
+        header_idx = {
+            str(ws.cell(header_row, c).value): c
+            for c in range(1, ws.max_column + 1)
+            if ws.cell(header_row, c).value is not None
+        }
+        for nr in new_rows:
+            r = ws.max_row + 1
+            for col_name, v in (nr.get("values") or {}).items():
+                c = header_idx.get(str(col_name))
+                if c is None:
+                    continue
+                cell = ws.cell(r, c)
+                cell.value = None if v is None else _render_like_column(ws, c, r, v, data_start)
+                if r - 1 >= data_start:           # 克隆上一行同列样式
+                    cell._style = copy(ws.cell(r - 1, c)._style)
 
 
 # ───────────────────────── 高层编排 ─────────────────────────

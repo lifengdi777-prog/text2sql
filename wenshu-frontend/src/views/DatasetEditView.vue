@@ -283,6 +283,7 @@ async function onDiscard() {
               <!-- 成功摘要 -->
               <div v-else-if="t.status === 'success' && t.summary" class="mt-1.5 text-emerald-600">
                 ✓ 已应用:改 {{ t.summary.changed }} 格 · 删 {{ t.summary.deleted }} 行
+                <template v-if="t.summary.new_rows">· 加 {{ t.summary.new_rows }} 行</template>
                 <template v-if="t.summary.added_cols.length">· 加列 {{ t.summary.added_cols.join('、') }}</template>
                 <template v-if="t.summary.dropped_cols.length">· 删列 {{ t.summary.dropped_cols.join('、') }}</template>
                 <template v-if="t.summary.renames.length">· 改名 {{ t.summary.renames.join('、') }}</template>
