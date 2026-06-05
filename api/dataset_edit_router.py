@@ -47,6 +47,15 @@ def _preview_all(info: dict, active_ops: list[str], limit: int = 100) -> list[di
         wb.close()
 
 
+def _ops_payload(ops: list) -> list[dict]:
+    """把已应用的 op 列表转成给前端重建历史气泡的数据。"""
+    return [
+        {"seq": o.seq, "nl": o.nl, "sql": o.sql, "op_type": o.op_type,
+         "target_sheet": o.target_sheet, "affected": o.affected}
+        for o in ops
+    ]
+
+
 # ───────────────────────── 会话 ─────────────────────────
 @router.post("/{dataset_id}/edit/session")
 async def open_session(dataset_id: int, user_id: str = Depends(get_current_user)):
@@ -60,11 +69,12 @@ async def open_session(dataset_id: int, user_id: str = Depends(get_current_user)
         sess = await repo.get_or_create_active(dataset_id, user_id)
         sid = sess.id
         active_ops = await repo.active_sql(sid)
+        ops_payload = _ops_payload(await repo.list_ops(sid, active_only=True))
         await s.commit()
 
     info = await get_dataset_info(dataset_id)
     sheets = await asyncio.to_thread(_preview_all, info, active_ops)
-    return {"session_id": sid, "ops_count": len(active_ops), "sheets": sheets}
+    return {"session_id": sid, "ops_count": len(active_ops), "sheets": sheets, "ops": ops_payload}
 
 
 @router.delete("/{dataset_id}/edit/{session_id}")
@@ -121,11 +131,13 @@ async def undo(dataset_id: int, session_id: int,
         if undone is not None:
             await repo.touch(session_id)
         active_ops = await repo.active_sql(session_id)
+        ops_payload = _ops_payload(await repo.list_ops(session_id, active_only=True))
         await s.commit()
 
     info = await get_dataset_info(dataset_id)
     sheets = await asyncio.to_thread(_preview_all, info, active_ops)
-    return {"undone": undone is not None, "ops_count": len(active_ops), "sheets": sheets}
+    return {"undone": undone is not None, "ops_count": len(active_ops),
+            "sheets": sheets, "ops": ops_payload}
 
 
 # ───────────────────────── 下载(保样式)─────────────────────────

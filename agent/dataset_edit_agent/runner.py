@@ -178,11 +178,18 @@ async def run_edit_message(
             })
             return
 
-        # 落 op 日志 + 收尾
+        # 落 op 日志(affected 摘要 + 明细 changes,供刷新后历史还原"列:旧→新")
+        affected = {
+            **summary,
+            "changes": [
+                {"col": c["col"], "old": c["old"], "new": c["new"]}
+                for c in diff["cell_changes"][:20]
+            ],
+        }
         async with Session() as s:
             repo = DatasetEditRepository(s)
             await repo.add_op(session_id, nl=instruction, sql=check.normalized_sql,
-                              op_type=check.op_type, target_sheet=sheet, affected=summary)
+                              op_type=check.op_type, target_sheet=sheet, affected=affected)
             await repo.touch(session_id)
             await s.commit()
 

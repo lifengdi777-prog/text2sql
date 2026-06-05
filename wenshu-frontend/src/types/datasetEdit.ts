@@ -10,20 +10,41 @@ export interface EditSheetPreview {
   total: number
 }
 
+// 已应用的一条操作(用于重建历史气泡)
+export interface EditOpRecord {
+  seq: number
+  nl: string | null
+  sql: string | null
+  op_type: string
+  target_sheet: string | null
+  affected: EditSummary | null
+}
+
 // POST /edit/session 与 /undo 的返回
 export interface EditSessionResp {
   session_id: number
   ops_count: number
   sheets: EditSheetPreview[]
+  ops: EditOpRecord[]
 }
 
 export interface EditUndoResp {
   undone: boolean
   ops_count: number
   sheets: EditSheetPreview[]
+  ops: EditOpRecord[]
 }
 
-// 变更摘要(runner._summary)
+export interface EditCellChange {
+  // 直播流里带 row_id/excel_row;历史还原(来自 op.affected.changes)只有 col/old/new
+  row_id?: string
+  excel_row?: number | null
+  col: string
+  old: EditCellValue
+  new: EditCellValue
+}
+
+// 变更摘要(runner._summary + 落库时附带的明细 changes)
 export interface EditSummary {
   changed: number
   deleted: number
@@ -31,14 +52,8 @@ export interface EditSummary {
   added_cols: string[]
   dropped_cols: string[]
   renames: string[] // ["旧→新", ...]
-}
-
-export interface EditCellChange {
-  row_id: string
-  excel_row: number | null
-  col: string
-  old: EditCellValue
-  new: EditCellValue
+  // 落库的明细(列:旧→新,截前若干条),供刷新后历史气泡还原
+  changes?: EditCellChange[]
 }
 
 // 应用变更 finish 事件里的 diff(已截断)

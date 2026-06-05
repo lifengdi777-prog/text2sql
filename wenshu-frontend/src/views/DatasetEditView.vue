@@ -9,7 +9,7 @@ import {
   discardEditSession,
   downloadEdit,
 } from '@/services/dataset_edit'
-import type { EditSheetPreview, EditTurn } from '@/types/datasetEdit'
+import type { EditSheetPreview, EditTurn, EditOpRecord } from '@/types/datasetEdit'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,12 +38,40 @@ function setSheets(list: EditSheetPreview[]) {
   }
 }
 
+// 用已应用的操作日志重建历史气泡(刷新/重进后仍能看到做过什么)
+function historyFromOps(ops: EditOpRecord[]): EditTurn[] {
+  return ops.map((o) => ({
+    id: `op-${o.seq}`,
+    instruction: o.nl ?? '',
+    steps: [],
+    sql: o.sql,
+    reason: null,
+    status: 'success' as const,
+    summary: o.affected,
+    // 用落库的明细还原"列:旧→新"(直播时来自流,刷新后来自 affected.changes)
+    diff: o.affected?.changes?.length
+      ? {
+          cell_changes: o.affected.changes,
+          deleted: [],
+          renames: [],
+          added_cols: [],
+          dropped_cols: [],
+        }
+      : null,
+    preview: null,
+    pendingSql: null,
+    hint: null,
+    error: null,
+  }))
+}
+
 onMounted(async () => {
   try {
     const resp = await openEditSession(datasetId)
     sessionId.value = resp.session_id
     opsCount.value = resp.ops_count
     setSheets(resp.sheets)
+    turns.value = historyFromOps(resp.ops)
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : '打开编辑会话失败'
   } finally {
@@ -106,6 +134,7 @@ async function onUndo() {
     const resp = await undoEdit(datasetId, sessionId.value)
     opsCount.value = resp.ops_count
     setSheets(resp.sheets)
+    turns.value = historyFromOps(resp.ops) // 撤销后历史与实际应用的 op 对齐
   } finally {
     busy.value = false
   }
