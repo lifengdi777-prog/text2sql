@@ -54,9 +54,16 @@ class EditSQLCheck:
     normalized_sql: str = ""           # sqlglot 重新序列化(多语句用 ; 连接)
 
 
-def validate_edit_sql(sql: str, known_sheets: set[str]) -> EditSQLCheck:
-    """校验一条(或多条)编辑 SQL。known_sheets = 该数据集的合法 sheet 表名集合。"""
+def validate_edit_sql(sql: str, known_sheets: set[str],
+                      protected_sheets: set[str] | None = None) -> EditSQLCheck:
+    """校验一条(或多条)编辑 SQL。
+
+    known_sheets:**可引用**的 sheet(原始数据 sheet + 会话内已建的汇总表)——能读/能改。
+    protected_sheets:**不可被 CREATE 覆盖**的 sheet(仅原始数据 sheet)。
+      不传 → 默认等于 known_sheets(严格:任何已知表都不让 CREATE 覆盖)。
+    """
     issues: list[str] = []
+    protected = protected_sheets if protected_sheets is not None else known_sheets
     try:
         statements = [s for s in sqlglot.parse(sql, read="duckdb") if s is not None]
     except Exception as exc:
@@ -80,8 +87,8 @@ def validate_edit_sql(sql: str, known_sheets: set[str]) -> EditSQLCheck:
         if isinstance(st, exp.Create) and st.this is not None:
             create_target = st.this.name
             create_targets.add(create_target)
-            if create_target in known_sheets:
-                issues.append(f"不能用 CREATE 覆盖已有数据表「{create_target}」(请换个汇总表名)")
+            if create_target in protected:
+                issues.append(f"不能用 CREATE 覆盖原始数据表「{create_target}」(请换个汇总表名)")
 
         # 其余引用的表:必须都是已知 sheet(CREATE 目标除外)
         st_tables = {t.name for t in st.find_all(exp.Table)}

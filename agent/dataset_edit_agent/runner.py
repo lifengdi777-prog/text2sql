@@ -45,13 +45,17 @@ class _SQLDraft(BaseModel):
 
 
 # ───────────────────────── 同步:物化 / 试应用(走 to_thread)─────────────────────────
-def _snapshot_with_ops(info: dict, active_ops: list[str]) -> str:
-    """渲染"当前数据"(各 sheet 列 + 前几行样例)给 LLM 写 SQL 参考。"""
+def _snapshot_with_ops(info: dict, active_ops: list[str]) -> tuple[str, list[str]]:
+    """渲染"当前数据"(各 sheet 列 + 前几行样例)给 LLM 参考,并返回当前所有 sheet 名。
+
+    sheet 名含会话内新建的汇总表 → 调用方据此构造可引用表集合(否则读不了自己建的汇总表)。
+    """
     wb = EditWorkbook.from_dataset(info)
     try:
         wb.replay(active_ops)
+        sheets = wb.sheets()
         lines: list[str] = []
-        for s in wb.sheets():
+        for s in sheets:
             prev = wb.preview(s, page=0, size=5)
             cols = ", ".join(f'"{c}"' for c in prev["columns"])
             lines.append(f'### Sheet "{s}"(当前 {prev["total"]} 行)\n列:{cols}')
@@ -62,7 +66,7 @@ def _snapshot_with_ops(info: dict, active_ops: list[str]) -> str:
                 vals = e.get("values") or {}
                 lines.append("  汇总行(聚合时用 WHERE 排除它):"
                              + json.dumps(vals, ensure_ascii=False, default=str))
-        return "\n".join(lines) or "(无数据)"
+        return ("\n".join(lines) or "(无数据)"), sheets
     finally:
         wb.close()
 
@@ -140,7 +144,8 @@ async def run_edit_message(
         yield WSStepInfo(step="加载数据", status="error",
                          data={"error": "数据集不存在或不可用"}, finish=True)
         return
-    known_sheets = set((info.get("schema") or {}).get("sheets", {}).keys())
+    # 原始数据 sheet:不可被 CREATE 覆盖(protected)
+    data_sheets = set((info.get("schema") or {}).get("sheets", {}).keys())
 
     # 取已应用的 op(重放基线)
     Session = get_session_factory()
@@ -148,7 +153,9 @@ async def run_edit_message(
         active_ops = await DatasetEditRepository(s).active_sql(session_id)
 
     yield WSStepInfo(step="理解指令", status="running")
-    current_md = await asyncio.to_thread(_snapshot_with_ops, info, active_ops)
+    current_md, all_sheets = await asyncio.to_thread(_snapshot_with_ops, info, active_ops)
+    # 可引用的表 = 当前会话的所有 sheet(含已建的汇总表)→ 否则读不了自己建的汇总表
+    known_sheets = set(all_sheets) | data_sheets
 
     # 生成 → 校验 ⇄ 修正(含试执行绑定校验)。active_sheet = 用户当前选中的 tab
     draft = await _gen(instruction, current_md, active_sheet)
@@ -156,7 +163,7 @@ async def run_edit_message(
     yield WSStepInfo(step="生成变更", status="success", data={"sql": sql, "reason": draft.reason})
 
     for attempt in range(MAX_RETRY + 1):
-        check = validate_edit_sql(sql, known_sheets)
+        check = validate_edit_sql(sql, known_sheets, protected_sheets=data_sheets)
         if not check.ok:
             if attempt >= MAX_RETRY:
                 yield WSStepInfo(step="校验变更", status="error",

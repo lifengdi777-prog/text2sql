@@ -29,6 +29,9 @@
     - 分组统计:`CREATE OR REPLACE TABLE "各工厂产量" AS SELECT "工厂", ROUND(SUM("产量"),2) AS "总产量" FROM "生产明细" GROUP BY "工厂"`
     - 聚合时**排除已有汇总行**(`WHERE "工厂" NOT IN ('合计','小计','总计','汇总')`),金额小数用 `ROUND(...,2)`。
     - 只读一个数据 sheet(不跨表 JOIN);汇总表是新表,数据 sheet 不动。
+    - **对"当前选中的汇总 sheet"再加工(如排序)→ 用 `CREATE OR REPLACE TABLE "<当前选中的同名 sheet>" AS SELECT … ORDER BY …` 覆盖它本身**,
+      不要新建带后缀(如 `_降序`)的表。例:在「各工厂产量」上说"按总产量降序" →
+      `CREATE OR REPLACE TABLE "各工厂产量" AS SELECT * FROM "各工厂产量" ORDER BY "总产量" DESC`。
 
 # 输出
 返回 JSON:`{"sql": "<一条或多条 DuckDB SQL>", "reason": "<简述你做了什么>"}`。
