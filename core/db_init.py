@@ -54,6 +54,8 @@ async def ensure_app_tables() -> None:
     """在 meta 库建 6 张元数据表;在 upload 库建用户/上传相关表(沿用 init_upload 的 create_all)。"""
     from clients.mysql import meta_mysql_client
     from services.excel_ingest import get_session_factory
+    # 导入以注册到 Base.metadata,供下面 upload 库 create_all 一并建表(编辑会话/操作日志)
+    from models.dataset_edit import DatasetEditOp, DatasetEditSession  # noqa: F401
 
     # meta 库:只建这 6 张
     async with meta_mysql_client.engine.begin() as conn:
