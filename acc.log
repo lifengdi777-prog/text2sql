@@ -1,0 +1,14 @@
+E:\wenshu\text2sql\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+INFO:     Started server process [33900]
+INFO:     Waiting for application startup.
+Can't create database 'meta'; database exists
+Can't create database 'upload'; database exists
+[32m2026-06-05 16:45:58.064[0m | [1mINFO    [0m | [36mservices.object_store[0m:[36mensure_bucket[0m:[36m49[0m - [1m对象存储 bucket 'wenshu-datasets' 已存在[0m
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51172 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51173 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56052 - "POST /chart HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:55824 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58731 - "POST /chart HTTP/1.1" 400 Bad Request

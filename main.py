@@ -9,6 +9,7 @@ from api.agent_router import router as agent_router
 from api.upload_router import router as upload_router
 from api.dataset_query_router import router as dataset_query_router
 from api.dataset_edit_router import router as dataset_edit_router
+from api.chart_router import router as chart_router
 from api.auth_router import router as auth_router
 from api.conversation_router import router as conversation_router
 from api.health_router import router as health_router
@@ -61,6 +62,8 @@ app.include_router(upload_router)
 app.include_router(dataset_query_router)
 # 数据集「智能助手」编辑接口(/dataset/{id}/edit/*) —— 自然语言增删改 + 保样式下载
 app.include_router(dataset_edit_router)
+# 按需图表接口(POST /chart) —— 问数结果由前端点「生成图表」时才调,不再自动出图
+app.include_router(chart_router)
 # 会话历史接口(GET/PATCH/DELETE /conversations) —— 主图 + 数据集问答历史持久化
 app.include_router(conversation_router)
 # 健康检查(GET /healthz 探活 / GET /readyz 依赖就绪) —— 给 LB / K8s 探针与上线自检

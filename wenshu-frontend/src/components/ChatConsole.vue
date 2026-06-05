@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { hasDisplayableResult } from '@/lib/result-display'
 import { exportRowsToCsv } from '@/lib/export'
-import { toErrorMessage } from '@/services/agent'
+import { toErrorMessage, generateChart } from '@/services/agent'
 import {
   type ConversationBrief,
   type ConversationSource,
@@ -13,7 +13,7 @@ import {
   listConversations,
   renameConversation,
 } from '@/services/conversation'
-import type { AgentReplyMessage, ChatMessage, ResultRow, StreamFn } from '@/types/agent'
+import type { AgentReplyMessage, ChartConfig, ChatMessage, ResultRow, StreamFn } from '@/types/agent'
 
 import MetricCard from '@/components/MetricCard.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
@@ -307,6 +307,45 @@ function exportCsv(message: AgentReplyMessage) {
   if (!shouldShowResult(message.result)) return
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')
   exportRowsToCsv(message.result, `query_result_${stamp}.csv`)
+}
+
+// ── 按需图表:默认只展示表格,用户点「生成图表」才调后端出图 ──
+const chartLoading = ref<Record<string, boolean>>({})
+
+// 该回复对应的用户问题(图表标题用):取它前面最近一条 user 消息
+function questionFor(message: AgentReplyMessage): string {
+  const i = messages.value.findIndex((m) => m.id === message.id)
+  for (let j = i - 1; j >= 0; j--) {
+    const m = messages.value[j]
+    if (m && m.role === 'user') return (m as { content?: string }).content ?? ''
+  }
+  return ''
+}
+
+// 渲染用的配置:已生成图表则用它;否则结果有行 → 用表格配置(ChartPanel 按 rows 渲染表格)
+const TABLE_CONFIG = { chart_type: 'table', title: '查询结果', compatible_types: ['table'] } as unknown as ChartConfig
+
+function displayConfig(message: AgentReplyMessage): ChartConfig | null {
+  const cfg = message.chartConfig
+  if (cfg && (isEChartsType(cfg.chart_type) || cfg.chart_type === 'table')) return cfg
+  if (shouldShowResult(message.result)) return TABLE_CONFIG
+  return null
+}
+
+async function onGenerateChart(message: AgentReplyMessage) {
+  if (!shouldShowResult(message.result) || chartLoading.value[message.id]) return
+  chartLoading.value = { ...chartLoading.value, [message.id]: true }
+  try {
+    const cfg = await generateChart(message.result, questionFor(message))
+    if (cfg) {
+      const idx = messages.value.findIndex((m) => m.id === message.id)
+      if (idx !== -1) messages.value[idx] = { ...(messages.value[idx] as AgentReplyMessage), chartConfig: cfg }
+    }
+  } catch {
+    /* 出图失败静默,用户可重试 */
+  } finally {
+    chartLoading.value = { ...chartLoading.value, [message.id]: false }
+  }
 }
 
 // 执行链路折叠:执行完成(success)后默认折叠,用户可点击展开/再折叠。
@@ -795,9 +834,21 @@ onBeforeUnmount(() => {
               class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700"
               @click="exportCsv(message)"
             >
-              
+
               导出数据
               <span aria-hidden="true">⬇</span>
+            </button>
+
+            <!-- 按需生成图表:有结果且尚未出图时显示;生成后(echarts 图)自动隐藏 -->
+            <button
+              v-if="shouldShowResult(message.result) && !isEChartsType(message.chartConfig?.chart_type)"
+              type="button"
+              :disabled="chartLoading[message.id]"
+              class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              @click="onGenerateChart(message)"
+            >
+              {{ chartLoading[message.id] ? '生成中…' : '生成图表' }}
+              <span aria-hidden="true">📊</span>
             </button>
           </div>
 
@@ -832,13 +883,8 @@ onBeforeUnmount(() => {
             :config="message.chartConfig"
           />
           <ChartPanel
-            v-else-if="
-              message.status === 'success' &&
-              message.chartConfig &&
-              (isEChartsType(message.chartConfig.chart_type) ||
-                message.chartConfig.chart_type === 'table')
-            "
-            :config="message.chartConfig"
+            v-else-if="message.status === 'success' && displayConfig(message)"
+            :config="displayConfig(message)!"
             :rows="message.result"
           />
 

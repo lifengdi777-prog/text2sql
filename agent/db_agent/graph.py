@@ -20,7 +20,7 @@ from agent.db_agent.nodes.correct_sql import correct_sql
 from agent.db_agent.nodes.execute_sql import execute_sql
 from agent.db_agent.nodes.translate_columns import translate_columns  # 结果列名翻译(英文→中文)
 from agent.common.interpret_result import interpret_result  # 数据解读节点(共享,与图表并行)
-from agent.chart_agent import chart_subgraph  # 图表生成子图(以节点身份接入)
+# 图表改为前端按需生成,不再在主图自动链里接入 chart_subgraph
 from langchain.messages import HumanMessage
 from clients.mysql import dw_mysql_client, meta_mysql_client
 from clients.es import es_client
@@ -54,10 +54,7 @@ graph_builder.add_node(execute_sql)
 # 结果列名翻译:execute_sql 之后、图表/解读之前,把英文列 key 改成中文,
 # 让图表轴名/图例/表头与数据解读全部中文且一致。SQL 本身保持英文不变。
 graph_builder.add_node(translate_columns)
-# chart_agent 子图作为一个节点接入主图(LangGraph 1.x subgraph 模式)
-# 子图内部处理 4 种 sql_result 状态:正常多行→LLM 决策图表 / 单值→指标卡 / 空→empty / 报错→error
-graph_builder.add_node("generate_chart", chart_subgraph)
-# 数据解读节点：与 generate_chart 并行，二者都只依赖 sql_result
+# 数据解读节点(图表改为前端按需点击生成,不再在自动链里出图)
 graph_builder.add_node("interpret_result", interpret_result)
 
 #添加边
@@ -144,10 +141,7 @@ graph_builder.add_edge("correct_sql", "validate_sql")
 #  - interpret_result:自然语言解读
 #二者都读已翻译的 sql_result,所以图表与解读的列名一致。
 graph_builder.add_edge("execute_sql", "translate_columns")
-graph_builder.add_edge("translate_columns", "generate_chart")
 graph_builder.add_edge("translate_columns", "interpret_result")
-#两个分支各自终结到 END,LangGraph 会等两者都完成
-graph_builder.add_edge("generate_chart", END)
 graph_builder.add_edge("interpret_result", END)
 #编译图，生成最终的可执行图对象。
 graph = graph_builder.compile()

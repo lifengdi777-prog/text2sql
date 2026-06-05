@@ -113,7 +113,8 @@ function mergeReplyMessage(
   //  - 解读完成:数据解读步骤进入终态(success/error)
   // 数据解读是流式的(running 阶段就带累计文本),所以必须按步骤终态判断,不能只看 interpretation 是否非空。
   // 错误/空结果场景不产生数据解读事件,这里不会置 success,改由 ChatConsole 流结束后的兜底逻辑置 success。
-  const chartDone = nextChartConfig !== null
+  // 图表改为前端按需点击生成,不再随流自动产出 → 收尾只看「数据解读」是否完成
+  // (错误/空结果场景不产生解读事件,由 ChatConsole 流结束兜底置 success)
   const interpretSettled = nextSteps.some(
     (s) => s.step === '数据解读' && (s.status === 'success' || s.status === 'error'),
   )
@@ -134,7 +135,7 @@ function mergeReplyMessage(
     fanoutMessage: isFanoutData(event.data)
       ? (event.data.message ?? null)
       : current.fanoutMessage,
-    status: chartDone && interpretSettled ? 'success' : current.status,
+    status: interpretSettled ? 'success' : current.status,
   }
 }
 
@@ -273,6 +274,19 @@ export async function streamDatasetQuery(
     { query, conversation_id: options.conversationId ?? null },
     options,
   )
+}
+
+// 按需生成图表:把问数结果行 + 问题发给后端,返回 chart_config(用户点「生成图表」时调)。
+export async function generateChart(
+  rows: ResultRow[],
+  query: string,
+): Promise<ChartConfig | null> {
+  const { data } = await agentApi.post<{ chart_config: ChartConfig | null }>(
+    '/chart',
+    { rows, query },
+    { responseType: 'json' },
+  )
+  return data?.chart_config ?? null
 }
 
 export { toErrorMessage }

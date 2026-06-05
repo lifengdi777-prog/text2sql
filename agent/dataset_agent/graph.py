@@ -31,7 +31,6 @@
 """
 from langgraph.graph import END, START, StateGraph
 
-from agent.chart_agent import chart_subgraph
 from agent.dataset_agent.nodes.correct_sql import MAX_RETRY, correct_sql
 from agent.dataset_agent.nodes.execute_sql import execute_sql
 from agent.dataset_agent.nodes.generate_sql import generate_sql
@@ -70,8 +69,7 @@ def _build():
     g.add_node("validate_sql", validate_sql)
     g.add_node("correct_sql", correct_sql)
     g.add_node("execute_sql", execute_sql)
-    # 复用主项目的子图 / 节点(原样,不动)
-    g.add_node("generate_chart", chart_subgraph)
+    # 数据解读节点(图表改为前端按需点击生成,不再在自动链里出图)
     g.add_node("interpret_result", interpret_result)
 
     # 主路径:先加载 schema,再做(宽松的)意图识别,闲聊在此短路
@@ -93,12 +91,9 @@ def _build():
     )
     g.add_edge("correct_sql", "validate_sql")
 
-    # 执行后并行 fan-out:
-    # · chart_subgraph 内部已处理 state.error / sql_result==None → 出 error 卡或 empty 卡
+    # 执行后出结果 + 解读(图表改为前端按需生成):
     # · interpret_result 检测到 state.error / sql_result 空 → 直接跳过
-    g.add_edge("execute_sql", "generate_chart")
     g.add_edge("execute_sql", "interpret_result")
-    g.add_edge("generate_chart", END)
     g.add_edge("interpret_result", END)
 
     return g.compile()
