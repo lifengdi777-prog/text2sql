@@ -27,9 +27,18 @@ class DatasetQueryBody(BaseModel):
 async def _graph_chunks(dataset_id: int, query: str, user_id: str, user_name: str | None = None,
                         request_id: str | None = None, session_id: int | None = None):
     # 产出 WSStepInfo chunk;SSE 格式化 + 历史落库交给 stream_with_history
+    # 多轮:有会话则加载最近几轮(question+sql+结果快照)注入 history,供 parse_intent 做指代消解。
+    # 当前这轮的 user 消息此刻虽已落库,但还没 assistant 回复 → load_recent_turns 自动排除,不会自指。
+    history: list[dict] = []
+    if session_id is not None:
+        from repositories.conversation import ConversationRepository
+        from services.excel_ingest import get_session_factory
+        async with get_session_factory()() as s:
+            history = await ConversationRepository(s).load_recent_turns(session_id)
     state = DatasetAgentState(
         messages=[HumanMessage(content=query)],
         dataset_id=dataset_id,
+        history=history,
     )
     context = DatasetAgentContext(user_id=user_id)
     # Langfuse 追踪 + 运行元数据(未启用 Langfuse 时只带 run_name/metadata,无害)
