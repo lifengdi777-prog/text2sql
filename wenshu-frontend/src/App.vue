@@ -21,8 +21,8 @@ const isChatView = computed(() => route.name === 'db-chat' || route.name === 'da
 
 const navItems = [
   // 不再有「默认数据源」:数据库问数统一从「数据源」页选库后「开启问数」进入。
-  { key: 'source', label: '数据源', desc: 'MySQL 连接管理', to: '/sources', icon: '🗃️' },
-  { key: 'dataset', label: '数据集问答', desc: '上传的 Excel', to: '/datasets', icon: '📊' },
+  { key: 'source', label: '数据源', desc: 'MySQL 连接管理', to: '/sources' },
+  { key: 'dataset', label: '数据集问答', desc: '上传的 Excel', to: '/datasets' },
 ]
 
 // 各入口按路径前缀高亮('/db' '/sources' '/datasets' 互不为前缀)
@@ -61,7 +61,45 @@ async function logout() {
               : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50'
           "
         >
-          <span class="text-lg leading-none" aria-hidden="true">{{ item.icon }}</span>
+          <span
+            class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition"
+            :class="
+              isActive(item)
+                ? 'bg-sky-100 text-sky-600'
+                : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200 group-hover:text-slate-600'
+            "
+            aria-hidden="true"
+          >
+            <!-- 数据源:数据库圆柱 -->
+            <svg
+              v-if="item.key === 'source'"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="h-5 w-5"
+            >
+              <ellipse cx="12" cy="5" rx="7" ry="3" />
+              <path d="M5 5v14c0 1.66 3.13 3 7 3s7-1.34 7-3V5" />
+              <path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3" />
+            </svg>
+            <!-- 数据集问答:表格 -->
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="h-5 w-5"
+            >
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M3 9.5h18M3 14.5h18M9 4v16" />
+            </svg>
+          </span>
           <span class="flex flex-col">
             <span class="text-sm font-semibold">{{ item.label }}</span>
             <span class="text-xs text-slate-400">{{ item.desc }}</span>
