@@ -12,7 +12,8 @@
   - DROP TABLE / CREATE / ATTACH / COPY / PRAGMA / SET / 其它命令类语句
   - 读写文件函数(read_parquet / read_csv / glob …,防越权读写文件/对象存储)
   - 引用引擎内部血缘列(__row_id / __excel_row)
-  - 跨 sheet:整条指令涉及的表必须 ≤ 1 个、且都是已知 sheet(决策 1)
+  - 跨 sheet「一写多读」:可**读**任意张已知 sheet(JOIN/子查询补全),但一次只能**写入一张** sheet
+    (UPDATE/DELETE/ALTER/INSERT 目标 + CREATE 新表合计 ≤ 1 张被修改);被引用的表都须是已知 sheet。
 
 标记(不拦,交上层处理):
   - UPDATE / DELETE 不带 WHERE → needs_confirm(防"误删/误改全表",前端二次确认)
@@ -72,8 +73,7 @@ def validate_edit_sql(sql: str, known_sheets: set[str],
         return EditSQLCheck(ok=False, issues=["未检测到任何语句"])
 
     op_kinds: set[str] = set()
-    tables_all: set[str] = set()
-    create_targets: set[str] = set()
+    write_targets: set[str] = set()    # 被「写入/修改」的 sheet:UPDATE/DELETE/ALTER/INSERT 目标 + CREATE 新表
     needs_confirm = False
 
     for st in statements:
@@ -81,23 +81,24 @@ def validate_edit_sql(sql: str, known_sheets: set[str],
         if kind:
             op_kinds.add(kind)
 
-        # CREATE 的目标表是「新建的汇总 sheet」,允许是新名字,不参与"必须已知"校验;
-        # 但不能用 CREATE 覆盖已有数据 sheet。
-        create_target = None
-        if isinstance(st, exp.Create) and st.this is not None:
-            create_target = st.this.name
-            create_targets.add(create_target)
-            if create_target in protected:
-                issues.append(f"不能用 CREATE 覆盖原始数据表「{create_target}」(请换个汇总表名)")
+        # 本条语句的「写入目标」:只有这张表会被改;其余被引用的表都只是 JOIN/子查询的**只读来源**。
+        write_target = _write_target(st)
+        if write_target is not None:
+            write_targets.add(write_target)
 
-        # 其余引用的表:必须都是已知 sheet(CREATE 目标除外)
+        # CREATE 的目标表是「新建的 sheet」(汇总 / 合并宽表),允许是新名字,不参与"必须已知"校验;
+        # 但不能用 CREATE 覆盖已有数据 sheet。
+        create_target = write_target if isinstance(st, exp.Create) else None
+        if create_target is not None and create_target in protected:
+            issues.append(f"不能用 CREATE 覆盖原始数据表「{create_target}」(请换个新表名)")
+
+        # 其余引用的表(读来源 + 非 CREATE 的写目标):必须都是已知 sheet
         st_tables = {t.name for t in st.find_all(exp.Table)}
         for t in st_tables:
             if t == create_target:
                 continue
             if t not in known_sheets:
-                issues.append(f"引用了未知的表「{t}」(只能操作本数据集的 sheet)")
-        tables_all |= st_tables - ({create_target} if create_target else set())
+                issues.append(f"引用了未知的表「{t}」(只能读写本数据集的 sheet)")
 
         # 读写文件函数
         for fn in st.find_all(exp.Func):
@@ -118,18 +119,13 @@ def validate_edit_sql(sql: str, known_sheets: set[str],
         if isinstance(st, (exp.Update, exp.Delete)) and st.args.get("where") is None:
             needs_confirm = True
 
-    # 跨 sheet:整条指令涉及的(已知)源表 > 1 → 拦(CREATE 目标不算源)
-    known_touched = tables_all & known_sheets
-    if len(known_touched) > 1:
-        issues.append(f"暂不支持跨 sheet 操作(本次涉及:{', '.join(sorted(known_touched))})")
+    # 跨 sheet「一写多读」:读多少张已知 sheet 都行(JOIN 补全),但一次只能「写入」一张 sheet。
+    if len(write_targets) > 1:
+        issues.append(f"一次只能修改一张 sheet(本次要写入:{', '.join(sorted(write_targets))});"
+                      f"跨表请用「读其它表补全到同一张目标表」的写法")
 
-    # target_sheet:建汇总表 → 取新建的汇总表名;否则取唯一的已知源表
-    if create_targets:
-        target_sheet = next(iter(create_targets))
-    elif len(known_touched) == 1:
-        target_sheet = next(iter(known_touched))
-    else:
-        target_sheet = None
+    # target_sheet:唯一的写入目标(改原表 → 原表名;建新表 → 新表名)。纯查询无写入 → None。
+    target_sheet = next(iter(write_targets)) if len(write_targets) == 1 else None
 
     mutating = op_kinds & {"insert", "update", "delete", "alter", "summary"}
     if not mutating:
@@ -174,6 +170,29 @@ def _classify(st: exp.Expression, issues: list[str]) -> str | None:
         issues.append('只支持 CREATE TABLE "汇总" AS SELECT …(建汇总表),不支持其它 CREATE')
         return None
     issues.append(f"不允许的语句类型:{type(st).__name__}(只能增删改 / 加删改列 / 建汇总表 / 查询)")
+    return None
+
+
+def _write_target(st: exp.Expression) -> str | None:
+    """语句的「写入目标」表名(无写入→None)。其余被引用的表均视为只读来源,可跨 sheet 关联。
+
+    - CREATE … AS SELECT → 新表名(st.this)
+    - INSERT INTO t (cols) → 目标表(st.this 是 Schema,其 .this 才是 Table)
+    - UPDATE / DELETE / ALTER → 目标表(st.this 是 Table)
+    - SELECT / UNION → None
+    """
+    if isinstance(st, exp.Create):
+        return st.this.name if st.this is not None else None
+    if isinstance(st, exp.Insert):
+        this = st.this
+        if isinstance(this, exp.Schema):
+            return this.this.name if this.this is not None else None
+        if isinstance(this, exp.Table):
+            return this.name
+        return None
+    if isinstance(st, (exp.Update, exp.Delete, exp.Alter)):
+        this = st.this
+        return this.name if isinstance(this, exp.Table) else None
     return None
 
 
