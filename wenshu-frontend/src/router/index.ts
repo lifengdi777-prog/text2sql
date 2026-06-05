@@ -38,6 +38,11 @@ const router = createRouter({
       name: 'dataset-chat',
       component: () => import('@/views/DatasetChatView.vue'),
     },
+    {
+      path: '/datasets/:id/edit',
+      name: 'dataset-edit',
+      component: () => import('@/views/DatasetEditView.vue'),
+    },
     // 通配兜底:任何匹配不上的路径都落到 404 页(public,登录与否都能看到)
     {
       path: '/:pathMatch(.*)*',

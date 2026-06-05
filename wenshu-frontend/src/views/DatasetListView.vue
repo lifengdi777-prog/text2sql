@@ -92,6 +92,10 @@ function openChat(ds: DatasetSummary) {
   router.push(`/datasets/${ds.dataset_id}/chat`)
 }
 
+function openAssist(ds: DatasetSummary) {
+  router.push(`/datasets/${ds.dataset_id}/edit`)
+}
+
 function openPreview(ds: DatasetSummary) {
   previewId.value = ds.dataset_id
   previewOpen.value = true
@@ -182,6 +186,7 @@ onUnmounted(stopPolling)
           :key="ds.dataset_id"
           :dataset="ds"
           @open="openChat"
+          @assist="openAssist"
           @preview="openPreview"
           @remove="onRemove"
         />

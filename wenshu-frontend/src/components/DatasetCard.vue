@@ -7,6 +7,7 @@ const props = defineProps<{ dataset: DatasetSummary }>()
 
 const emit = defineEmits<{
   open: [dataset: DatasetSummary]
+  assist: [dataset: DatasetSummary]
   preview: [dataset: DatasetSummary]
   remove: [dataset: DatasetSummary]
 }>()
@@ -22,6 +23,10 @@ const isBuilding = computed(
 
 function onOpen() {
   if (isReady()) emit('open', props.dataset)
+}
+
+function onAssist() {
+  if (isReady()) emit('assist', props.dataset)
 }
 
 function choosePreview() {
@@ -96,12 +101,22 @@ function chooseRemove() {
       </span>
 
       <div
-        class="flex items-center gap-2"
+        class="flex items-center gap-1.5"
         @click.stop
       >
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+          class="inline-flex items-center gap-1 rounded-lg bg-indigo-500 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+          :disabled="!isReady()"
+          :title="isReady() ? '用自然语言增删改并下载' : '数据集尚未就绪'"
+          @click="onAssist"
+        >
+          <span aria-hidden="true">✦</span>
+          智能助手
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-300"
           :disabled="!isReady()"
           :title="isReady() ? '' : '数据集尚未就绪'"
           @click="onOpen"
