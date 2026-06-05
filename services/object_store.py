@@ -106,6 +106,17 @@ def object_exists(key: str) -> bool:
         raise
 
 
+def list_prefix(prefix: str) -> list[str]:
+    """列出某前缀下所有对象的 key(智能助手导出时按 ds_{id}/original/ 找原件)。"""
+    client, bucket = _client_and_bucket()
+    paginator = client.get_paginator("list_objects_v2")
+    keys: list[str] = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            keys.append(obj["Key"])
+    return keys
+
+
 def delete_prefix(prefix: str) -> None:
     """删某 dataset 前缀下的所有对象(删数据集时用)。
 
