@@ -45,8 +45,10 @@ class _SQLDraft(BaseModel):
 
 
 # ───────────────────────── 同步:物化 / 试应用(走 to_thread)─────────────────────────
-def _snapshot_with_ops(info: dict, active_ops: list[str]) -> tuple[str, list[str]]:
-    """渲染"当前数据"(各 sheet 列 + 前几行样例)给 LLM 参考,并返回当前所有 sheet 名。
+def _snapshot_with_ops(info: dict, active_ops: list[str],
+                       active_sheet: str | None = None) -> tuple[str, list[str]]:
+    """渲染"当前数据"(各 sheet 列 + 前几行样例 + 当前 sheet 真实值参考)给 LLM 参考,
+    并返回当前所有 sheet 名。
 
     sheet 名含会话内新建的汇总表 → 调用方据此构造可引用表集合(否则读不了自己建的汇总表)。
     """
@@ -59,13 +61,21 @@ def _snapshot_with_ops(info: dict, active_ops: list[str]) -> tuple[str, list[str
             prev = wb.preview(s, page=0, size=5)
             cols = ", ".join(f'"{c}"' for c in prev["columns"])
             lines.append(f'### Sheet "{s}"(当前 {prev["total"]} 行)\n列:{cols}')
-            for r in prev["rows"][:3]:
+            for r in prev["rows"][:5]:
                 lines.append("  样例:" + json.dumps(r, ensure_ascii=False, default=str))
             # 显式标出汇总行(合计/小计…),让 LLM 聚合时能 WHERE 排除、或定位更新它
             for e in (wb.lineage.get(s) or {}).get("extra_rows") or []:
                 vals = e.get("values") or {}
                 lines.append("  汇总行(聚合时用 WHERE 排除它):"
                              + json.dumps(vals, ensure_ascii=False, default=str))
+        # 当前选中 sheet 的真实值参考(精确匹配 WHERE 用;含本会话新值)
+        target = active_sheet if active_sheet in sheets else (sheets[0] if sheets else None)
+        if target:
+            hints = wb.value_hints(target)
+            if hints:
+                lines.append(f'\n## 「{target}」各列真实值参考(WHERE 用,优先用这些精确值)')
+                for col, vals in hints.items():
+                    lines.append(f'- "{col}": ' + ", ".join(vals))
         return ("\n".join(lines) or "(无数据)"), sheets
     finally:
         wb.close()
@@ -153,7 +163,8 @@ async def run_edit_message(
         active_ops = await DatasetEditRepository(s).active_sql(session_id)
 
     yield WSStepInfo(step="理解指令", status="running")
-    current_md, all_sheets = await asyncio.to_thread(_snapshot_with_ops, info, active_ops)
+    current_md, all_sheets = await asyncio.to_thread(
+        _snapshot_with_ops, info, active_ops, active_sheet)
     # 可引用的表 = 当前会话的所有 sheet(含已建的汇总表)→ 否则读不了自己建的汇总表
     known_sheets = set(all_sheets) | data_sheets
 

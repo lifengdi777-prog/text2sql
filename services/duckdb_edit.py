@@ -159,6 +159,32 @@ class EditWorkbook:
         """当前数据列(DDL 改过列后,喂给 LLM 的实时结构用,不含血缘列)。"""
         return _data_cols(self.current(sheet))
 
+    def value_hints(self, sheet: str, per_col: int = 10,
+                    total_cap: int = 200) -> dict[str, list[str]]:
+        """从**实时副本**给每个文本列召回 distinct 前 per_col 个值,供 LLM 参考精确写法。
+
+        简单版(够用即可,后续再优化):去重取前 N 个;数值/日期/布尔列不召回(按值直接比)。
+        取自当前已物化数据 → 本会话改/加出来的新值天然涵盖,无 ES 滞后问题。合计封顶 total_cap。
+        """
+        df = self.current(sheet)
+        hints: dict[str, list[str]] = {}
+        total = 0
+        for c in _data_cols(df):
+            if total >= total_cap:
+                break
+            s = df[c]
+            # 只处理文本列(DuckDB fetch_df 把字符串列返成 'str' dtype 而非 object,
+            # 故用"非数值/非日期/非布尔"判定,别用 == object)
+            if (pd.api.types.is_numeric_dtype(s)
+                    or pd.api.types.is_datetime64_any_dtype(s)
+                    or pd.api.types.is_bool_dtype(s)):
+                continue
+            vals = [str(v) for v in s.dropna().unique().tolist()[:per_col]]
+            if vals:
+                hints[c] = vals[: max(0, total_cap - total)]
+                total += len(hints[c])
+        return hints
+
     def close(self) -> None:
         self.con.close()
 
