@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 import { getToken, redirectToLogin } from '@/lib/authToken'
-import type { AgentReplyMessage, ChatMessage } from '@/types/agent'
+import type { AgentReplyMessage, ChartConfig, ChatMessage } from '@/types/agent'
 
 // 会话历史 REST(非流式),复用与 dataset.ts 一致的 Bearer 鉴权拦截器。
 const convApi = axios.create({
@@ -93,6 +93,17 @@ export async function deleteConversation(conversationId: number): Promise<void> 
   await convApi.delete(`/conversations/${conversationId}`)
 }
 
+// 把按需生成的 chart_config 回写到某条 assistant 消息,落进历史(重开会话原样重现图表/提示)。
+export async function persistMessageChart(
+  conversationId: number,
+  messageId: number,
+  chartConfig: ChartConfig | null,
+): Promise<void> {
+  await convApi.patch(`/conversations/${conversationId}/messages/${messageId}/chart`, {
+    chart_config: chartConfig,
+  })
+}
+
 // 存储消息 → 前端 ChatMessage。assistant 的 payload 形状即 AgentReplyMessage(缺 id/role),补齐即可原样渲染。
 function toChatMessage(m: StoredMessage): ChatMessage {
   if (m.role === 'user') {
@@ -101,6 +112,8 @@ function toChatMessage(m: StoredMessage): ChatMessage {
   const p = (m.payload ?? {}) as Partial<AgentReplyMessage>
   return {
     id: `hist-${m.id}`,
+    // 后端消息 id:历史里再次「生成图表」时据它回写落库
+    dbId: m.id,
     role: 'assistant',
     steps: p.steps ?? [],
     result: p.result ?? [],

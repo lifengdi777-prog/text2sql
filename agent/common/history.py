@@ -96,14 +96,23 @@ async def stream_with_history(
         yield f"data: {err_step.model_dump_json()}\n\n"
 
     # 4) 落库 assistant 消息 + 刷新会话时间
+    assistant_message_id: int | None = None
     try:
         async with Session() as session:
             repo = ConversationRepository(session)
             # 落库前清洗:Decimal/datetime 等转 JSON 安全类型(MySQL JSON 列 json.dumps 不认 Decimal)
             payload = _json_safe(acc.payload())
-            await repo.add_message(conversation_id, role="assistant", payload=payload)
+            msg = await repo.add_message(conversation_id, role="assistant", payload=payload)
             await repo.touch(conversation_id)
+            # flush 后(add_message 内已 flush)即可读自增 id;须在 commit 前取,
+            # 避免 commit 后属性过期、读取触发异步懒加载报错(MissingGreenlet)。
+            assistant_message_id = msg.id
             await session.commit()
     except Exception as exc:
         # 历史落库失败不应影响用户已经看到的结果,仅记日志
         logger.warning(f"会话历史落库失败(conversation_id={conversation_id}):{exc}")
+
+    # 5) 末事件:回传 assistant 消息 id。前端「生成图表」是流结束后按需调 /chart,
+    #    拿到 id 才能把 chart_config 回写到这条消息(PATCH .../messages/{id}/chart),落进历史。
+    if assistant_message_id is not None:
+        yield f"data: {json.dumps({'assistant_message_id': assistant_message_id})}\n\n"

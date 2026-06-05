@@ -20,6 +20,11 @@ class RenameBody(BaseModel):
     title: str
 
 
+class ChartConfigBody(BaseModel):
+    # 前端按需出图(或降级表格)后回写的 chart_config;None 表示清空
+    chart_config: dict | None = None
+
+
 class CreateBody(BaseModel):
     source: str = "db"
     dataset_id: int | None = None
@@ -101,6 +106,31 @@ async def get_conversation(conversation_id: int, user_id: str = Depends(get_curr
             for m in msgs
         ],
     }
+
+
+@router.patch("/{conversation_id}/messages/{message_id}/chart")
+async def update_message_chart(
+    conversation_id: int,
+    message_id: int,
+    body: ChartConfigBody,
+    user_id: str = Depends(get_current_user),
+):
+    """前端「生成图表」后,把 chart_config 回写到对应 assistant 消息,落进历史。
+
+    图表是流结束后按需生成的,落库时尚不存在;靠这个接口补写,重开会话即原样重现
+    (含「该数据无法生成图表」对应的 table 降级——前端据 chart_type 重新呈现提示)。
+    """
+    Session = get_session_factory()
+    async with Session() as session:
+        repo = ConversationRepository(session)
+        conv = await repo.get_owned(conversation_id, user_id)
+        if conv is None:
+            raise HTTPException(status_code=404, detail=f"会话 {conversation_id} 不存在")
+        ok = await repo.update_message_chart(conversation_id, message_id, body.chart_config)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"消息 {message_id} 不存在")
+        await session.commit()
+    return {"ok": True, "id": message_id}
 
 
 @router.patch("/{conversation_id}")

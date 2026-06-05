@@ -39,6 +39,8 @@ interface QueryOptions {
   conversationId?: number | null
   // 后端回传(新建或确认)的 conversation_id,通过首个 SSE 事件送达
   onConversation?: (id: number) => void
+  // 后端回传的 assistant 消息 id,通过末个 SSE 事件送达(按需出图后回写落库用)
+  onMessageId?: (id: number) => void
   // 针对哪个数据源问数(必须显式给;不再有隐式默认源)
   datasourceId?: string
 }
@@ -221,6 +223,12 @@ async function runStream(
         const convId = (event as { conversation_id?: unknown }).conversation_id
         if (typeof convId === 'number') {
           options.onConversation?.(convId)
+          continue
+        }
+        // 末个事件 {assistant_message_id: N}:回传给上层(按需出图后回写落库用),不当作步骤渲染
+        const msgId = (event as { assistant_message_id?: unknown }).assistant_message_id
+        if (typeof msgId === 'number') {
+          options.onMessageId?.(msgId)
           continue
         }
 

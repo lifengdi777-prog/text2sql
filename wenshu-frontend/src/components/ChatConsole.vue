@@ -11,6 +11,7 @@ import {
   deleteConversation,
   getConversationMessages,
   listConversations,
+  persistMessageChart,
   renameConversation,
 } from '@/services/conversation'
 import type { AgentReplyMessage, ChartConfig, ChatMessage, ResultRow, StreamFn } from '@/types/agent'
@@ -311,8 +312,13 @@ function exportCsv(message: AgentReplyMessage) {
 
 // ── 按需图表:默认只展示表格,用户点「生成图表」才调后端出图 ──
 const chartLoading = ref<Record<string, boolean>>({})
-// 出图后若后端只能给表格(无法画出任何图表),记下提示语,在按钮旁告知用户。
-const chartNotice = ref<Record<string, string>>({})
+
+// 出图后后端只能给表格(line/bar/pie 等都画不出)→ 提示「该数据无法生成图表」。
+// 直接由已落库的 chartConfig 派生(chart_type==='table' 即降级),所以历史回放也能重现提示;
+// 未出图时 chartConfig 为 null(默认表格走 TABLE_CONFIG),不会误报。
+function isUnchartable(message: AgentReplyMessage): boolean {
+  return message.chartConfig?.chart_type === 'table'
+}
 
 // 该回复对应的用户问题(图表标题用):取它前面最近一条 user 消息
 function questionFor(message: AgentReplyMessage): string {
@@ -337,15 +343,20 @@ function displayConfig(message: AgentReplyMessage): ChartConfig | null {
 async function onGenerateChart(message: AgentReplyMessage) {
   if (!shouldShowResult(message.result) || chartLoading.value[message.id]) return
   chartLoading.value = { ...chartLoading.value, [message.id]: true }
-  chartNotice.value = { ...chartNotice.value, [message.id]: '' }
   try {
     const cfg = await generateChart(message.result, questionFor(message))
     if (cfg) {
       const idx = messages.value.findIndex((m) => m.id === message.id)
       if (idx !== -1) messages.value[idx] = { ...(messages.value[idx] as AgentReplyMessage), chartConfig: cfg }
-      // 后端只能给表格(line/bar/pie 等都画不出)→ 提醒用户该数据无法生成图表
-      if (!isEChartsType(cfg.chart_type)) {
-        chartNotice.value = { ...chartNotice.value, [message.id]: '该数据无法生成图表' }
+      // 把出图结果(含「无法成图」时的 table 降级)回写落库,重开会话能原样重现图表/提示。
+      // 需要会话 id + 这条消息的后端 id;直播态消息的 dbId 由流末事件填,缺任一则跳过(不影响本次展示)。
+      const convId = activeConversationId.value
+      if (convId != null && message.dbId != null) {
+        try {
+          await persistMessageChart(convId, message.dbId, cfg)
+        } catch (e) {
+          console.error('[图表落库] 失败:', e)
+        }
       }
     }
   } catch {
@@ -413,6 +424,13 @@ async function submitQuery() {
         if (index === -1) return
         messages.value[index] = { ...nextMessage, id: replyMessage.id }
         void scrollToBottom()
+      },
+      onMessageId: (mid) => {
+        // 流末回传的后端消息 id:存到这条消息上,供之后「生成图表」回写落库
+        const index = messages.value.findIndex((item) => item.id === replyMessage.id)
+        if (index === -1) return
+        const m = messages.value[index]
+        if (isReplyMessage(m)) messages.value[index] = { ...m, dbId: mid }
       },
     })
 
@@ -859,13 +877,14 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <!-- 出图后若无法生成任何图表,提醒用户(仍保留表格展示) -->
+          <!-- 出图后若无法生成任何图表(后端降级为表格),提醒用户(仍保留表格展示)。
+               由 chartConfig 派生,历史回放同样会显示。 -->
           <p
-            v-if="chartNotice[message.id]"
+            v-if="message.status === 'success' && isUnchartable(message)"
             class="mt-2 inline-flex items-center gap-1 text-xs text-amber-600"
           >
             <span aria-hidden="true">⚠️</span>
-            {{ chartNotice[message.id] }}
+            该数据无法生成图表
           </p>
 
           <!-- SQL 展开区:等宽显示真正执行的 SQL + 复制按钮 -->

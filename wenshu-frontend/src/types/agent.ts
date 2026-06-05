@@ -41,6 +41,9 @@ export interface ChartConfig {
 
 export interface AgentReplyMessage {
   id: string
+  // 后端 messages 表的自增 id(流末事件或历史加载时填)。按需出图后据它把 chart_config 回写落库;
+  // 直播态新消息在拿到流末事件前为空。
+  dbId?: number
   role: 'assistant'
   steps: AgentStep[]
   result: ResultRow[]
@@ -71,5 +74,7 @@ export type StreamFn = (
     onStep: (message: AgentReplyMessage) => void
     conversationId?: number | null
     onConversation?: (id: number) => void
+    // 流末回传的 assistant 消息 id(用于按需出图后把 chart_config 回写落库)
+    onMessageId?: (id: number) => void
   },
 ) => Promise<void>

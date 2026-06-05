@@ -139,6 +139,22 @@ class ConversationRepository:
         await self.session.flush()
         return msg
 
+    async def update_message_chart(
+        self, conversation_id: int, message_id: int, chart_config: dict[str, Any] | None
+    ) -> bool:
+        """把某条 assistant 消息的 chart_config 写进 payload(前端按需出图后回写,落进历史)。
+
+        消息不存在 / 不属于该会话 / 非 assistant → 返回 False(调用方转 404)。
+        """
+        msg = await self.session.get(MessageMySQL, message_id)
+        if msg is None or msg.conversation_id != conversation_id or msg.role != "assistant":
+            return False
+        # 重新赋一个新 dict 才会被标记 dirty 触发 UPDATE(原地改 JSON 列不会被 SQLAlchemy 感知)
+        payload = dict(msg.payload or {})
+        payload["chartConfig"] = chart_config
+        msg.payload = payload
+        return True
+
     async def list_messages(self, conversation_id: int) -> list[MessageMySQL]:
         stmt = (
             select(MessageMySQL)
