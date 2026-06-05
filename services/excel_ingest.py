@@ -32,7 +32,12 @@ from core.log import logger
 from repositories.es import UploadESRepository
 from repositories.upload import UploadDatasetRepository
 from services import object_store
-from services.header_detect import SheetHeader, detect_headers, read_sheet_previews
+from services.header_detect import (
+    SheetHeader,
+    detect_headers,
+    detect_headers_heuristic,
+    read_sheet_previews,
+)
 
 # ───────── 常量 ─────────────────────────────────────────
 _TOTAL_KEYWORDS = {"小计", "合计", "总计", "汇总", "total", "subtotal", "sum"}
@@ -520,6 +525,11 @@ async def _process_dataset(dataset_id: int, filename: str, file_bytes: bytes) ->
         # AI 表头识别(失败/超时回退 header=0)
         previews = await asyncio.to_thread(read_sheet_previews, file_bytes)
         header_specs = await detect_headers(previews)
+        # 规则法兜底:LLM 没覆盖到/判不准的 sheet,用零依赖启发式补上(抗 LLM 宕机,且能识别合并表头)
+        for s, sh in detect_headers_heuristic(previews).items():
+            if s not in header_specs:
+                header_specs.setdefault(s, sh)
+                logger.info(f"sheet「{s}」LLM 未覆盖,改用规则法表头:data_start_row={sh.data_start_row} cols={sh.columns}")
 
         # 解析 + 清洗(同时捕获血缘)
         def _parse_and_clean() -> tuple[dict[str, pd.DataFrame], dict[str, dict]]:

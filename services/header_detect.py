@@ -100,6 +100,96 @@ def _valid(sh: SheetHeader, width: int) -> bool:
     )
 
 
+# ───────────────────────── 规则法检测(零依赖,LLM 兜底/交叉校验)─────────────────────────
+def _is_number(s: str) -> bool:
+    """单元格文本是否是个数字(容忍千分位 / 百分号)。空 → 否。"""
+    if not s:
+        return False
+    t = s.replace(",", "").rstrip("%").strip()
+    try:
+        float(t)
+        return True
+    except ValueError:
+        return False
+
+
+def _ffill_row(row: list[str]) -> list[str]:
+    """横向前向填充:处理合并单元格在右侧留空(如 [门店,销售,∅] → [门店,销售,销售])。"""
+    out, last = [], ""
+    for c in row:
+        if c:
+            last = c
+        out.append(last)
+    return out
+
+
+def _flatten_header(header_rows: list[list[str]], width: int) -> list[str]:
+    """把 1~N 行表头扁平化成 width 个列名:多行时横向前填充各行再按列上下拼接;空列用 列N 占位、重名加后缀。"""
+    if len(header_rows) == 1:
+        top = header_rows[0]
+        names = [top[i] if i < len(top) and top[i] else "" for i in range(width)]
+    else:
+        filled = [_ffill_row(r + [""] * (width - len(r))) for r in header_rows]
+        names = []
+        for i in range(width):
+            parts: list[str] = []
+            for r in filled:
+                v = r[i]
+                if v and v not in parts:
+                    parts.append(v)
+            names.append("".join(parts))
+    out, used = [], set()
+    for i, n in enumerate(names):
+        base = n.strip() if n.strip() else f"列{i + 1}"
+        name, k = base, 1
+        while name in used:
+            k += 1
+            name = f"{base}_{k}"
+        used.add(name)
+        out.append(name)
+    return out
+
+
+def detect_header_heuristic(grid: list[list[str]], width: int) -> SheetHeader | None:
+    """规则法检测单个 sheet 的表头(零依赖)。判不准 → None(调用方交回 header=0)。
+
+    思路:跳过开头"空行 / 单格标题行"(非空 ≤ 1)→ 第一个非空 ≥ 2 的行作表头候选;
+    若候选行有**内部空缺**(疑似合并表头)且下一行"全是文字(无数字)",再并一行一起扁平化;
+    候选(组)之后即数据起点。
+    """
+    if width <= 0 or not grid:
+        return None
+    # 1) 跳过标题/空行,定位表头候选行(第一处非空单元格 ≥ 2)
+    start = next((i for i, row in enumerate(grid) if sum(1 for c in row if c) >= 2), None)
+    if start is None:
+        return None
+    head = grid[start] + [""] * (width - len(grid[start]))
+    header_rows = [head]
+    data_start = start + 1
+    # 2) 合并表头:候选行最后一个非空之前还有空缺(横向合并痕迹)+ 下一行全文字 → 再并一行(上限 2 行)
+    last_filled = max((i for i in range(width) if head[i]), default=-1)
+    has_internal_gap = any(not head[i] for i in range(last_filled))
+    if has_internal_gap and data_start < len(grid):
+        nxt = grid[data_start] + [""] * (width - len(grid[data_start]))
+        if any(nxt) and not any(_is_number(c) for c in nxt):
+            header_rows.append(nxt)
+            data_start += 1
+    # 3) 扁平化 + 复用 LLM 路径的合法性校验
+    sh = SheetHeader(sheet="", data_start_row=data_start, columns=_flatten_header(header_rows, width))
+    return sh if _valid(sh, width) else None
+
+
+def detect_headers_heuristic(previews: dict[str, list[list[str]]]) -> dict[str, SheetHeader]:
+    """对每个 sheet 跑规则法检测。返回 {sheet: SheetHeader};判不准的 sheet 不在结果里。"""
+    out: dict[str, SheetHeader] = {}
+    for s, grid in previews.items():
+        sh = detect_header_heuristic(grid, _grid_width(grid))
+        if sh is not None:
+            sh.sheet = s
+            out[s] = sh
+    return out
+
+
 async def detect_headers(previews: dict[str, list[list[str]]]) -> dict[str, SheetHeader]:
     """LLM 检测表头。返回 {sheet: SheetHeader};失败/不合法的 sheet 不在结果里(调用方回退 header=0)。"""
     if not previews:
