@@ -68,15 +68,22 @@ def get_session_factory() -> async_sessionmaker:
 def parse_workbook(
     file_bytes: bytes,
     headers: dict[str, SheetHeader] | None = None,
-) -> dict[str, pd.DataFrame]:
+) -> tuple[dict[str, pd.DataFrame], dict[str, int]]:
     """读 Excel 所有 sheet。
 
     若传入 headers(LLM 检测结果):跳过表头上方的标题/空行,从 data_start_row 起读数据,
     并用检测到的列名;列数对不上或没检测结果 → 回退 header=0(旧行为,安全兜底)。
+
+    返回 (out, starts):
+      out[sheet]    = DataFrame
+      starts[sheet] = data_start_excel_row —— pandas index 0 对应的 **1-based Excel 行号**,
+                      供 clean_sheet 把每条数据行映射回原始 Excel 行(智能助手保样式回写用)。
+                      header 检测路径 = data_start_row(0-based)+ 1;header=0 兜底 = 2。
     """
     headers = headers or {}
     xls = pd.ExcelFile(io.BytesIO(file_bytes), engine="openpyxl")
     out: dict[str, pd.DataFrame] = {}
+    starts: dict[str, int] = {}
     for s in xls.sheet_names:
         spec = headers.get(s)
         if spec is not None:
@@ -85,12 +92,14 @@ def parse_workbook(
             if df.shape[1] == len(spec.columns):
                 df.columns = spec.columns
                 out[s] = df
+                starts[s] = spec.data_start_row + 1
                 continue
             logger.warning(
                 f"sheet「{s}」列数({df.shape[1]})与检测列名({len(spec.columns)})不符,回退 header=0"
             )
         out[s] = pd.read_excel(xls, sheet_name=s, header=0, dtype=object)
-    return out
+        starts[s] = 2  # header 在 Excel 第 1 行,数据从第 2 行起
+    return out, starts
 
 
 def _normalize_columns(cols: list[Any]) -> list[str]:
@@ -164,18 +173,55 @@ def _coerce_column(s: pd.Series) -> pd.Series:
     return cleaned.astype(object)
 
 
-def clean_sheet(df: pd.DataFrame) -> pd.DataFrame | None:
-    """单 sheet 清洗:删空行列 → 列名规整 → 删合计行 → 类型清洗。"""
-    df = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
+def clean_sheet(
+    df: pd.DataFrame,
+    data_start_excel_row: int = 2,
+) -> tuple[pd.DataFrame | None, dict | None]:
+    """单 sheet 清洗 + 捕获血缘(供「智能助手」保样式回写原件)。
+
+    清洗:删空行列 → 列名规整 → 删合计行 → 类型清洗(行为与原版一致)。
+    血缘:记录每条 canonical 行/列与原始 Excel 坐标的映射 —— 这是导出 diff-patch
+    能把变更写回原件正确单元格的前提(详见 docs/dataset_edit_agent_design.md §2.3/§6)。
+
+    返回 (cleaned_df, lineage);空表返回 (None, None)。
+    lineage = {
+        header_row, data_start_row,   # 1-based Excel 行
+        row_origin: [每条 canonical 行的原始 Excel 行号(1-based)],
+        col_excel:  {canonical 列名: 原始 Excel 列号(1-based)},
+    }
+    data_start_excel_row: pandas index 0 对应的 1-based Excel 行(parse_workbook 给出)。
+    """
+    # 1) 删全空行(保留 index 标签 = 原始 0-based 读入位置)
+    df = df.dropna(axis=0, how="all")
     if df.empty:
-        return None
+        return None, None
+    # 2) 删全空列 —— 用 positional 布尔掩码替代 dropna(axis=1,how='all'):等价,但能
+    #    精确记录"存活列 → 原始 Excel 列号",且对重复列名也安全(不靠 label)
+    keep_mask = df.notna().any(axis=0).to_numpy()
+    surviving_excel_cols = [i + 1 for i, keep in enumerate(keep_mask) if keep]
+    df = df.loc[:, keep_mask]
+    if df.empty:
+        return None, None
+    # 3) 列名规整(只重命名,不改顺序/数量)→ 建 列名→Excel列号 映射
     df.columns = _normalize_columns(list(df.columns))
+    col_excel = {name: surviving_excel_cols[k] for k, name in enumerate(df.columns)}
+    # 4) 删合计行(保留 index 标签)
     df = _drop_total_rows(df)
     if df.empty:
-        return None
+        return None, None
+    # 5) 类型清洗
     for c in df.columns:
         df[c] = _coerce_column(df[c])
-    return df.reset_index(drop=True)
+    # 6) reset 前捕获行来源:index 标签是原始 0-based 读入位置 → + offset 得 1-based Excel 行
+    row_origin = [int(p) + data_start_excel_row for p in df.index]
+    df = df.reset_index(drop=True)
+    lineage = {
+        "header_row": data_start_excel_row - 1,
+        "data_start_row": data_start_excel_row,
+        "row_origin": row_origin,
+        "col_excel": col_excel,
+    }
+    return df, lineage
 
 
 # ───────── Profile ─────────────────────────────────────
@@ -457,17 +503,19 @@ async def _process_dataset(dataset_id: int, filename: str, file_bytes: bytes) ->
         previews = await asyncio.to_thread(read_sheet_previews, file_bytes)
         header_specs = await detect_headers(previews)
 
-        # 解析 + 清洗
-        def _parse_and_clean() -> dict[str, pd.DataFrame]:
-            raw = parse_workbook(file_bytes, header_specs)
+        # 解析 + 清洗(同时捕获血缘)
+        def _parse_and_clean() -> tuple[dict[str, pd.DataFrame], dict[str, dict]]:
+            raw, starts = parse_workbook(file_bytes, header_specs)
             cleaned: dict[str, pd.DataFrame] = {}
+            lineages: dict[str, dict] = {}
             for name, df in raw.items():
-                c = clean_sheet(df)
+                c, lin = clean_sheet(df, starts.get(name, 2))
                 if c is not None and not c.empty:
                     cleaned[name] = c
-            return cleaned
+                    lineages[name] = lin
+            return cleaned, lineages
 
-        cleaned_sheets = await asyncio.to_thread(_parse_and_clean)
+        cleaned_sheets, sheet_lineages = await asyncio.to_thread(_parse_and_clean)
         if not cleaned_sheets:
             raise ValueError("文件中没有解析出任何有效数据(可能是空表或格式不支持)")
 
@@ -498,6 +546,8 @@ async def _process_dataset(dataset_id: int, filename: str, file_bytes: bytes) ->
                     "row_count": row_count,
                     "parquet_file": sheet_files[name],
                     "columns": profile_columns(df),
+                    # 血缘:智能助手保样式回写原件用;问数不读它,纯增量字段
+                    "lineage": sheet_lineages.get(name),
                 }
                 total += len(df)
             return schema, total
