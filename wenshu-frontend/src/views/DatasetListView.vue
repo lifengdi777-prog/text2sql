@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import DatasetCard from '@/components/DatasetCard.vue'
 import UploadDatasetModal from '@/components/UploadDatasetModal.vue'
 import DatasetPreviewModal from '@/components/DatasetPreviewModal.vue'
+import HeaderConfirmModal from '@/components/HeaderConfirmModal.vue'
 import { deleteDataset, listDatasets } from '@/services/dataset'
 import type { DatasetSummary } from '@/types/dataset'
 
@@ -21,6 +22,10 @@ const PAGE_SIZE = 9
 const uploadOpen = ref(false)
 const previewId = ref<number | null>(null)
 const previewOpen = ref(false)
+
+// 表头确认弹窗(status=needs_header 的数据集)
+const headerReviewId = ref<number | null>(null)
+const headerReviewOpen = ref(false)
 
 // 删除确认弹框(自定义,替代浏览器原生 confirm,与会话删除弹框风格统一)
 const deleteTarget = ref<DatasetSummary | null>(null)
@@ -99,6 +104,17 @@ function openAssist(ds: DatasetSummary) {
 function openPreview(ds: DatasetSummary) {
   previewId.value = ds.dataset_id
   previewOpen.value = true
+}
+
+function openHeaderReview(ds: DatasetSummary) {
+  headerReviewId.value = ds.dataset_id
+  headerReviewOpen.value = true
+}
+
+function onHeaderConfirmed() {
+  // 确认后后端转 cleaning 重跑 → 关弹窗并刷新,轮询会接管直到 ready
+  headerReviewOpen.value = false
+  void reload()
 }
 
 function onRemove(ds: DatasetSummary) {
@@ -189,6 +205,7 @@ onUnmounted(stopPolling)
           @assist="openAssist"
           @preview="openPreview"
           @remove="onRemove"
+          @confirm-header="openHeaderReview"
         />
       </div>
     </div>
@@ -223,6 +240,12 @@ onUnmounted(stopPolling)
       :dataset-id="previewId"
       @close="previewOpen = false"
       @open-chat="(id) => router.push(`/datasets/${id}/chat`)"
+    />
+    <HeaderConfirmModal
+      :open="headerReviewOpen"
+      :dataset-id="headerReviewId"
+      @close="headerReviewOpen = false"
+      @confirmed="onHeaderConfirmed"
     />
 
     <!-- 删除确认弹框(与会话删除弹框风格统一) -->

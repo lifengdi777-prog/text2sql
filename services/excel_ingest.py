@@ -516,93 +516,183 @@ async def ingest_excel(user_id: str, filename: str, file_bytes: bytes) -> dict[s
     }
 
 
+def parse_and_clean(
+    file_bytes: bytes, header_specs: dict[str, SheetHeader],
+) -> tuple[dict[str, pd.DataFrame], dict[str, dict]]:
+    """按给定表头规格读 + 清洗所有 sheet(并捕获血缘)。同步,放线程池跑。返回 (cleaned, lineages)。"""
+    raw, starts = parse_workbook(file_bytes, header_specs)
+    cleaned: dict[str, pd.DataFrame] = {}
+    lineages: dict[str, dict] = {}
+    for name, df in raw.items():
+        c, lin = clean_sheet(df, starts.get(name, 2))
+        if c is not None and not c.empty:
+            cleaned[name] = c
+            lineages[name] = lin
+    return cleaned, lineages
+
+
+async def _persist_and_index(
+    dataset_id: int, filename: str,
+    cleaned_sheets: dict[str, pd.DataFrame], sheet_lineages: dict[str, dict],
+) -> None:
+    """清洗结果落地:parquet → schema → finalize(indexing)→ ES → ready。原始 Excel 须已提前留档。"""
+    Session = get_session_factory()
+    prefix = f"ds_{dataset_id}"
+    sheet_files = await asyncio.to_thread(save_parquets, prefix, cleaned_sheets)
+
+    def _build_schema() -> tuple[dict, int]:
+        schema = {"sheets": {}}
+        total = 0
+        for name, df in cleaned_sheets.items():
+            schema["sheets"][name] = {
+                "row_count": int(len(df)),
+                "parquet_file": sheet_files[name],
+                "columns": profile_columns(df),
+                # 血缘:智能助手保样式回写原件用;问数不读它,纯增量字段
+                "lineage": sheet_lineages.get(name),
+            }
+            total += len(df)
+        return schema, total
+
+    schema_json, total_rows = await asyncio.to_thread(_build_schema)
+    async with Session() as session:
+        repo = UploadDatasetRepository(session)
+        await repo.finalize(dataset_id=dataset_id, folder_path=prefix,
+                            schema_json=schema_json, sheet_count=len(cleaned_sheets),
+                            total_rows=total_rows)
+        await session.commit()
+    logger.info(f"数据集 {dataset_id}({filename})解析完成:{len(cleaned_sheets)} sheet,{total_rows} 行")
+    # ES 值索引 → status=ready(沿用现有后台函数,内部 finally 会置 ready)
+    await build_es_index_background(dataset_id, cleaned_sheets)
+
+
+def _header_rows_before(grid: list[list[str]], data_start: int) -> list[int]:
+    """data_start 之前、紧贴着的连续非空行 = 默认表头行(供前端预选;遇空行/标题断开即停)。"""
+    rows: list[int] = []
+    i = data_start - 1
+    while i >= 0 and any(c for c in grid[i]):
+        rows.append(i)
+        i -= 1
+    return sorted(rows)
+
+
+def _suggested_spec(grid: list[list[str]], width: int,
+                    header_specs: dict[str, SheetHeader], sheet: str) -> dict:
+    """该 sheet 的建议表头(供前端预填):有检测结果就用它,否则退化为 header=0(第 0 行作表头)。"""
+    sh = header_specs.get(sheet)
+    data_start = sh.data_start_row if sh is not None else (1 if grid else 0)
+    if sh is not None:
+        cols = list(sh.columns)
+    else:
+        first = (grid[0] if grid else []) + [""] * width
+        cols = [first[i].strip() if i < len(first) and first[i].strip() else f"列{i + 1}"
+                for i in range(width)]
+    return {"data_start_row": data_start, "columns": cols,
+            "header_rows": _header_rows_before(grid, data_start)}
+
+
+def build_header_review(filename: str, original_key: str, previews: dict[str, list[list[str]]],
+                        header_specs: dict[str, SheetHeader], flagged: set[str]) -> dict:
+    """组装「待确认表头」载荷:每个 sheet 的预览网格 + 建议表头 + 是否可疑,前端据此渲染确认弹窗。"""
+    sheets: dict[str, dict] = {}
+    for s, grid in previews.items():
+        width = max((len(r) for r in grid), default=0)
+        sheets[s] = {
+            "grid": grid,
+            "width": width,
+            "suggested": _suggested_spec(grid, width, header_specs, s),
+            "flagged": s in flagged,
+        }
+    return {"filename": filename, "original_key": original_key, "sheets": sheets}
+
+
 async def _process_dataset(dataset_id: int, filename: str, file_bytes: bytes) -> None:
-    """后台处理:AI 表头识别 → 清洗 → parquet → schema → finalize(indexing)→ ES → ready。
-    任一步失败 → status=failed + 错误信息(供卡片提示)。
+    """后台处理:留档原件 → AI 表头识别 → 清洗 → parquet → schema → finalize → ES → ready。
+    表头可疑 → 转 needs_header(待用户确认,不算失败);其余异常 → failed + 错误信息。
     """
     Session = get_session_factory()
+    prefix = f"ds_{dataset_id}"
     try:
-        # AI 表头识别(失败/超时回退 header=0)
-        previews = await asyncio.to_thread(read_sheet_previews, file_bytes)
-        header_specs = await detect_headers(previews)
-        # 规则法兜底:LLM 没覆盖到/判不准的 sheet,用零依赖启发式补上(抗 LLM 宕机,且能识别合并表头)
-        for s, sh in detect_headers_heuristic(previews).items():
-            if s not in header_specs:
-                header_specs.setdefault(s, sh)
-                logger.info(f"sheet「{s}」LLM 未覆盖,改用规则法表头:data_start_row={sh.data_start_row} cols={sh.columns}")
-
-        # 解析 + 清洗(同时捕获血缘)
-        def _parse_and_clean() -> tuple[dict[str, pd.DataFrame], dict[str, dict]]:
-            raw, starts = parse_workbook(file_bytes, header_specs)
-            cleaned: dict[str, pd.DataFrame] = {}
-            lineages: dict[str, dict] = {}
-            for name, df in raw.items():
-                c, lin = clean_sheet(df, starts.get(name, 2))
-                if c is not None and not c.empty:
-                    cleaned[name] = c
-                    lineages[name] = lin
-            return cleaned, lineages
-
-        cleaned_sheets, sheet_lineages = await asyncio.to_thread(_parse_and_clean)
-        if not cleaned_sheets:
-            raise ValueError("文件中没有解析出任何有效数据(可能是空表或格式不支持)")
-
-        # 表头错位兜底:回退 header=0 后若列大多是占位名,说明真表头没在第一行 → 明确失败
-        misread = [name for name, df in cleaned_sheets.items() if _looks_like_misread_header(df)]
-        if misread:
-            raise ValueError(
-                f"表头识别异常,以下表的表头似乎没对齐(疑似有标题行/合并表头):{'、'.join(misread)}。"
-                f"请重试上传,或把表头整理到第一行后重传。"
-            )
-
-        # 写 parquet + 原始 Excel 留档
-        prefix = f"ds_{dataset_id}"
-        sheet_files = await asyncio.to_thread(save_parquets, prefix, cleaned_sheets)
+        # 原始 Excel 提前留档:后续「确认表头」重跑要从对象存储读回它(成功路径也复用,不再重复存)
         original_key = f"{prefix}/original/{_safe_filename(filename, 'upload.xlsx')}"
         await asyncio.to_thread(
             object_store.put_bytes, original_key, file_bytes,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-        # profile schema
-        def _build_schema() -> tuple[dict, int]:
-            schema = {"sheets": {}}
-            total = 0
-            for name, df in cleaned_sheets.items():
-                row_count = int(len(df))
-                schema["sheets"][name] = {
-                    "row_count": row_count,
-                    "parquet_file": sheet_files[name],
-                    "columns": profile_columns(df),
-                    # 血缘:智能助手保样式回写原件用;问数不读它,纯增量字段
-                    "lineage": sheet_lineages.get(name),
-                }
-                total += len(df)
-            return schema, total
+        # AI 表头识别(失败/超时回退 header=0)+ 规则法兜底
+        previews = await asyncio.to_thread(read_sheet_previews, file_bytes)
+        header_specs = await detect_headers(previews)
+        for s, sh in detect_headers_heuristic(previews).items():
+            if s not in header_specs:
+                header_specs[s] = sh
+                logger.info(f"sheet「{s}」LLM 未覆盖,改用规则法表头:data_start_row={sh.data_start_row} cols={sh.columns}")
 
-        schema_json, total_rows = await asyncio.to_thread(_build_schema)
+        cleaned_sheets, sheet_lineages = await asyncio.to_thread(parse_and_clean, file_bytes, header_specs)
+        if not cleaned_sheets:
+            raise ValueError("文件中没有解析出任何有效数据(可能是空表或格式不支持)")
 
-        # finalize → status=indexing
-        async with Session() as session:
-            repo = UploadDatasetRepository(session)
-            await repo.finalize(dataset_id=dataset_id, folder_path=prefix,
-                                schema_json=schema_json, sheet_count=len(cleaned_sheets),
-                                total_rows=total_rows)
-            await session.commit()
-        logger.info(f"数据集 {dataset_id}({filename})解析完成:{len(cleaned_sheets)} sheet,{total_rows} 行")
+        # 表头可疑(占位列名过多)→ 不再硬失败,转「待确认表头」,让用户在前端预览里手选表头行
+        flagged = {name for name, df in cleaned_sheets.items() if _looks_like_misread_header(df)}
+        if flagged:
+            review = build_header_review(filename, original_key, previews, header_specs, flagged)
+            async with Session() as session:
+                await UploadDatasetRepository(session).mark_needs_header(dataset_id, prefix, review)
+                await session.commit()
+            logger.info(f"数据集 {dataset_id} 表头可疑(sheet:{'、'.join(sorted(flagged))})→ needs_header,待用户确认")
+            return
 
-        # ES 值索引 → status=ready(沿用现有后台函数,内部 finally 会置 ready)
-        await build_es_index_background(dataset_id, cleaned_sheets)
+        await _persist_and_index(dataset_id, filename, cleaned_sheets, sheet_lineages)
 
     except Exception as exc:
         logger.exception(f"数据集 {dataset_id} 后台处理失败:{exc}")
         try:
             async with Session() as session:
-                repo = UploadDatasetRepository(session)
-                await repo.mark_failed(dataset_id, str(exc))
+                await UploadDatasetRepository(session).mark_failed(dataset_id, str(exc))
                 await session.commit()
         except Exception:
             logger.exception(f"数据集 {dataset_id} 标记 failed 也失败")
+
+
+async def reprocess_with_headers(dataset_id: int, sheets_specs: dict[str, dict]) -> None:
+    """用户在前端确认/手选表头后重跑:读回留档的原始 Excel,按指定表头解析入库 → ready。
+
+    sheets_specs[sheet] = {"data_start_row": int, "columns": [str]}(由确认弹窗提交)。
+    出错 → failed + 原因。供 /dataset/{id}/header-confirm 在后台调用。
+    """
+    Session = get_session_factory()
+    async with Session() as session:
+        ds = await UploadDatasetRepository(session).get(dataset_id)
+        if ds is None:
+            logger.warning(f"reprocess: 数据集 {dataset_id} 不存在,跳过")
+            return
+        review = (ds.schema_json or {}).get("_header_review") or {}
+        filename = review.get("filename") or ds.original_filename or "upload.xlsx"
+        original_key = review.get("original_key")
+
+    try:
+        if not original_key:
+            raise ValueError("找不到原始文件,无法重新解析(请删除后重新上传)")
+        file_bytes = await asyncio.to_thread(object_store.get_bytes, original_key)
+        header_specs = {
+            s: SheetHeader(sheet=s, data_start_row=int(v["data_start_row"]),
+                           columns=[str(c) for c in v["columns"]])
+            for s, v in sheets_specs.items()
+        }
+        # 标回 cleaning(卡片立刻显示「处理中」),再重跑
+        async with Session() as session:
+            await UploadDatasetRepository(session).update_status(dataset_id, "cleaning")
+            await session.commit()
+
+        cleaned_sheets, sheet_lineages = await asyncio.to_thread(parse_and_clean, file_bytes, header_specs)
+        if not cleaned_sheets:
+            raise ValueError("按所选表头仍未解析出有效数据,请重新选择表头行")
+        await _persist_and_index(dataset_id, filename, cleaned_sheets, sheet_lineages)
+    except Exception as exc:
+        logger.exception(f"数据集 {dataset_id} 按确认表头重跑失败:{exc}")
+        async with Session() as session:
+            await UploadDatasetRepository(session).mark_failed(dataset_id, str(exc))
+            await session.commit()
 
 
 # ───────── 删除 ────────────────────────────────────────

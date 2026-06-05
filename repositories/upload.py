@@ -79,6 +79,17 @@ class UploadDatasetRepository:
         if ds is not None:
             ds.status = status
 
+    async def mark_needs_header(self, dataset_id: int, folder_path: str, review: dict[str, Any]) -> None:
+        """表头识别可疑 → 置 needs_header,把预览网格+建议表头存进 schema_json._header_review,供前端确认。
+
+        同时落 folder_path(原始 Excel 已提前留档在此前缀下),确认后据此读回原件重跑。
+        """
+        ds = await self.session.get(UploadDatasetMySQL, dataset_id)
+        if ds is not None:
+            ds.status = "needs_header"
+            ds.folder_path = folder_path
+            ds.schema_json = {**(ds.schema_json or {}), "_header_review": review}
+
     async def mark_failed(self, dataset_id: int, error: str) -> None:
         """后台处理失败:置 failed,并把错误信息存进 schema_json._error(不覆盖已有 schema),供卡片提示。"""
         ds = await self.session.get(UploadDatasetMySQL, dataset_id)

@@ -3,12 +3,19 @@
 身份统一走 api.deps.get_current_user(过渡期 = X-Client-Id 头);
 所有按 dataset_id 的操作先经 require_owned_dataset 校验归属,杜绝越权访问。
 """
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import asyncio
+
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 
 from api.deps import get_current_user, require_owned_dataset
 from core.log import logger
 from repositories.upload import UploadDatasetRepository
-from services.excel_ingest import delete_dataset, get_session_factory, ingest_excel
+from services.excel_ingest import (
+    delete_dataset,
+    get_session_factory,
+    ingest_excel,
+    reprocess_with_headers,
+)
 
 router = APIRouter(prefix="/dataset")
 
@@ -85,6 +92,55 @@ async def get_dataset(dataset_id: int, user_id: str = Depends(get_current_user))
         "created_at": ds.created_at.isoformat() if ds.created_at else None,
         "schema": ds.schema_json,
     }
+
+
+@router.get("/{dataset_id}/header-review")
+async def get_header_review(dataset_id: int, user_id: str = Depends(get_current_user)):
+    """取「待确认表头」的预览载荷(各 sheet 前若干行网格 + 建议表头),供前端渲染确认弹窗。
+
+    仅 status=needs_header 时有内容;其余状态返回 needs_review=False。
+    """
+    ds = await require_owned_dataset(dataset_id, user_id)
+    review = (ds.schema_json or {}).get("_header_review") if ds.schema_json else None
+    if ds.status != "needs_header" or not review:
+        return {"dataset_id": dataset_id, "status": ds.status, "needs_review": False}
+    # original_key 是内部对象存储路径,不外泄给前端
+    sheets = {
+        name: {k: v for k, v in info.items() if k != "original_key"}
+        for name, info in (review.get("sheets") or {}).items()
+    }
+    return {
+        "dataset_id": dataset_id,
+        "status": ds.status,
+        "needs_review": True,
+        "filename": review.get("filename"),
+        "sheets": sheets,
+    }
+
+
+@router.post("/{dataset_id}/header-confirm")
+async def confirm_header(
+    dataset_id: int,
+    sheets: dict[str, dict] = Body(..., embed=True),
+    user_id: str = Depends(get_current_user),
+):
+    """用户在确认弹窗里手选表头行后提交:校验后**后台重跑**解析入库,立即返回(前端轮询 status)。
+
+    sheets = {"<sheet名>": {"data_start_row": <int>, "columns": [<str>...]}}。
+    """
+    ds = await require_owned_dataset(dataset_id, user_id)
+    if ds.status != "needs_header":
+        raise HTTPException(status_code=409, detail="该数据集当前不需要确认表头")
+    if not sheets:
+        raise HTTPException(status_code=400, detail="缺少表头选择")
+    for name, spec in sheets.items():
+        if not isinstance(spec, dict) or "data_start_row" not in spec or not spec.get("columns"):
+            raise HTTPException(status_code=400, detail=f"sheet「{name}」的表头选择不完整")
+
+    # 重活丢后台(含 ES 索引),立即返回;reprocess 内部会先把状态标回 cleaning
+    asyncio.create_task(reprocess_with_headers(dataset_id, sheets))
+    logger.info(f"[/dataset] user_id={user_id} 确认数据集 {dataset_id} 表头,后台重跑")
+    return {"ok": True, "dataset_id": dataset_id, "status": "cleaning"}
 
 
 @router.delete("/{dataset_id}")

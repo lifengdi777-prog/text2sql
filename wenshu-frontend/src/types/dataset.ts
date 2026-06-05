@@ -1,7 +1,13 @@
 // 上传数据集(Excel)相关类型,对齐后端 api/upload_router.py 的返回结构。
 
-// cleaning 清洗入库中 / indexing parquet 已就绪、ES 值索引后台建设中 / ready 全就绪 / failed / deleting
-export type DatasetStatus = 'cleaning' | 'indexing' | 'ready' | 'failed' | 'deleting'
+// cleaning 清洗入库中 / needs_header 表头可疑待用户确认 / indexing ES 值索引建设中 / ready 全就绪 / failed / deleting
+export type DatasetStatus =
+  | 'cleaning'
+  | 'needs_header'
+  | 'indexing'
+  | 'ready'
+  | 'failed'
+  | 'deleting'
 
 // GET /dataset 列表项
 export interface DatasetSummary {
@@ -49,6 +55,31 @@ export interface DatasetSchema {
 export interface DatasetDetail extends DatasetSummary {
   folder_path: string | null
   schema: DatasetSchema | null
+}
+
+// ── 表头确认(needs_header)相关,对齐 api/upload_router.py 的 header-review / header-confirm ──
+
+// 单个 sheet 的待确认信息:前若干行原始网格 + 建议表头 + 是否可疑
+export interface HeaderSheetReview {
+  grid: string[][]
+  width: number
+  suggested: { data_start_row: number; columns: string[]; header_rows: number[] }
+  flagged: boolean
+}
+
+// GET /dataset/{id}/header-review
+export interface HeaderReview {
+  dataset_id: number
+  status: DatasetStatus
+  needs_review: boolean
+  filename?: string | null
+  sheets?: Record<string, HeaderSheetReview>
+}
+
+// POST /dataset/{id}/header-confirm 的单 sheet 提交规格
+export interface HeaderConfirmSpec {
+  data_start_row: number
+  columns: string[]
 }
 
 // POST /dataset/upload 返回(非阻塞:只确认已建行,后续状态靠列表轮询)

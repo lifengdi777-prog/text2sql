@@ -10,6 +10,7 @@ const emit = defineEmits<{
   assist: [dataset: DatasetSummary]
   preview: [dataset: DatasetSummary]
   remove: [dataset: DatasetSummary]
+  confirmHeader: [dataset: DatasetSummary]
 }>()
 
 const menuOpen = ref(false)
@@ -20,6 +21,9 @@ const isReady = () => props.dataset.status === 'ready'
 const isBuilding = computed(
   () => props.dataset.status === 'cleaning' || props.dataset.status === 'indexing',
 )
+
+// 表头识别不确定 → 等用户在弹窗里手选表头行
+const needsHeader = computed(() => props.dataset.status === 'needs_header')
 
 function onOpen() {
   if (isReady()) emit('open', props.dataset)
@@ -41,9 +45,53 @@ function chooseRemove() {
 </script>
 
 <template>
+  <!-- 待确认表头:自动识别不确定,引导用户手选表头行 -->
+  <div
+    v-if="needsHeader"
+    class="relative flex h-44 cursor-pointer flex-col rounded-2xl border border-amber-300 bg-amber-50/50 p-5 transition hover:border-amber-400 hover:shadow-[0_12px_30px_rgba(251,191,36,0.18)]"
+    @click="emit('confirmHeader', dataset)"
+  >
+    <div class="flex items-start gap-3">
+      <span
+        class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-400 text-lg text-white"
+        aria-hidden="true"
+      >
+        ⚠
+      </span>
+      <div class="min-w-0">
+        <h3 class="truncate text-base font-semibold text-slate-900" :title="dataset.name">
+          {{ dataset.name }}
+        </h3>
+        <p class="text-xs text-amber-600">表头需确认</p>
+      </div>
+    </div>
+
+    <div class="mt-auto flex items-center justify-between gap-2">
+      <span class="truncate text-xs text-slate-500">自动识别不确定，请手动确认表头</span>
+      <div class="flex items-center gap-1.5" @click.stop>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-600"
+          @click="emit('confirmHeader', dataset)"
+        >
+          <span aria-hidden="true">✓</span>
+          确认表头
+        </button>
+        <button
+          type="button"
+          class="inline-flex h-7 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-rose-600"
+          aria-label="删除"
+          @click="emit('remove', dataset)"
+        >
+          🗑
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- 建设中:仅展示「索引创建中」+ 不确定进度条,完成前不暴露文件名/操作 -->
   <div
-    v-if="isBuilding"
+    v-else-if="isBuilding"
     class="relative flex h-44 flex-col justify-center gap-4 rounded-2xl border border-slate-200 bg-white p-5"
   >
     <div class="flex items-center gap-2 text-sm font-medium text-slate-600">

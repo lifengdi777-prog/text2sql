@@ -1,6 +1,12 @@
 import axios from 'axios'
 
-import type { DatasetSummary, DatasetDetail, UploadResult } from '@/types/dataset'
+import type {
+  DatasetSummary,
+  DatasetDetail,
+  UploadResult,
+  HeaderReview,
+  HeaderConfirmSpec,
+} from '@/types/dataset'
 import { getToken, redirectToLogin } from '@/lib/authToken'
 
 // 数据集 REST(非流式),跟 agent.ts 的 SSE 实例分开:这里用普通 JSON。
@@ -67,4 +73,18 @@ export async function uploadDataset(
 
 export async function deleteDataset(datasetId: number): Promise<void> {
   await datasetApi.delete(`/dataset/${datasetId}`)
+}
+
+/** 取「待确认表头」的预览载荷(各 sheet 前若干行网格 + 建议表头),用于渲染确认弹窗。 */
+export async function getHeaderReview(datasetId: number): Promise<HeaderReview> {
+  const { data } = await datasetApi.get<HeaderReview>(`/dataset/${datasetId}/header-review`)
+  return data
+}
+
+/** 提交用户手选的表头(每个 sheet 的 data_start_row + columns),后端后台重跑解析入库。 */
+export async function confirmHeader(
+  datasetId: number,
+  sheets: Record<string, HeaderConfirmSpec>,
+): Promise<void> {
+  await datasetApi.post(`/dataset/${datasetId}/header-confirm`, { sheets })
 }
