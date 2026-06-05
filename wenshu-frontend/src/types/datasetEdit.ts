@@ -7,6 +7,8 @@ export interface EditSheetPreview {
   sheet: string
   columns: string[]
   rows: Record<string, EditCellValue>[]
+  // 与 rows 一一对应的行 id(用于把 diff 精确映射到单元格做高亮);汇总表为空
+  row_ids?: string[]
   total: number
   page: number // 0-based
   size: number
@@ -69,6 +71,8 @@ export interface EditDiff {
   renames: { old: string; new: string }[]
   added_cols: string[]
   dropped_cols: string[]
+  // 新增行的 row_id(直播流里有;历史还原没有)→ 整行高亮
+  new_rows?: string[]
 }
 
 // 一轮对话(右侧问答区的一条助手回应,边流边累积)

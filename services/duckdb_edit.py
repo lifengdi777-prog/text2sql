@@ -149,10 +149,14 @@ class EditWorkbook:
         total = int(len(df))
         pages = max(1, (total + size - 1) // size)
         page = max(0, min(page, pages - 1))
-        view = df[cols].iloc[page * size : page * size + size]
+        sliced = df.iloc[page * size : page * size + size]
+        # row_ids 与 rows 一一对应:供前端把 diff(cell_changes/new_rows)精确映射到单元格做高亮。
+        # 汇总/生成表无 __row_id → 空列表(前端就不高亮)。
+        row_ids = [str(v) for v in sliced[ROW_ID]] if ROW_ID in df.columns else []
         return {
-            "sheet": sheet, "columns": cols, "rows": _df_to_rows(view),
+            "sheet": sheet, "columns": cols, "rows": _df_to_rows(sliced[cols]),
             "total": total, "page": page, "size": size, "pages": pages,
+            "row_ids": row_ids,
         }
 
     def columns_now(self, sheet: str) -> list[str]:

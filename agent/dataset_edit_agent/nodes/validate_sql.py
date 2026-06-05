@@ -67,7 +67,9 @@ async def validate_sql(state: DatasetEditState, runtime: Runtime[DatasetEditCont
             "cell_changes": diff["cell_changes"][:100],
             "deleted": diff["deleted"][:100],
             "renames": diff["renames"],
-            "added_cols": diff["added_cols"], "dropped_cols": diff["dropped_cols"]}
+            "added_cols": diff["added_cols"], "dropped_cols": diff["dropped_cols"],
+            # 新增行的 row_id(与预览的 row_ids 对得上)→ 前端整行高亮
+            "new_rows": [r["row_id"] for r in diff["new_rows"]][:100]}
 
     return {
         "sql_issues": [], "normalized_sql": check.normalized_sql,
