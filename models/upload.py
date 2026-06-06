@@ -36,7 +36,10 @@ class UploadDatasetMySQL(Base):
     # 文件内容 SHA-256(hex 64 chars)。配合 user_id + original_filename 做去重
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="SHA-256 of original file")
     # 嵌套的 schema profile 直接放 JSON 列(MySQL 8+ 原生 JSON 类型)
-    schema_json: Mapped[dict | None] = mapped_column(JSON, comment="所有 sheet 的列详情")
+    schema_json: Mapped[dict | None] = mapped_column(JSON, comment="所有 sheet 的列详情(问数读它,已不含血缘)")
+    # 血缘(各 sheet 行列→Excel 坐标)单独存:只有「智能助手」编辑/保样式导出用;
+    # 问数不读 → 从 schema_json 拆出来,避免大文件时问数连带把超长 row_origin 加载进缓存。
+    lineage_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="各 sheet 血缘 {sheet: lineage},仅编辑/导出用")
     # 本地时间(Python 端 default/onupdate),与全项目 datetime.now() 统一;server_default 仅作兜底
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

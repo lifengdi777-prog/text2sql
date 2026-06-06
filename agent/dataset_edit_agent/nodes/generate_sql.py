@@ -22,7 +22,7 @@ async def generate_sql(state: DatasetEditState, runtime: Runtime[DatasetEditCont
     async with Session() as s:
         active_ops = await DatasetEditRepository(s).active_sql(state.session_id)
 
-    info = await get_dataset_info(state.dataset_id)
+    info = await get_dataset_info(state.dataset_id, with_lineage=True)
     current_md, all_sheets = await asyncio.to_thread(
         snapshot_with_ops, info, active_ops, state.active_sheet)
     # 可引用表 = 当前会话所有 sheet(含已建汇总表)+ 原始数据 sheet

@@ -548,8 +548,7 @@ async def _persist_and_index(
                 "row_count": int(len(df)),
                 "parquet_file": sheet_files[name],
                 "columns": profile_columns(df),
-                # 血缘:智能助手保样式回写原件用;问数不读它,纯增量字段
-                "lineage": sheet_lineages.get(name),
+                # 注:血缘不再塞进 schema(问数会连带加载超长 row_origin),改为单独存 lineage_json
             }
             total += len(df)
         return schema, total
@@ -558,8 +557,8 @@ async def _persist_and_index(
     async with Session() as session:
         repo = UploadDatasetRepository(session)
         await repo.finalize(dataset_id=dataset_id, folder_path=prefix,
-                            schema_json=schema_json, sheet_count=len(cleaned_sheets),
-                            total_rows=total_rows)
+                            schema_json=schema_json, lineage_json=sheet_lineages,
+                            sheet_count=len(cleaned_sheets), total_rows=total_rows)
         await session.commit()
     logger.info(f"数据集 {dataset_id}({filename})解析完成:{len(cleaned_sheets)} sheet,{total_rows} 行")
     # ES 值索引 → status=ready(沿用现有后台函数,内部 finally 会置 ready)

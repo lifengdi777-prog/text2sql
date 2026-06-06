@@ -5,10 +5,29 @@
 """
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.upload import UploadDatasetMySQL
+
+
+async def ensure_upload_columns() -> None:
+    """upload_datasets 启动补列:加 lineage_json(血缘从 schema_json 拆出,问数不再连带加载)。
+
+    create_all 只建新表不改旧表,故对存量库单独 ALTER 补列(幂等:已存在则 no-op)。
+    """
+    from services.excel_ingest import get_session_factory
+
+    Session = get_session_factory()
+    async with Session() as session:
+        existing = set((await session.execute(text(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='upload_datasets'"
+        ))).scalars().all())
+        if not existing or "lineage_json" in existing:
+            return  # 表还没建(create_all 会按模型建好)或已有该列 → no-op
+        await session.execute(text("ALTER TABLE upload_datasets ADD COLUMN lineage_json JSON NULL"))
+        await session.commit()
 
 
 class UploadDatasetRepository:
@@ -62,12 +81,14 @@ class UploadDatasetRepository:
         schema_json: dict[str, Any],
         sheet_count: int,
         total_rows: int,
+        lineage_json: dict[str, Any] | None = None,
     ) -> None:
         ds = await self.session.get(UploadDatasetMySQL, dataset_id)
         if ds is None:
             return
         ds.folder_path = folder_path
         ds.schema_json = schema_json
+        ds.lineage_json = lineage_json   # 血缘单独存,问数不读
         ds.sheet_count = sheet_count
         ds.total_rows = total_rows
         # parquet/schema 已就绪,但 ES 值索引还在后台建 → 先标 indexing,
@@ -103,6 +124,11 @@ class UploadDatasetRepository:
     async def get_schema(self, dataset_id: int) -> dict[str, Any] | None:
         """只取 schema_json,避免拉全行。"""
         stmt = select(UploadDatasetMySQL.schema_json).where(UploadDatasetMySQL.id == dataset_id)
+        return await self.session.scalar(stmt)
+
+    async def get_lineage(self, dataset_id: int) -> dict[str, Any] | None:
+        """只取 lineage_json(各 sheet 血缘),供智能助手编辑/导出按需加载。"""
+        stmt = select(UploadDatasetMySQL.lineage_json).where(UploadDatasetMySQL.id == dataset_id)
         return await self.session.scalar(stmt)
 
     async def list_by_user(self, user_id: str | None = None) -> list[UploadDatasetMySQL]:

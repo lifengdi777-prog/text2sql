@@ -21,30 +21,48 @@ _SCHEMA_CACHE: TTLCache = TTLCache(maxsize=100, ttl=300)
 # 加载
 # ───────────────────────────────────────────
 
-async def get_dataset_info(dataset_id: int) -> dict[str, Any] | None:
+async def get_dataset_info(dataset_id: int, with_lineage: bool = False) -> dict[str, Any] | None:
     """从 MySQL 拉数据集元信息 + schema_json,带短期缓存。
 
     返回 None 表示数据集不存在;返回 dict 包含:
       dataset_id / name / folder_path / status / schema(JSON)
-    """
-    if dataset_id in _SCHEMA_CACHE:
-        return _SCHEMA_CACHE[dataset_id]
 
+    with_lineage:
+      - False(默认,**问数**用):只读轻量 schema(列详情),**不加载血缘** → 又小又快,缓存的也是轻量版。
+      - True(**智能助手**编辑/导出用):额外从单独的 lineage_json 列读血缘,拼回 schema.sheets[*].lineage,
+        供保样式回写。血缘不进缓存,不污染问数那份轻量 info。
+    """
+    base = _SCHEMA_CACHE.get(dataset_id)
+    if base is None:
+        Session = get_session_factory()
+        async with Session() as session:
+            repo = UploadDatasetRepository(session)
+            ds = await repo.get(dataset_id)
+            if ds is None:
+                return None
+            base = {
+                "dataset_id": ds.id,
+                "name": ds.name,
+                "folder_path": ds.folder_path,
+                "status": ds.status,
+                "schema": ds.schema_json,
+            }
+        _SCHEMA_CACHE[dataset_id] = base
+
+    if not with_lineage:
+        return base
+    return await _attach_lineage(dataset_id, base)
+
+
+async def _attach_lineage(dataset_id: int, base: dict[str, Any]) -> dict[str, Any]:
+    """把血缘(单独列)读出来拼回 schema.sheets[*].lineage。返回**新 dict**,不改缓存的轻量 base。"""
     Session = get_session_factory()
     async with Session() as session:
-        repo = UploadDatasetRepository(session)
-        ds = await repo.get(dataset_id)
-        if ds is None:
-            return None
-        info = {
-            "dataset_id": ds.id,
-            "name": ds.name,
-            "folder_path": ds.folder_path,
-            "status": ds.status,
-            "schema": ds.schema_json,
-        }
-    _SCHEMA_CACHE[dataset_id] = info
-    return info
+        lineage_map = await UploadDatasetRepository(session).get_lineage(dataset_id) or {}
+    schema = base.get("schema") or {}
+    sheets = schema.get("sheets") or {}
+    new_sheets = {name: {**sinfo, "lineage": lineage_map.get(name)} for name, sinfo in sheets.items()}
+    return {**base, "schema": {**schema, "sheets": new_sheets}}
 
 
 def invalidate_cache(dataset_id: int) -> None:

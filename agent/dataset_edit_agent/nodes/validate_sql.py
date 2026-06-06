@@ -41,7 +41,7 @@ async def validate_sql(state: DatasetEditState, runtime: Runtime[DatasetEditCont
         return {"terminal": True}
 
     # 试执行(绑定校验)+ 算 diff
-    info = await get_dataset_info(state.dataset_id)
+    info = await get_dataset_info(state.dataset_id, with_lineage=True)
     result = await asyncio.to_thread(
         apply_and_diff, info, state.active_ops, check.normalized_sql, check.target_sheet)
     if not result["ok"]:

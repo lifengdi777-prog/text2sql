@@ -96,7 +96,7 @@ async def open_session(dataset_id: int, user_id: str = Depends(get_current_user)
         ops_payload = _ops_payload(await repo.list_ops(sid, active_only=True))
         await s.commit()
 
-    info = await get_dataset_info(dataset_id)
+    info = await get_dataset_info(dataset_id, with_lineage=True)
     sheets = await asyncio.to_thread(_preview_all, info, active_ops)
     return {"session_id": sid, "ops_count": len(active_ops), "sheets": sheets, "ops": ops_payload}
 
@@ -127,7 +127,7 @@ async def preview_page(dataset_id: int, session_id: int, sheet: str,
         if await repo.get_owned(session_id, user_id) is None:
             raise HTTPException(status_code=404, detail="编辑会话不存在")
         active_ops = await repo.active_sql(session_id)
-    info = await get_dataset_info(dataset_id)
+    info = await get_dataset_info(dataset_id, with_lineage=True)
     return await asyncio.to_thread(_preview_one, info, active_ops, sheet, page, size)
 
 
@@ -183,7 +183,7 @@ async def undo(dataset_id: int, session_id: int,
         ops_payload = _ops_payload(await repo.list_ops(session_id, active_only=True))
         await s.commit()
 
-    info = await get_dataset_info(dataset_id)
+    info = await get_dataset_info(dataset_id, with_lineage=True)
     sheets = await asyncio.to_thread(_preview_all, info, active_ops)
     return {"undone": undone is not None, "ops_count": len(active_ops),
             "sheets": sheets, "ops": ops_payload}
@@ -198,7 +198,7 @@ async def delete_sheet(dataset_id: int, session_id: int, name: str,
     返回结构与 undo 一致(sheets + ops),前端据此刷新 tab 与历史。
     """
     await require_owned_dataset(dataset_id, user_id)
-    info = await get_dataset_info(dataset_id)
+    info = await get_dataset_info(dataset_id, with_lineage=True)
     if name in _original_sheets(info):
         raise HTTPException(status_code=400, detail="原文件的工作表不能删除,只能删除编辑中新建的表")
 
@@ -240,7 +240,7 @@ async def download(dataset_id: int, session_id: int,
             raise HTTPException(status_code=404, detail="编辑会话不存在")
         active_ops = await repo.active_sql(session_id)
 
-    info = await get_dataset_info(dataset_id)
+    info = await get_dataset_info(dataset_id, with_lineage=True)
     filename, data = await asyncio.to_thread(export_with_info, info, active_ops)
 
     # 文件名含中文 → RFC 5987 编码,避免 header 非 ASCII 报错
