@@ -150,6 +150,22 @@ def _looks_date_like(stripped: pd.Series) -> bool:
     return sample.str.contains(_DATE_HINT_RE, regex=True, na=False).mean() >= 0.5
 
 
+def _normalize_cn_date(s: pd.Series) -> pd.Series:
+    """中文「年月日」归一化成标准分隔符,供 pd.to_datetime 解析(否则认不出中文日期,会全 NaT)。
+
+    例:2025年1月15日 → 2025-1-15;2025年01月 → 2025-01;2025/1/1 → 2025-1-1(标准格式无副作用)。
+    """
+    return (
+        s.str.replace(r"[年/.]", "-", regex=True)   # 年 / . → 统一成 -
+        .str.replace("月", "-", regex=False)
+        .str.replace("日", "", regex=False)
+        .str.replace("号", "", regex=False)
+        .str.replace(r"-+", "-", regex=True)         # 合并连续 -
+        .str.replace(r"-+$", "", regex=True)         # 去尾部多余 -(如 2025-01- → 2025-01)
+        .str.strip()
+    )
+
+
 def _coerce_column(s: pd.Series) -> pd.Series:
     """对 object 列:去千分位/货币/百分号 → 试数值 → 试日期 → 否则保留字符串。"""
     if s.dtype != object:
@@ -168,9 +184,10 @@ def _coerce_column(s: pd.Series) -> pd.Series:
     if _looks_date_like(stripped):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # 抑制 "Could not infer format" 噪音
-            as_dt = pd.to_datetime(stripped, errors="coerce")
+            # 中文「年月日」先归一化成标准分隔符,否则 pd.to_datetime 认不出中文日期(会全 NaT)
+            as_dt = pd.to_datetime(_normalize_cn_date(stripped), errors="coerce")
             if as_dt.notna().mean() >= 0.8:
-                return pd.to_datetime(s, errors="coerce")
+                return pd.to_datetime(_normalize_cn_date(s.astype(str)), errors="coerce")
 
     # 否则按字符串列处理:**统一转成 str(NaN→None)**,并强制回 object dtype。
     # · 字符串化:object 列若混入 int/float(表头识别失败、表头行被当数据)会让 to_parquet 崩
