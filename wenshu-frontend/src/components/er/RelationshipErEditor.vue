@@ -20,9 +20,9 @@ const props = defineProps<{ tables: MetaTable[] }>()
 // 与父组件 meta.relationships 共享同一数组引用,增删即时反映到保存数据里
 const relationships = defineModel<MetaRelationship[]>({ required: true })
 
-const NODE_WIDTH = 240
-const HEAD_HEIGHT = 36
-const ROW_HEIGHT = 25
+const NODE_WIDTH = 300
+const HEAD_HEIGHT = 44
+const ROW_HEIGHT = 34
 
 const nodes = ref<Node[]>([])
 const edges = ref<Edge[]>([])
@@ -79,7 +79,7 @@ function buildEdges(): Edge[] {
         sourceHandle: `${r.from_column}/${rightward ? 'sr' : 'sl'}`,
         target: r.to_table,
         targetHandle: `${r.to_column}/${rightward ? 'tl' : 'tr'}`,
-        style: { stroke: '#10b981', strokeWidth: 1.6 },
+        style: { stroke: '#10b981', strokeWidth: 3 },
         markerEnd: MarkerType.ArrowClosed,
       }
     })
@@ -169,7 +169,7 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
       </button>
     </div>
 
-    <div class="er-canvas flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+    <div class="er-canvas flex-1 overflow-hidden rounded-2xl border border-slate-700 bg-slate-800">
       <VueFlow
         v-model:nodes="nodes"
         v-model:edges="edges"
@@ -185,7 +185,7 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
           <TableNode :data="nodeProps.data" />
         </template>
         <!-- 方格纸网格:lines 变体画横竖网格线(绘图工具画布那种) -->
-        <Background variant="lines" :gap="20" :size="1" pattern-color="#e6eaf0" />
+        <Background variant="lines" :gap="20" :size="1" pattern-color="#334155" />
       </VueFlow>
     </div>
   </div>
@@ -195,10 +195,10 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
 .er-canvas {
   min-height: 0;
 }
-/* 连线 hover 时变红 + 加粗,提示「可点删除」 */
+/* 连线 hover 时变红 + 更粗,提示「可点删除」(用 !important 盖过内联 strokeWidth) */
 .er-canvas :deep(.vue-flow__edge-path:hover) {
   stroke: #f43f5e !important;
-  stroke-width: 2.4;
+  stroke-width: 4 !important;
   cursor: pointer;
 }
 </style>

@@ -11,13 +11,6 @@ defineProps<{
     columns: { name: string; type: string; role: string }[]
   }
 }>()
-
-// 主键🔑 / 外键🔗 标记(其余维度/度量不标),直接复用元数据里的 role 字段
-function roleMark(role: string): string {
-  if (role === 'primary_key') return '🔑'
-  if (role === 'foreign_key') return '🔗'
-  return ''
-}
 </script>
 
 <template>
@@ -30,7 +23,25 @@ function roleMark(role: string): string {
         <Handle :id="`${col.name}/tl`" type="target" :position="Position.Left" class="er-handle" />
         <Handle :id="`${col.name}/sl`" type="source" :position="Position.Left" class="er-handle" />
         <span class="er-row__name">
-          <span v-if="roleMark(col.role)" class="er-row__mark">{{ roleMark(col.role) }}</span>
+          <!-- 主键:金色钥匙 -->
+          <svg
+            v-if="col.role === 'primary_key'"
+            class="er-row__mark" viewBox="0 0 24 24" fill="none"
+            stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          >
+            <circle cx="7.5" cy="15.5" r="5.5" />
+            <path d="m21 2-9.6 9.6" />
+            <path d="m15.5 7.5 3 3L22 7l-3-3" />
+          </svg>
+          <!-- 外键:蓝色链接 -->
+          <svg
+            v-else-if="col.role === 'foreign_key'"
+            class="er-row__mark" viewBox="0 0 24 24" fill="none"
+            stroke="#0ea5e9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          >
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
           {{ col.name }}
         </span>
         <span class="er-row__type">{{ col.type }}</span>
@@ -43,18 +54,18 @@ function roleMark(role: string): string {
 
 <style scoped>
 .er-node {
-  width: 240px;
-  border: 1px solid #bfdbfe;
-  border-radius: 10px;
+  width: 300px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   background: #fff;
-  box-shadow: 0 6px 18px rgba(148, 163, 184, 0.18);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
   overflow: hidden;
-  font-size: 12px;
+  font-size: 16px;
 }
 .er-node__head {
   background: #3b82f6;
   color: #fff;
-  padding: 7px 12px;
+  padding: 9px 14px;
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
@@ -70,19 +81,24 @@ function roleMark(role: string): string {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 12px;
+  padding: 7px 14px;
   border-bottom: 1px solid #f1f5f9;
 }
 .er-row:last-child {
   border-bottom: none;
 }
 .er-row__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #1e293b;
   white-space: nowrap;
 }
 .er-row__mark {
-  margin-right: 2px;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
 }
 .er-row__type {
   color: #94a3b8;
