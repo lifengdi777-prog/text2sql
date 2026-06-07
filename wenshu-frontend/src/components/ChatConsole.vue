@@ -430,7 +430,7 @@ async function submitQuery() {
         const index = messages.value.findIndex((item) => item.id === replyMessage.id)
         if (index === -1) return
         const m = messages.value[index]
-        if (isReplyMessage(m)) messages.value[index] = { ...m, dbId: mid }
+        if (m && isReplyMessage(m)) messages.value[index] = { ...m, dbId: mid }
       },
     })
 
