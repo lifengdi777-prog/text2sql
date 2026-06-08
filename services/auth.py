@@ -12,7 +12,6 @@
 """
 from __future__ import annotations
 
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -157,25 +156,25 @@ async def ensure_admin_user() -> None:
         admin = await repo.get_by_username("admin")
 
         if admin is None:
-            # 首次创建:优先用部署者提供的初始密码,否则随机生成并打印一次。
-            env_pwd = (os.environ.get("WENSHU_ADMIN_PASSWORD") or "").strip()
-            if len(env_pwd) >= 6:
-                init_pwd, from_env = env_pwd, True
+            # 首次创建:优先用配置 auth.admin_password,否则随机生成并打印一次。
+            cfg_pwd = (app_config.auth.admin_password or "").strip()
+            if len(cfg_pwd) >= 6:
+                init_pwd, from_cfg = cfg_pwd, True
             else:
-                if env_pwd:
-                    logger.warning("WENSHU_ADMIN_PASSWORD 少于 6 位,已忽略,改用随机密码。")
-                init_pwd, from_env = secrets.token_urlsafe(12), False
+                if cfg_pwd:
+                    logger.warning("auth.admin_password 少于 6 位,已忽略,改用随机密码。")
+                init_pwd, from_cfg = secrets.token_urlsafe(12), False
             admin = await repo.create("admin", hash_password(init_pwd))
             admin.role = "admin"
             await session.commit()
-            if from_env:
-                logger.info("已用 WENSHU_ADMIN_PASSWORD 初始化管理员 admin。")
+            if from_cfg:
+                logger.info("已用配置 auth.admin_password 初始化管理员 admin。")
             else:
                 logger.warning(
                     "\n================= 已创建管理员账号 =================\n"
                     "  用户名: admin\n"
                     f"  初始密码(仅本次打印,请立即保存): {init_pwd}\n"
-                    "  下次启动不再显示;可设环境变量 WENSHU_ADMIN_PASSWORD 指定初始密码。\n"
+                    "  下次启动不再显示;可在 conf/app_config.yaml 的 auth.admin_password 指定。\n"
                     "==================================================="
                 )
             return

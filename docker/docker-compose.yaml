@@ -12,7 +12,8 @@ services:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./mysql:/docker-entrypoint-initdb.d
+      # 不挂 /docker-entrypoint-initdb.d:不自动建任何库。
+      # 演示库(docker/mysql/*.sql)由用户按 README 手动导入。
     command:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_general_ci
@@ -95,13 +96,19 @@ services:
       WENSHU_QDRANT_HOST: qdrant
       WENSHU_ES_HOST: elasticsearch
       WENSHU_S3_ENDPOINT: http://minio:9000
-      # 首次启动创建管理员 admin 的初始密码;不设则随机生成并打印在后端日志里一次。
-      # WENSHU_ADMIN_PASSWORD: "改成你的强密码"
+      # 管理员初始密码在 conf/app_config.yaml 的 auth.admin_password 配(随 yaml 挂载进来)。
       # 启用 observability 时打开下一行,后端 trace 才指向容器内 langfuse
       # WENSHU_LANGFUSE_HOST: http://langfuse-web:3000
     volumes:
       - ../conf/app_config.yaml:/app/conf/app_config.yaml:ro   # 真实配置(含密钥)
       - ../logs:/app/logs                                       # 日志落宿主,便于查看
+    healthcheck:
+      # 镜像无 curl,用自带 python 探活探针 /healthz(只查进程,不查外部依赖,快)
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz',timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s   # 留出首启建库/建表/装载时间,期间不计失败
 
   # ─────────────────────────────────────────────────────────────────────
   # 文枢前端(Vue + nginx)。多阶段构建:node 出包 → nginx 托管 + 反代后端。
@@ -114,7 +121,7 @@ services:
     container_name: wenshu-frontend
     restart: unless-stopped
     depends_on:
-      - wenshu-backend
+      wenshu-backend: { condition: service_healthy }   # 等后端探活通过再起,避免早期 502
     ports:
       - "8080:80"
 

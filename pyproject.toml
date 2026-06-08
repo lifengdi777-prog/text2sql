@@ -1,7 +1,7 @@
 [project]
 name = "wenshu"
 version = "0.1.0"
-description = "Add your description here"
+description = "文枢 wenshu —— 自然语言问数(Text2SQL)与数据分析平台,基于 FastAPI + LangGraph。"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

@@ -12,8 +12,11 @@ wheels/
 # Logs
 logs/
 
-#docker相关文件
-docker/mysql
+#docker 相关:忽略 mysql 目录,但放行 demo 业务库种子 SQL(供用户按 README 手动导入,不自动加载)。
+#  注:不放行 meta.sql —— meta 库由应用自动建表(当前 schema),避免冲突。
+docker/mysql/*
+!docker/mysql/dw.sql
+!docker/mysql/e-commerce.sql
 
 #api密钥等敏感信息
 conf/app_config.yaml
