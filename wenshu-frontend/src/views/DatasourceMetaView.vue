@@ -8,7 +8,7 @@ import {
   saveDatasourceMetrics,
   saveDatasourceRelationships,
 } from '@/services/datasource'
-import type { ColumnRole, DatasourceMeta, MetaColumn } from '@/types/datasource'
+import type { ColumnRole, DatasourceMeta, MetaColumn, MetaRelationship } from '@/types/datasource'
 import { effectiveColumnRole } from '@/lib/metaRoles'
 import RelationshipErEditor from '@/components/er/RelationshipErEditor.vue'
 
@@ -90,6 +90,7 @@ async function load() {
   try {
     meta.value = await getDatasourceMeta(id)
     selectedTableName.value = meta.value?.tables?.[0]?.name ?? ''   // 默认选中第一张表
+    snapshotRelationships()   // 快照已保存的表关系,供「还原」一键重置
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
   } finally {
@@ -166,6 +167,27 @@ function addRelation() {
 }
 function removeRelation(idx: number) {
   meta.value?.relationships.splice(idx, 1)
+}
+
+// ── 表关系「还原」:把本次未保存的增删丢弃,重置回上次保存(=进页面时加载)的状态。──
+// 保存表关系会跳回数据源列表,故"进页面时的快照"即"上次保存态"。
+const savedRelationships = ref<MetaRelationship[]>([])
+function snapshotRelationships() {
+  savedRelationships.value = (meta.value?.relationships ?? []).map((r) => ({ ...r }))
+}
+function relSig(list: MetaRelationship[]): string {
+  return list
+    .map((r) => `${r.from_table}.${r.from_column}->${r.to_table}.${r.to_column}#${r.description ?? ''}`)
+    .sort()
+    .join('|')
+}
+// 有未保存改动才允许「还原」(也避免误点清空当前编辑)。
+const relationsDirty = computed(
+  () => relSig(meta.value?.relationships ?? []) !== relSig(savedRelationships.value),
+)
+function restoreRelationships() {
+  if (!meta.value) return
+  meta.value.relationships = savedRelationships.value.map((r) => ({ ...r }))
 }
 
 // 顶部保存按钮文案随 Tab 变
@@ -557,6 +579,15 @@ onMounted(load)
               @click="addRelation"
             >
               ＋ 新增关系
+            </button>
+            <button
+              type="button"
+              class="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="!relationsDirty"
+              title="丢弃本次未保存的增删,还原回上次保存的表关系"
+              @click="restoreRelationships"
+            >
+              还原
             </button>
           </div>
         </div>
