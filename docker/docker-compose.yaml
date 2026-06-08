@@ -102,6 +102,21 @@ services:
       - ../logs:/app/logs                                       # 日志落宿主,便于查看
 
   # ─────────────────────────────────────────────────────────────────────
+  # 文枢前端(Vue + nginx)。多阶段构建:node 出包 → nginx 托管 + 反代后端。
+  # 访问 http://localhost:8080;API 走相对路径,由 nginx 代理到 wenshu-backend。
+  # ─────────────────────────────────────────────────────────────────────
+  wenshu-frontend:
+    build:
+      context: ../wenshu-frontend
+      dockerfile: Dockerfile
+    container_name: wenshu-frontend
+    restart: unless-stopped
+    depends_on:
+      - wenshu-backend
+    ports:
+      - "8080:80"
+
+  # ─────────────────────────────────────────────────────────────────────
   # Langfuse 可观测(可选)。带 profile "observability",默认不启;
   #   只起核心:           docker compose up -d
   #   核心 + 可观测:      docker compose --profile observability up -d

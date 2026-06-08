@@ -10,6 +10,8 @@
 
 | 组件 | 用途 | 默认端口 | 是否必需 |
 |---|---|---|---|
+| 前端 | Vue + nginx，托管 UI 并反代后端 API | 8080→80 | ✅ |
+| 后端 | FastAPI + LangGraph 问数服务 | 8000 | ✅ |
 | MySQL | 元数据库 `meta` + 运营库 `wenshu` + 你的业务库 `dw` | 3307→3306 | ✅ |
 | Qdrant | 列/指标向量召回 | 6333 | ✅ |
 | Elasticsearch | 值的全文召回（IK 中文分词） | 9200 | ✅ |
@@ -53,17 +55,22 @@ cp conf/app_config.yaml.example conf/app_config.yaml
 
 两种方式任选其一。
 
-**方式 A：Docker（推荐，一键起全套）**
+**方式 A：Docker（推荐，一键起全栈含 UI）**
 
-后端镜像已纳入 compose。无需 2.1 单独起基础设施，一条命令拉起基础设施 + 后端：
+基础设施 + 后端 + 前端都已纳入 compose。无需 2.1 单独起基础设施、也无需 2.4 单独构建前端，一条命令拉起全部：
 
 ```bash
 docker compose -f docker/docker-compose.yaml up -d --build
 ```
 
+起来后访问 **http://localhost:8080**（前端），用 `admin / admin` 登录。
+
 - 后端容器通过 `WENSHU_*` 环境变量把配置里的 host 自动覆盖成容器服务名，无需改 yaml。
-- 真实 `conf/app_config.yaml` 以只读挂载注入容器（不打进镜像），日志落到宿主 `logs/`。
+- 前端为 nginx 镜像：托管静态产物 + 把 API 反代到后端（同源，无需 CORS、无需把后端地址打进 JS）。
+- 真实 `conf/app_config.yaml` 以只读挂载注入后端容器（不打进镜像），日志落到宿主 `logs/`。
 - 会等 MySQL 健康检查通过再启动后端，保证自动建表成功。
+
+> 用方式 A 时可跳过下面的 2.4；2.4 是裸机/本地开发用的前端起法。
 
 > 若你的 `db_dw`（业务库）是**外部独立数据库**，在 `conf/app_config.yaml` 里把 `db_dw.host/port` 写成它的真实地址即可（别用 `${oc.env:...}` 默认值）。
 
@@ -83,7 +90,7 @@ uv run python main.py         # 启动,监听 0.0.0.0:8000
 
 健康检查：`GET /healthz`（存活）、`GET /readyz`（依赖就绪）。
 
-### 2.4 起前端
+### 2.4 起前端（裸机 / 本地开发；用方式 A 可跳过）
 
 ```bash
 cd wenshu-frontend
