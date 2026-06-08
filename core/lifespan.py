@@ -32,6 +32,12 @@ async def lifespan(_: FastAPI):
         await ensure_admin_user()  # upload 库:给 users 补 role 列 + 确保存在 admin/admin 管理员
     except Exception as exc:
         logger.warning(f"列迁移跳过/失败(不影响启动):{exc}")
+    # 3) 安全自检:检测仍在用的开发默认值(JWT secret / CORS),显著告警(不拒启)。
+    try:
+        from core.security import log_security_warnings
+        log_security_warnings()
+    except Exception as exc:
+        logger.warning(f"安全自检跳过/失败(不影响启动):{exc}")
     # 配置了对象存储就确保 bucket 存在(上传功能用;没配则跳过,不影响原 DW 路径)
     if app_config.s3 is not None:
         try:

@@ -19,11 +19,16 @@ import uvicorn
 #FastAPI() 创建整个应用实例
 app = FastAPI(lifespan=lifespan)
 
-#添加跨域中间件
+#添加跨域中间件:允许域名从配置读(app_config.cors.allow_origins)。
+# 默认 ['*'] 放开(本地开发);生产在 yaml 填明确的前端域名收敛。
+# 含 '*' 时浏览器禁止携带凭据,allow_credentials 强制为 False(否则配置无效且不安全)。
+from conf.app_config import app_config
+_cors_origins = app_config.cors.allow_origins
+_cors_allow_all = "*" in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],# 允许所有域名访问
-    allow_credentials=True,# 允许携带 Cookie
+    allow_origins=_cors_origins,
+    allow_credentials=not _cors_allow_all,
     allow_methods=["*"],# 允许所有 HTTP 方法（GET/POST/PUT...）
     allow_headers=["*"],# 允许所有请求头
 )

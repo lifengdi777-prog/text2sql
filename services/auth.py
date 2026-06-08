@@ -154,3 +154,11 @@ async def ensure_admin_user() -> None:
             admin.password_hash = hash_password(ADMIN_PASSWORD)
         admin.role = "admin"   # 新建或存量,都确保是管理员
         await session.commit()
+
+        # 仍是默认密码 → 告警提醒改密(只警告,不强改,避免打断登录)。
+        if verify_password(ADMIN_PASSWORD, admin.password_hash):
+            from core.log import logger
+            logger.warning(
+                "管理员账号 admin 仍是默认密码(admin/admin123),"
+                "请登录后立即修改,避免生产环境被未授权登录。"
+            )

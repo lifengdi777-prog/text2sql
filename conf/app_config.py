@@ -100,15 +100,32 @@ class S3Config(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# JWT 默认 secret(仅本地开发)。生产必须在 yaml 覆盖,否则 token 可被伪造;
+# 启动时会检测是否仍是该默认值并告警(见 core/security.py)。
+DEFAULT_JWT_SECRET = "wenshu-dev-secret-change-me-in-production"
+
+
 class AuthConfig(BaseModel):
     """登录鉴权配置(JWT)。不配置则用下面的默认值(仅适合本地开发)。
 
     ⚠️ 生产环境务必在 app_config.yaml 里设一个随机的强 secret,
     否则 token 可被伪造。改了 secret 会让已签发的 token 全部失效。
     """
-    secret: str = "wenshu-dev-secret-change-me-in-production"
+    secret: str = DEFAULT_JWT_SECRET
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7   # 7 天
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CORSConfig(BaseModel):
+    """跨域(CORS)。allow_origins=['*'] 为放开(本地开发默认);
+    生产应填明确的前端域名列表,如 ['https://wenshu.example.com']。
+
+    注意:含 '*' 时浏览器禁止携带凭据,allow_credentials 会被强制为 False
+    (见 main.py);需要带凭据的跨域,必须列明确域名。
+    """
+    allow_origins: list[str] = ["*"]
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -138,6 +155,8 @@ class AppConfig(BaseModel):
     s3: S3Config | None = None
     # 登录鉴权(JWT)。不配置则用 AuthConfig 的默认值(本地开发够用)
     auth: AuthConfig = AuthConfig()
+    # 跨域。不配置则放开(['*']);生产应在 yaml 填明确的前端域名
+    cors: CORSConfig = CORSConfig()
     # Langfuse 可观测。不配置/enabled=false 则不追踪(本地开发默认关)
     langfuse: LangfuseConfig = LangfuseConfig()
 

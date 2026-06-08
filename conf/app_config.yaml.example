@@ -89,6 +89,22 @@ db_upload:
   password: root                      # ⚠️ 生产改成强密码
   database: wenshu
 
+# ── 登录鉴权(JWT)──────────────────────────────────────────────────────────
+# ⚠️ 生产必须设一个随机强密钥,否则 token 可被伪造(启动会检测默认值并告警)。
+#    生成示例:python -c "import secrets; print(secrets.token_urlsafe(48))"
+auth:
+  secret: "CHANGE_ME_TO_A_RANDOM_LONG_SECRET"
+  # algorithm: HS256
+  # access_token_expire_minutes: 10080   # 7 天
+
+# ── 跨域 CORS ───────────────────────────────────────────────────────────────
+# 默认 ['*'] 放开(本地开发)。⚠️ 生产填明确的前端域名,否则任意站点可跨域调用。
+# 含 '*' 时浏览器禁止携带凭据,allow_credentials 会被强制为 False。
+cors:
+  allow_origins:
+    - "*"
+    # - "https://wenshu.example.com"
+
 # ── Langfuse 可观测(可选)─────────────────────────────────────────────────
 # 默认关闭。需要 trace/评测对比时:用 `docker compose --profile observability up -d`
 # 起 Langfuse,再把 enabled 改 true,并填上与 compose 中 LANGFUSE_INIT_* 一致的 key。
