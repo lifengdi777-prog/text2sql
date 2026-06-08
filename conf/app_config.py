@@ -34,15 +34,17 @@ class DBConfig(BaseModel):
 
 
 class UploadDBConfig(BaseModel):
-    """上传专用 DB:database 字段是 catalog 库的名字(默认 'upload')。
+    """应用自有的运营库:users / conversations / messages / upload_datasets /
+    dataset_edit_*。database 字段是库名(默认 'wenshu')。
 
-    动态建 up_xxx 库时不用 database 字段,直接连服务端 root。
+    历史名为 upload(最初只放上传数据集),后来用户表/会话表也就近塞了进来,
+    名不副实,现统一为 wenshu。变量名 db_upload 暂保留以减小改动面。
     """
     host: str
     port: int
     user: str
     password: str
-    database: str = "upload"
+    database: str = "wenshu"
 
     model_config = ConfigDict(from_attributes=True)
 
