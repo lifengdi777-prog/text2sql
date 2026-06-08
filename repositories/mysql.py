@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from models.meta import ColumnInfoMySQL, MetricInfoMySQL, TableInfoMySQL, ColumnMetricMySQL, DataRelationshipMySQL
 from dtos.meta import ColumnInfo, TableInfo, MetricInfo, ColumnMetric, DataRelationship
 from conf.app_config import DEFAULT_DATASOURCE_ID
@@ -69,13 +69,42 @@ class MetaDBRepository:
     async def add_relationships(self, relationships: list[DataRelationship]):
         self.session.add_all([DataRelationshipMySQL(**rel.model_dump()) for rel in relationships])
 
-    # 人工编辑「表关系」专用:整表替换本数据源的关系(先删本源旧边,再写新边)。
-    # 只动 data_relationship,不碰别的表、不重建索引 —— 关系即时生效。
+    # 人工编辑「表关系」专用:整表替换本数据源的关系(先删本源旧边,再写新边),
+    # 并把列的「外键身份」(column_info.role)与边联动 —— 因为 ER 图标、LLM 召回、编辑页徽章
+    # 都读 column_info.role,只有同步它,改完关系后这三处才一致。
+    # 联动规则(只管外键,主键/度量不碰):
+    #   · 凡当过某条边 from_column 的列 → role='foreign_key';
+    #   · 当前是 foreign_key、但已不再是任何边的 from_column → 退回 'dimension'。
+    # 主键(primary_key)是表自身标识,与有无外键指向无关,故永不在此降级。
     async def replace_relationships(self, relationships: list[DataRelationship]):
         await self.session.execute(
             delete(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == self.datasource_id)
         )
         await self.add_relationships(relationships)
+
+        # 列 id 约定为 "{table_id}.{列名}";边的 from_table 是表 id、from_column 是列名,故可直接拼。
+        fk_col_ids = {f"{rel.from_table}.{rel.from_column}" for rel in relationships}
+        # 升级:作为外键端点的列置为 foreign_key(主键端点 to_column 不动)。
+        if fk_col_ids:
+            await self.session.execute(
+                update(ColumnInfoMySQL)
+                .where(
+                    ColumnInfoMySQL.datasource_id == self.datasource_id,
+                    ColumnInfoMySQL.id.in_(fk_col_ids),
+                )
+                .values(role="foreign_key")
+            )
+        # 退回:当前 foreign_key 但已不在新边里的列 → dimension。
+        # role=='foreign_key' 的条件天然排除了主键/度量,只在 FK↔维度之间联动。
+        revert_conds = [
+            ColumnInfoMySQL.datasource_id == self.datasource_id,
+            ColumnInfoMySQL.role == "foreign_key",
+        ]
+        if fk_col_ids:
+            revert_conds.append(ColumnInfoMySQL.id.notin_(fk_col_ids))
+        await self.session.execute(
+            update(ColumnInfoMySQL).where(*revert_conds).values(role="dimension")
+        )
 
     # 列出本数据源的全部表(给意图解析节点拼"当前数据库领域"上下文用)。
     async def get_all_tables(self) -> list[TableInfo]:
