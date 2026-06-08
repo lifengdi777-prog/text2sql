@@ -1,18 +1,20 @@
 # Hard: 3+ 表 JOIN、窗口函数、子查询、HAVING 比率筛选、多条件交叉
-# 这一档考察:JOIN 路径规划 + 复杂 SQL 结构 + 业务术语→公式映射
+# 这一档考察:JOIN 路径规划(含雪花两跳) + 复杂 SQL 结构 + 业务术语→公式映射
+# ⚠ 工厂/地区/城市需 记录→车间→工厂 两跳;车间须按 workshop_id 分组(车间名不唯一)。
 
 - id: hard_001
   difficulty: hard
-  category: three_table_time
+  category: snowflake_time
   query: "统计 2026 年第一季度各工厂的实际产量"
   gold_sql: |
-    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_factory f ON w.factory_id = f.factory_id
     JOIN table_date d ON p.date_id = d.date_id
     WHERE d.year = 2026 AND d.quarter = 'Q1'
-    GROUP BY w.factory_name
-  gold_tables: [table_production_record, table_workshop, table_date]
+    GROUP BY f.factory_name
+  gold_tables: [table_production_record, table_workshop, table_factory, table_date]
   gold_columns: [factory_name, actual_quantity, year, quarter]
 
 - id: hard_002
@@ -22,20 +24,21 @@
   gold_sql: |
     SELECT factory_name, product_name, actual_quantity
     FROM (
-      SELECT w.factory_name,
+      SELECT f.factory_name,
              pd.product_name,
              SUM(p.actual_quantity) AS actual_quantity,
              ROW_NUMBER() OVER (
-               PARTITION BY w.factory_name
+               PARTITION BY f.factory_name
                ORDER BY SUM(p.actual_quantity) DESC
              ) AS rn
       FROM table_production_record p
       JOIN table_workshop w ON p.workshop_id = w.workshop_id
+      JOIN table_factory f ON w.factory_id = f.factory_id
       JOIN table_product pd ON p.product_id = pd.product_id
-      GROUP BY w.factory_name, pd.product_name
+      GROUP BY f.factory_name, pd.product_name
     ) t
     WHERE rn = 1
-  gold_tables: [table_production_record, table_workshop, table_product]
+  gold_tables: [table_production_record, table_workshop, table_factory, table_product]
   gold_columns: [factory_name, product_name, actual_quantity]
 
 - id: hard_003
@@ -54,46 +57,47 @@
 - id: hard_004
   difficulty: hard
   category: having_ratio
-  query: "哪些车间的合格率低于 97%？"
+  query: "哪些车间产线的合格率低于 97%？"
   gold_sql: |
-    SELECT w.workshop_name,
+    SELECT w.workshop_name, w.line_name,
            SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.workshop_name
+    GROUP BY w.workshop_id, w.workshop_name, w.line_name
     HAVING SUM(p.qualified_quantity) / SUM(p.actual_quantity) < 0.97
   gold_tables: [table_production_record, table_workshop]
-  gold_columns: [workshop_name, qualified_quantity, actual_quantity]
+  gold_columns: [workshop_name, line_name, qualified_quantity, actual_quantity]
 
 - id: hard_005
   difficulty: hard
   category: filter_dim_ratio_topn
-  query: "在焊接工序中，合格率最高的车间是哪个？"
+  query: "在焊接工序中，合格率最高的车间产线是哪个？"
   gold_sql: |
-    SELECT w.workshop_name,
+    SELECT w.workshop_name, w.line_name,
            SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
     JOIN table_process pr ON p.process_id = pr.process_id
     WHERE pr.process_name = '焊接'
-    GROUP BY w.workshop_name
+    GROUP BY w.workshop_id, w.workshop_name, w.line_name
     ORDER BY qualified_rate DESC
     LIMIT 1
   gold_tables: [table_production_record, table_workshop, table_process]
-  gold_columns: [workshop_name, qualified_quantity, actual_quantity, process_name]
+  gold_columns: [workshop_name, line_name, qualified_quantity, actual_quantity, process_name]
 
 - id: hard_006
   difficulty: hard
-  category: filter_equipment_status
+  category: filter_equipment_status_snowflake
   query: "各工厂中处于运行状态的设备的实际产量是多少？"
   gold_sql: |
-    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_factory f ON w.factory_id = f.factory_id
     JOIN table_equipment e ON p.equipment_id = e.equipment_id
     WHERE e.equipment_status = '运行'
-    GROUP BY w.factory_name
-  gold_tables: [table_production_record, table_workshop, table_equipment]
+    GROUP BY f.factory_name
+  gold_tables: [table_production_record, table_workshop, table_factory, table_equipment]
   gold_columns: [factory_name, actual_quantity, equipment_status]
 
 - id: hard_007
@@ -131,33 +135,35 @@
 
 - id: hard_009
   difficulty: hard
-  category: window_rank
+  category: window_rank_snowflake
   query: "按产量达成率给各工厂排名，并给出名次序号"
   gold_sql: |
     SELECT factory_name,
            achievement_rate,
            RANK() OVER (ORDER BY achievement_rate DESC) AS rk
     FROM (
-      SELECT w.factory_name,
+      SELECT f.factory_name,
              SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
       FROM table_production_record p
       JOIN table_workshop w ON p.workshop_id = w.workshop_id
-      GROUP BY w.factory_name
+      JOIN table_factory f ON w.factory_id = f.factory_id
+      GROUP BY f.factory_name
     ) t
-  gold_tables: [table_production_record, table_workshop]
+  gold_tables: [table_production_record, table_workshop, table_factory]
   gold_columns: [factory_name, actual_quantity, planned_quantity]
 
 - id: hard_010
   difficulty: hard
-  category: efficiency_metric_filter
+  category: efficiency_metric_filter_snowflake
   query: "2026 年华东工厂各产线的生产效率是多少？"
   gold_sql: |
     SELECT w.line_name,
            SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_factory f ON w.factory_id = f.factory_id
     JOIN table_date d ON p.date_id = d.date_id
-    WHERE w.factory_name = '华东工厂' AND d.year = 2026
+    WHERE f.factory_name = '华东工厂' AND d.year = 2026
     GROUP BY w.line_name
-  gold_tables: [table_production_record, table_workshop, table_date]
+  gold_tables: [table_production_record, table_workshop, table_factory, table_date]
   gold_columns: [line_name, actual_quantity, production_hours, factory_name, year]

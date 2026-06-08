@@ -4,18 +4,20 @@
 #   合格率     = SUM(qualified_quantity)/SUM(actual_quantity)
 #   不良率     = SUM(defect_quantity)/SUM(actual_quantity)
 #   生产效率   = SUM(actual_quantity)/SUM(production_hours)
+# ⚠ 按工厂/地区/城市聚合需 记录→车间→工厂 两跳;车间须按 workshop_id 分组(车间名不唯一)。
 
 - id: medium_001
   difficulty: medium
   category: groupby_orderby
   query: "各工厂的实际产量是多少？按产量从高到低排序"
   gold_sql: |
-    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.factory_name
+    JOIN table_factory f ON w.factory_id = f.factory_id
+    GROUP BY f.factory_name
     ORDER BY actual_quantity DESC
-  gold_tables: [table_production_record, table_workshop]
+  gold_tables: [table_production_record, table_workshop, table_factory]
   gold_columns: [factory_name, actual_quantity]
 
 - id: medium_002
@@ -47,43 +49,45 @@
 
 - id: medium_004
   difficulty: medium
-  category: ratio_metric
+  category: ratio_metric_snowflake
   query: "统计各工厂的合格率"
   gold_sql: |
-    SELECT w.factory_name,
+    SELECT f.factory_name,
            SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.factory_name
-  gold_tables: [table_production_record, table_workshop]
+    JOIN table_factory f ON w.factory_id = f.factory_id
+    GROUP BY f.factory_name
+  gold_tables: [table_production_record, table_workshop, table_factory]
   gold_columns: [factory_name, qualified_quantity, actual_quantity]
 
 - id: medium_005
   difficulty: medium
   category: ratio_metric_orderby
-  query: "各车间的不良率是多少？从高到低排列"
+  query: "各车间产线的不良率是多少？从高到低排列"
   gold_sql: |
-    SELECT w.workshop_name,
+    SELECT w.workshop_name, w.line_name,
            SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.workshop_name
+    GROUP BY w.workshop_id, w.workshop_name, w.line_name
     ORDER BY defect_rate DESC
   gold_tables: [table_production_record, table_workshop]
-  gold_columns: [workshop_name, defect_quantity, actual_quantity]
+  gold_columns: [workshop_name, line_name, defect_quantity, actual_quantity]
 
 - id: medium_006
   difficulty: medium
-  category: time_filter
+  category: time_filter_snowflake
   query: "统计 2026 年各工厂的实际产量"
   gold_sql: |
-    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_factory f ON w.factory_id = f.factory_id
     JOIN table_date d ON p.date_id = d.date_id
     WHERE d.year = 2026
-    GROUP BY w.factory_name
-  gold_tables: [table_production_record, table_workshop, table_date]
+    GROUP BY f.factory_name
+  gold_tables: [table_production_record, table_workshop, table_factory, table_date]
   gold_columns: [factory_name, actual_quantity, year]
 
 - id: medium_007
@@ -153,14 +157,28 @@
 
 - id: medium_012
   difficulty: medium
-  category: ratio_metric_orderby
+  category: ratio_metric_orderby_snowflake
   query: "各工厂的产量达成率，按从高到低排序"
   gold_sql: |
-    SELECT w.factory_name,
+    SELECT f.factory_name,
            SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.factory_name
+    JOIN table_factory f ON w.factory_id = f.factory_id
+    GROUP BY f.factory_name
     ORDER BY achievement_rate DESC
-  gold_tables: [table_production_record, table_workshop]
+  gold_tables: [table_production_record, table_workshop, table_factory]
   gold_columns: [factory_name, actual_quantity, planned_quantity]
+
+- id: medium_013
+  difficulty: medium
+  category: snowflake_region   # 雪花两跳的"地区"汇总,专门测多跳连接
+  query: "各地区的总实际产量是多少？"
+  gold_sql: |
+    SELECT f.region, SUM(p.actual_quantity) AS actual_quantity
+    FROM table_production_record p
+    JOIN table_workshop w ON p.workshop_id = w.workshop_id
+    JOIN table_factory f ON w.factory_id = f.factory_id
+    GROUP BY f.region
+  gold_tables: [table_production_record, table_workshop, table_factory]
+  gold_columns: [region, actual_quantity]

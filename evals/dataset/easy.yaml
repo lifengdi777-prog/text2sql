@@ -1,7 +1,11 @@
 # Easy: 单表查询 / 单 JOIN + 基础聚合,主体与指标明确
-# 数据来源: test/dw.sql(制造业生产记录,2025-2026 全年周粒度)
-# 维表: table_product / table_workshop / table_equipment / table_process / table_date
+# 数据来源: docker/mysql/dw.sql(制造业生产记录,2025-2026 全年周粒度)
+# 维表: table_factory / table_workshop / table_product / table_supplier / table_equipment / table_process / table_date
 # 事实表: table_production_record(度量: planned/actual/qualified/defect_quantity, downtime_minutes, production_hours)
+#
+# ⚠ schema 要点(雪花):factory_name/region/city 在 table_factory;table_workshop 只有 factory_id。
+#   按"工厂/地区/城市"聚合需:生产记录→车间→工厂 两跳 JOIN。
+#   table_workshop.workshop_name 不唯一(一车间有 A/B 两条线),按车间统计须按 workshop_id 分组。
 
 # ── 纯维表查询(单表,无 JOIN)──────────────────────────────
 - id: easy_001
@@ -31,12 +35,11 @@
   category: dim_list
   query: "列出所有工厂名称"
   gold_sql: |
-    SELECT DISTINCT factory_name
-    FROM table_workshop
-  gold_tables: [table_workshop]
+    SELECT factory_name
+    FROM table_factory
+  gold_tables: [table_factory]
   gold_columns: [factory_name]
 
-# ── 单指标合计(事实表单表,无 JOIN)────────────────────────
 - id: easy_004
   difficulty: easy
   category: single_metric_total
@@ -67,30 +70,31 @@
   gold_tables: [table_production_record]
   gold_columns: [defect_quantity]
 
-# ── 单指标 + 单 JOIN + GROUP BY ──────────────────────────
+# ── 单指标 + JOIN + GROUP BY ─────────────────────────────
 - id: easy_007
   difficulty: easy
-  category: single_metric_groupby
+  category: snowflake_factory   # 雪花两跳:记录→车间→工厂
   query: "统计各工厂的实际产量"
   gold_sql: |
-    SELECT w.factory_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.factory_name
-  gold_tables: [table_production_record, table_workshop]
+    JOIN table_factory f ON w.factory_id = f.factory_id
+    GROUP BY f.factory_name
+  gold_tables: [table_production_record, table_workshop, table_factory]
   gold_columns: [factory_name, actual_quantity]
 
 - id: easy_008
   difficulty: easy
   category: single_metric_groupby
-  query: "统计各车间的实际产量"
+  query: "统计各车间产线的实际产量"
   gold_sql: |
-    SELECT w.workshop_name, SUM(p.actual_quantity) AS actual_quantity
+    SELECT w.workshop_name, w.line_name, SUM(p.actual_quantity) AS actual_quantity
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.workshop_name
+    GROUP BY w.workshop_id, w.workshop_name, w.line_name
   gold_tables: [table_production_record, table_workshop]
-  gold_columns: [workshop_name, actual_quantity]
+  gold_columns: [workshop_name, line_name, actual_quantity]
 
 - id: easy_009
   difficulty: easy
@@ -106,14 +110,15 @@
 
 - id: easy_010
   difficulty: easy
-  category: single_metric_groupby
+  category: snowflake_factory
   query: "统计各工厂的计划产量"
   gold_sql: |
-    SELECT w.factory_name, SUM(p.planned_quantity) AS planned_quantity
+    SELECT f.factory_name, SUM(p.planned_quantity) AS planned_quantity
     FROM table_production_record p
     JOIN table_workshop w ON p.workshop_id = w.workshop_id
-    GROUP BY w.factory_name
-  gold_tables: [table_production_record, table_workshop]
+    JOIN table_factory f ON w.factory_id = f.factory_id
+    GROUP BY f.factory_name
+  gold_tables: [table_production_record, table_workshop, table_factory]
   gold_columns: [factory_name, planned_quantity]
 
 - id: easy_011
