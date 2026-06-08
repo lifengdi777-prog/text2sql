@@ -11,13 +11,15 @@
 > 准备：Docker；一个大模型 API key（DeepSeek 或 OpenAI 兼容）；一个 embedding key（DashScope 或 OpenAI 兼容）。
 
 ```bash
-# 1. 配置:复制模板,填好 llm.api_key 和 embedding_fallback.api_key 两项即可
+# 1. 复制配置模板,然后编辑 conf/app_config.yaml,填好:
+#    - llm.api_key、embedding_fallback.api_key   (必填:大模型 / embedding 的 key)
+#    - auth.admin_password                        (管理员密码;留空则随机生成,见第 3 步)
 cp conf/app_config.yaml.example conf/app_config.yaml
 
 # 2. 一键起全栈(基础设施 + 后端 + 前端)
 docker compose -f docker/docker-compose.yaml up -d --build
 
-# 3. 取管理员初始密码(首启随机生成,打印在日志里)
+# 3. 若上面 admin_password 留空,从日志取随机生成的初始密码
 docker compose -f docker/docker-compose.yaml logs wenshu-backend | grep 初始密码
 ```
 
@@ -76,7 +78,7 @@ cd wenshu-frontend && npm install && npm run dev    # 前端
 仍用默认值时后端启动会告警提醒，但不阻止运行：
 
 - **`auth.secret`**：设随机强密钥 —— `python -c "import secrets;print(secrets.token_urlsafe(48))"`
-- **管理员密码**：用环境变量 `WENSHU_ADMIN_PASSWORD` 指定（否则随机生成）
+- **管理员密码**：在 `auth.admin_password` 设置（留空则随机生成，见启动日志）
 - **DB / MinIO 默认口令**：`root/root`、`minioadmin/minioadmin` 全部换掉
 - **`cors.allow_origins`**：填你的前端域名（默认 `*`）
 - **HTTPS**：前置 nginx/caddy 终止 TLS；高并发给后端加 `--workers`
