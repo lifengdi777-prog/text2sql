@@ -7,8 +7,10 @@
 #
 # 说明:
 #   * 真实的 app_config.yaml 已被 .gitignore 忽略,不会进仓库(含密钥,切勿提交)。
-#   * 下面 host/port 默认值对应 docker/docker-compose.yaml 起的基础设施,
-#     若用 docker compose 一键起服务,localhost + 这些端口可直接用。
+#   * host/port 用了 ${oc.env:VAR,默认值} 插值:
+#       - 裸机运行:不设环境变量,走默认值 localhost + 对外端口,直接可用;
+#       - 后端跑进 Docker:compose 会注入 WENSHU_* 环境变量,把 host 覆盖成
+#         服务名(mysql/qdrant/...)、端口覆盖成容器内端口。同一份配置两种部署通用。
 # ============================================================================
 
 # ── 日志 ────────────────────────────────────────────────────────────────
@@ -25,23 +27,23 @@ logging:
 
 # ── 元数据库(应用自建,存 table_info/column_info/metric_info 等)────────────
 db_meta:
-  host: localhost
-  port: 3307              # compose 把容器 3306 映射到宿主 3307
+  host: ${oc.env:WENSHU_MYSQL_HOST,localhost}
+  port: ${oc.env:WENSHU_MYSQL_PORT,3307}   # 裸机=宿主映射端口 3307;容器内=3306
   user: root
   password: root          # ⚠️ 生产改成强密码,并与 compose 里 MYSQL_ROOT_PASSWORD 一致
   database: meta
 
 # ── 数据仓库(你要问数的业务库;应用只读,不会自动创建)──────────────────────
 db_dw:
-  host: localhost
-  port: 3307
+  host: ${oc.env:WENSHU_MYSQL_HOST,localhost}   # 若 dw 是外部独立库,直接写死它的地址
+  port: ${oc.env:WENSHU_MYSQL_PORT,3307}
   user: root
   password: root          # ⚠️ 生产改成强密码
   database: dw            # 改成你自己的业务库名
 
 # ── 向量库(列/指标召回)───────────────────────────────────────────────────
 qdrant:
-  host: localhost
+  host: ${oc.env:WENSHU_QDRANT_HOST,localhost}
   port: 6333
   embedding_size: 1024    # 须与下方 embedding 模型的输出维度一致
 
@@ -60,7 +62,7 @@ embedding_fallback:
 
 # ── 全文检索(值召回)──────────────────────────────────────────────────────
 es:
-  host: localhost
+  host: ${oc.env:WENSHU_ES_HOST,localhost}
   port: 9200
   index_name: value_info
 
@@ -73,7 +75,7 @@ llm:
 
 # ── 对象存储(Excel 上传/数据集功能用;不用上传功能可保持默认)────────────────
 s3:
-  endpoint_url: "http://localhost:9000"
+  endpoint_url: ${oc.env:WENSHU_S3_ENDPOINT,"http://localhost:9000"}
   access_key: "minioadmin"            # ⚠️ 生产改掉,并与 compose 里 MINIO 凭据一致
   secret_key: "minioadmin"            # ⚠️ 生产改掉
   bucket: "wenshu-datasets"
@@ -81,8 +83,8 @@ s3:
 
 # ── 应用运营库(users / conversations / messages / upload_datasets 等)────────
 db_upload:
-  host: localhost
-  port: 3307
+  host: ${oc.env:WENSHU_MYSQL_HOST,localhost}
+  port: ${oc.env:WENSHU_MYSQL_PORT,3307}
   user: root
   password: root                      # ⚠️ 生产改成强密码
   database: wenshu
@@ -94,4 +96,4 @@ langfuse:
   enabled: false
   public_key: "pk-lf-..."
   secret_key: "sk-lf-..."
-  host: "http://localhost:3000"
+  host: ${oc.env:WENSHU_LANGFUSE_HOST,"http://localhost:3000"}

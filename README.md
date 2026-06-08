@@ -51,10 +51,30 @@ cp conf/app_config.yaml.example conf/app_config.yaml
 
 ### 2.3 起后端
 
+两种方式任选其一。
+
+**方式 A：Docker（推荐，一键起全套）**
+
+后端镜像已纳入 compose。无需 2.1 单独起基础设施，一条命令拉起基础设施 + 后端：
+
+```bash
+docker compose -f docker/docker-compose.yaml up -d --build
+```
+
+- 后端容器通过 `WENSHU_*` 环境变量把配置里的 host 自动覆盖成容器服务名，无需改 yaml。
+- 真实 `conf/app_config.yaml` 以只读挂载注入容器（不打进镜像），日志落到宿主 `logs/`。
+- 会等 MySQL 健康检查通过再启动后端，保证自动建表成功。
+
+> 若你的 `db_dw`（业务库）是**外部独立数据库**，在 `conf/app_config.yaml` 里把 `db_dw.host/port` 写成它的真实地址即可（别用 `${oc.env:...}` 默认值）。
+
+**方式 B：裸机（uv 本地跑）**
+
 ```bash
 uv sync                       # 安装依赖
 uv run python main.py         # 启动,监听 0.0.0.0:8000
 ```
+
+不设环境变量时，配置里的 host 走默认值 `localhost`，连 2.1 起的基础设施。
 
 首次启动会**自动**完成（幂等，重启无副作用）：
 - 建库 `meta` / `wenshu` + 建表
