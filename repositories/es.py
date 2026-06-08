@@ -2,7 +2,6 @@ from typing import Any
 
 from elasticsearch import AsyncElasticsearch
 
-from conf.app_config import DEFAULT_DATASOURCE_ID
 from dtos.es import ValueInfo
 
 
@@ -58,10 +57,13 @@ class ESRepository:
     async def search(
         self,
         keyword: str,
-        datasource_id: str = DEFAULT_DATASOURCE_ID,
+        datasource_id: str,
         score_threshold: float = 0.6,
         limit: int = 5
     ) -> list[ValueInfo]:
+        # datasource_id 必传:漏传/传空会跨源召回,直接炸出来,不静默落到默认源。
+        if not datasource_id:
+            raise ValueError("datasource_id 不能为空,禁止跨源召回")
         # bool.must:datasource_id 精确过滤(term) + value 文本匹配(match);只在本数据源内召回值。
         result = await self.client.search(
             index=self.index_name,
