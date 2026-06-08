@@ -259,10 +259,10 @@ function confirmDelete() {
         <p class="mt-1 text-xs text-slate-500">
           确认删除以下连接关系？删除后需点右上角「保存关系」才会生效。
         </p>
-        <div class="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 font-mono text-sm">
-          <span class="text-sky-600">{{ pendingDelete.from_table }}.{{ pendingDelete.from_column }}</span>
-          <span class="mx-1.5 text-slate-400">→</span>
-          <span class="text-amber-600">{{ pendingDelete.to_table }}.{{ pendingDelete.to_column }}</span>
+        <div class="mt-3 space-y-1 break-all rounded-xl bg-slate-50 px-3 py-2.5 font-mono text-sm">
+          <div class="text-sky-600">{{ pendingDelete.from_table }}.{{ pendingDelete.from_column }}</div>
+          <div class="text-slate-400">↓</div>
+          <div class="text-amber-600">{{ pendingDelete.to_table }}.{{ pendingDelete.to_column }}</div>
         </div>
         <div class="mt-5 flex justify-end gap-2">
           <button
