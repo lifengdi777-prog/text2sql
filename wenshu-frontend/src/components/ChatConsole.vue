@@ -631,10 +631,13 @@ onBeforeUnmount(() => {
           <router-link
             v-if="backTo"
             :to="backTo"
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:text-sky-600"
+            class="group inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600"
             aria-label="返回"
+            title="返回"
           >
-            ←
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5 transition-transform group-hover:-translate-x-0.5">
+              <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
           </router-link>
           <div class="space-y-0.5">
             <p class="text-[11px] font-semibold uppercase tracking-[0.35em] text-sky-600">
