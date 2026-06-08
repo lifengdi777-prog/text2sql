@@ -27,6 +27,12 @@ agent/chart_agent/README.md
 #test_data
 test_data/
 
+# 本地回归测试脚本(依赖 test_data,别人 clone 跑不了),不入库
+/test/
+
+# 内部设计文档,不入库
+/docs/
+
 # eval 跑批结果是再生产物,不入库;保留 .gitkeep 让目录存在
 evals/baselines/*
 !evals/baselines/.gitkeep
