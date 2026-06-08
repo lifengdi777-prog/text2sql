@@ -1,0 +1,97 @@
+# ============================================================================
+# 文枢(wenshu)配置模板
+#
+# 用法:
+#   cp conf/app_config.yaml.example conf/app_config.yaml
+#   然后把下面标了 ⚠️ 的项改成你自己的(主要是 LLM / embedding 的 api_key)。
+#
+# 说明:
+#   * 真实的 app_config.yaml 已被 .gitignore 忽略,不会进仓库(含密钥,切勿提交)。
+#   * 下面 host/port 默认值对应 docker/docker-compose.yaml 起的基础设施,
+#     若用 docker compose 一键起服务,localhost + 这些端口可直接用。
+# ============================================================================
+
+# ── 日志 ────────────────────────────────────────────────────────────────
+logging:
+  file:
+    enable: true
+    level: INFO
+    path: logs
+    rotation: "10 MB"     # 单文件超过即轮转
+    retention: "7 days"   # 保留 7 天
+  console:
+    enable: true
+    level: INFO
+
+# ── 元数据库(应用自建,存 table_info/column_info/metric_info 等)────────────
+db_meta:
+  host: localhost
+  port: 3307              # compose 把容器 3306 映射到宿主 3307
+  user: root
+  password: root          # ⚠️ 生产改成强密码,并与 compose 里 MYSQL_ROOT_PASSWORD 一致
+  database: meta
+
+# ── 数据仓库(你要问数的业务库;应用只读,不会自动创建)──────────────────────
+db_dw:
+  host: localhost
+  port: 3307
+  user: root
+  password: root          # ⚠️ 生产改成强密码
+  database: dw            # 改成你自己的业务库名
+
+# ── 向量库(列/指标召回)───────────────────────────────────────────────────
+qdrant:
+  host: localhost
+  port: 6333
+  embedding_size: 1024    # 须与下方 embedding 模型的输出维度一致
+
+# ── 本地 embedding 服务(可选;默认关,改用下面的 fallback)──────────────────
+embedding:
+  host: localhost
+  port: 8081
+  enable: false           # false=用 embedding_fallback;自建本地服务再设 true
+
+# ── embedding 兜底(OpenAI 兼容 API;enable=false 时实际走这个)──────────────
+embedding_fallback:
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key: "YOUR_EMBEDDING_API_KEY"   # ⚠️ 必填:DashScope / OpenAI 兼容的 key
+  model_name: text-embedding-v4       # 输出维度须与 qdrant.embedding_size 对齐
+  max_batch_size: 10                  # DashScope=10;OpenAI 可填 2048
+
+# ── 全文检索(值召回)──────────────────────────────────────────────────────
+es:
+  host: localhost
+  port: 9200
+  index_name: value_info
+
+# ── 大模型(问数主力)──────────────────────────────────────────────────────
+llm:
+  model_name: deepseek-v4-pro
+  api_key: "YOUR_LLM_API_KEY"         # ⚠️ 必填:DeepSeek 或任意 OpenAI 兼容服务的 key
+  base_url: https://api.deepseek.com
+  # fast_model_name: deepseek-v4-flash  # 可选:表头检测等小任务用的快模型
+
+# ── 对象存储(Excel 上传/数据集功能用;不用上传功能可保持默认)────────────────
+s3:
+  endpoint_url: "http://localhost:9000"
+  access_key: "minioadmin"            # ⚠️ 生产改掉,并与 compose 里 MINIO 凭据一致
+  secret_key: "minioadmin"            # ⚠️ 生产改掉
+  bucket: "wenshu-datasets"
+  region: "us-east-1"                 # MinIO 无意义,占位即可
+
+# ── 应用运营库(users / conversations / messages / upload_datasets 等)────────
+db_upload:
+  host: localhost
+  port: 3307
+  user: root
+  password: root                      # ⚠️ 生产改成强密码
+  database: wenshu
+
+# ── Langfuse 可观测(可选)─────────────────────────────────────────────────
+# 默认关闭。需要 trace/评测对比时:用 `docker compose --profile observability up -d`
+# 起 Langfuse,再把 enabled 改 true,并填上与 compose 中 LANGFUSE_INIT_* 一致的 key。
+langfuse:
+  enabled: false
+  public_key: "pk-lf-..."
+  secret_key: "sk-lf-..."
+  host: "http://localhost:3000"
