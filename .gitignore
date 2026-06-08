@@ -39,6 +39,10 @@ agent/chart_agent/README.md
 #test_data
 test_data/
 
+# eval 跑批结果是再生产物,不入库;保留 .gitkeep 让目录存在
+evals/baselines/*
+!evals/baselines/.gitkeep
+
 skills-main/
 
 任务list.md
@@ -54,3 +58,4 @@ spike_result.xlsx
 docs/dataset_edit_agent_design.md
 
 sales_with_dates.xlsx
+
