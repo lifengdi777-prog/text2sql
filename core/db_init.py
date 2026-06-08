@@ -1,6 +1,6 @@
 """应用启动时幂等建库+建表:新机/新部署首次启动自动就绪,无需手动跑脚本。
 
-- 建库:meta / wenshu(应用自有的派生/基础设施库);**不建 dw 等业务库**(那是用户的源数据)。
+- 建库:meta / wenshu(应用自有的派生/基础设施库);
 - 建表:meta 库的 datasource + 5 张元数据表;wenshu 库的 users / upload_datasets / 会话表。
 
 已存在则跳过(CREATE DATABASE/TABLE IF NOT EXISTS / checkfirst);列级变更由 ensure_*_columns 迁移补。

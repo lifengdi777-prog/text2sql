@@ -10,7 +10,7 @@ from core.log import logger
 @asynccontextmanager
 async def lifespan(_: FastAPI):
 # ↑ yield 之前：应用启动时执行
-    # 1) 幂等建库+建表:首次启动自动建好 meta/wenshu 库及其表,无需手动跑脚本(业务库 dw 不建)。
+    # 1) 幂等建库+建表:首次启动自动建好 meta/wenshu 库及其表,无需手动跑脚本。
     try:
         from core.db_init import ensure_app_tables, ensure_databases
         await ensure_databases()

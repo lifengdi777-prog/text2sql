@@ -36,9 +36,6 @@ class DBConfig(BaseModel):
 class UploadDBConfig(BaseModel):
     """应用自有的运营库:users / conversations / messages / upload_datasets /
     dataset_edit_*。database 字段是库名(默认 'wenshu')。
-
-    历史名为 upload(最初只放上传数据集),后来用户表/会话表也就近塞了进来,
-    名不副实,现统一为 wenshu。变量名 db_upload 暂保留以减小改动面。
     """
     host: str
     port: int
