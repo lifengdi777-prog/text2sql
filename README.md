@@ -63,7 +63,7 @@ cp conf/app_config.yaml.example conf/app_config.yaml
 docker compose -f docker/docker-compose.yaml up -d --build
 ```
 
-起来后访问 **http://localhost:8080**（前端），用 `admin / admin123` 登录。
+起来后访问 **http://localhost:8080**（前端），用管理员 `admin` 登录（初始密码见下方「管理员账号」）。
 
 - 后端容器通过 `WENSHU_*` 环境变量把配置里的 host 自动覆盖成容器服务名，无需改 yaml。
 - 前端为 nginx 镜像：托管静态产物 + 把 API 反代到后端（同源，无需 CORS、无需把后端地址打进 JS）。
@@ -86,9 +86,18 @@ uv run python main.py         # 启动,监听 0.0.0.0:8000
 首次启动会**自动**完成（幂等，重启无副作用）：
 - 建库 `meta` / `wenshu` + 建表
 - 旧表补列迁移
-- 创建默认管理员 **`admin / admin123`** ⚠️ 生产务必登录后改密
+- 创建管理员账号 `admin`（初始密码见下方「管理员账号」）
 
 健康检查：`GET /healthz`（存活）、`GET /readyz`（依赖就绪）。
+
+#### 管理员账号
+
+首次启动创建管理员 `admin`，初始密码按以下顺序确定（**无全网通用默认口令**）：
+
+1. 设了环境变量 `WENSHU_ADMIN_PASSWORD`（≥6 位）→ 用它（compose 在 `wenshu-backend.environment` 里设；裸机 `export` 即可）；
+2. 没设 → **随机生成强密码，在后端启动日志里打印一次**（`docker compose logs wenshu-backend` 可查；下次启动不再显示）。
+
+已存在的 `admin` 启动时**不会被重置密码**。目前没有应用内改密，要改密码改库 `users.password_hash` 即可。
 
 ### 2.4 起前端（裸机 / 本地开发；用方式 A 可跳过）
 
@@ -111,7 +120,7 @@ VITE_API_BASE_URL=http://localhost:8000
 
 ### 2.5 登录并接入数据源
 
-1. 浏览器打开前端，用 `admin / admin123` 登录（**立刻改密**）。
+1. 浏览器打开前端，用管理员 `admin` 登录（初始密码见 2.3「管理员账号」）。
 2. 进「数据源管理」→ 注册你的业务库（host/port/账号/库名）。
 3. 点「接入 / 构建」——后台自动生成元数据草稿并物化（写 meta 表 + Qdrant + ES），前端轮询状态，完成后即可问数。
 
@@ -144,7 +153,7 @@ uv run python -m scripts.materialize <datasource_id>
 上线前**务必**处理以下默认值，否则有安全风险：
 
 - [ ] **JWT secret**：在 yaml 的 `auth.secret` 设随机强密钥（生成：`python -c "import secrets;print(secrets.token_urlsafe(48))"`）。仍用默认值时**启动会告警**，但不阻止运行。
-- [ ] **管理员密码**：默认 `admin / admin123`，登录后立即改。仍是默认密码时**启动会告警**。
+- [ ] **管理员初始密码**：用 `WENSHU_ADMIN_PASSWORD` 指定；不设则随机生成（启动日志打印一次）。存量 `admin` 若仍是历史弱口令，**启动会告警**，需改库 `users.password_hash`。
 - [ ] **数据库密码**：compose 与 yaml 里的 `root/root` 改成强密码（两处保持一致）。
 - [ ] **MinIO 凭据**：默认 `minioadmin/minioadmin`，改掉。
 - [ ] **CORS**：在 yaml 的 `cors.allow_origins` 填明确前端域名（默认 `["*"]` 放开时**启动会告警**）。含 `*` 时浏览器禁带凭据，会自动置 `allow_credentials=False`。

@@ -95,6 +95,8 @@ services:
       WENSHU_QDRANT_HOST: qdrant
       WENSHU_ES_HOST: elasticsearch
       WENSHU_S3_ENDPOINT: http://minio:9000
+      # 首次启动创建管理员 admin 的初始密码;不设则随机生成并打印在后端日志里一次。
+      # WENSHU_ADMIN_PASSWORD: "改成你的强密码"
       # 启用 observability 时打开下一行,后端 trace 才指向容器内 langfuse
       # WENSHU_LANGFUSE_HOST: http://langfuse-web:3000
     volumes:
