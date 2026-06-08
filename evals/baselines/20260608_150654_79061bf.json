@@ -1,0 +1,3451 @@
+{
+  "summary": {
+    "by_difficulty": {
+      "easy": {
+        "count": 12,
+        "execution_accuracy": 0.9167,
+        "exact_match": 0.8333,
+        "schema_linking_table_recall": 0.9167,
+        "schema_linking_column_recall": 0.9167,
+        "latency": {
+          "p50": 28700.23,
+          "p95": 222235.62,
+          "avg": 69685.88,
+          "count": 12
+        }
+      },
+      "medium": {
+        "count": 13,
+        "execution_accuracy": 1.0,
+        "exact_match": 0.6154,
+        "schema_linking_table_recall": 1.0,
+        "schema_linking_column_recall": 0.9039,
+        "latency": {
+          "p50": 29377.54,
+          "p95": 206881.98,
+          "avg": 43087.64,
+          "count": 13
+        }
+      },
+      "hard": {
+        "count": 10,
+        "execution_accuracy": 0.9,
+        "exact_match": 0.3,
+        "schema_linking_table_recall": 0.975,
+        "schema_linking_column_recall": 0.8967,
+        "latency": {
+          "p50": 40338.17,
+          "p95": 55248.44,
+          "avg": 42614.94,
+          "count": 10
+        }
+      }
+    },
+    "overall": {
+      "count": 35,
+      "execution_accuracy": 0.9429,
+      "exact_match": 0.6,
+      "latency": {
+        "p50": 32839.36,
+        "p95": 206883.11,
+        "avg": 52071.98,
+        "count": 35
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "easy_001",
+      "difficulty": "easy",
+      "category": "dim_count",
+      "query": "每种设备状态下各有多少台设备？",
+      "gold_sql": "SELECT equipment_status, COUNT(*) AS equipment_count\nFROM table_equipment\nGROUP BY equipment_status\n",
+      "pred_sql": "SELECT equipment_status, COUNT(*) AS 设备数量 FROM table_equipment GROUP BY equipment_status LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 3,
+        "pred_rows": 3
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_equipment"
+        ],
+        "required_columns": [
+          "equipment_status"
+        ]
+      },
+      "cost": {
+        "total_ms": 21094.31,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4185.57
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2619.14
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 3016.24
+          },
+          "召回字段信息": {
+            "duration_ms": 3448.54
+          },
+          "合并召回信息": {
+            "duration_ms": 20.53
+          },
+          "过滤指标信息": {
+            "duration_ms": 1545.81
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2944.69
+          },
+          "补全连接路径": {
+            "duration_ms": 11.93
+          },
+          "添加额外信息": {
+            "duration_ms": 38.55
+          },
+          "生成SQL语句": {
+            "duration_ms": 6274.91
+          },
+          "扇出检测": {
+            "duration_ms": 6.67
+          },
+          "校验SQL语句": {
+            "duration_ms": 9.24
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.48
+          },
+          "翻译列名": {
+            "duration_ms": 1797.02
+          },
+          "数据解读": {
+            "duration_ms": 30.78
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_002",
+      "difficulty": "easy",
+      "category": "dim_count",
+      "query": "每个产品类别下有多少个产品？",
+      "gold_sql": "SELECT product_category, COUNT(*) AS product_count\nFROM table_product\nGROUP BY product_category\n",
+      "pred_sql": "SELECT product_category, COUNT(product_id) AS product_count FROM table_product GROUP BY product_category LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 8,
+        "pred_rows": 8
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product"
+        ],
+        "required_columns": [
+          "product_category"
+        ]
+      },
+      "cost": {
+        "total_ms": 17705.75,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3056.38
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2773.73
+          },
+          "召回字段信息": {
+            "duration_ms": 3094.89
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5079.45
+          },
+          "合并召回信息": {
+            "duration_ms": 8.71
+          },
+          "过滤指标信息": {
+            "duration_ms": 1910.14
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2158.71
+          },
+          "补全连接路径": {
+            "duration_ms": 4.46
+          },
+          "添加额外信息": {
+            "duration_ms": 16.8
+          },
+          "生成SQL语句": {
+            "duration_ms": 2394.45
+          },
+          "扇出检测": {
+            "duration_ms": 4.7
+          },
+          "校验SQL语句": {
+            "duration_ms": 8.89
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.32
+          },
+          "翻译列名": {
+            "duration_ms": 1872.55
+          },
+          "数据解读": {
+            "duration_ms": 1.63
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_003",
+      "difficulty": "easy",
+      "category": "dim_list",
+      "query": "列出所有工厂名称",
+      "gold_sql": "SELECT factory_name\nFROM table_factory\n",
+      "pred_sql": null,
+      "should_continue": false,
+      "guide_queries": [
+        "统计各工厂的实际产量排行",
+        "查看各工厂的产量达成率",
+        "分析各工厂的良品率表现",
+        "查询各工厂在特定时间范围内的总产量"
+      ],
+      "error": null,
+      "execution": {
+        "match": false,
+        "gold_error": null,
+        "pred_error": "pred_sql is empty",
+        "gold_rows": 0,
+        "pred_rows": 0
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": false,
+        "column_match": false,
+        "aggregate_match": false,
+        "structure_match": false
+      },
+      "schema_linking": {
+        "table_recall": 0.0,
+        "column_recall": 0.0,
+        "missing_tables": [
+          "table_factory"
+        ],
+        "missing_columns": [
+          "factory_name"
+        ],
+        "required_tables": [
+          "table_factory"
+        ],
+        "required_columns": [
+          "factory_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 4971.22,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4954.04
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_004",
+      "difficulty": "easy",
+      "category": "single_metric_total",
+      "query": "所有生产记录的实际产量总和是多少？",
+      "gold_sql": "SELECT SUM(actual_quantity) AS actual_quantity\nFROM table_production_record\n",
+      "pred_sql": "SELECT SUM(actual_quantity) AS 实际产量总和 FROM table_production_record LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity"
+        ]
+      },
+      "cost": {
+        "total_ms": 20684.45,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4246.57
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2745.23
+          },
+          "召回字段信息": {
+            "duration_ms": 2765.36
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 6889.16
+          },
+          "合并召回信息": {
+            "duration_ms": 17.17
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2458.61
+          },
+          "过滤指标信息": {
+            "duration_ms": 3170.25
+          },
+          "补全连接路径": {
+            "duration_ms": 5.49
+          },
+          "添加额外信息": {
+            "duration_ms": 13.22
+          },
+          "生成SQL语句": {
+            "duration_ms": 4283.45
+          },
+          "扇出检测": {
+            "duration_ms": 4.77
+          },
+          "校验SQL语句": {
+            "duration_ms": 11.62
+          },
+          "执行SQL语句": {
+            "duration_ms": 9.01
+          },
+          "数据解读": {
+            "duration_ms": 2.02
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_005",
+      "difficulty": "easy",
+      "category": "single_metric_total",
+      "query": "总停机时长是多少分钟？",
+      "gold_sql": "SELECT SUM(downtime_minutes) AS downtime_minutes\nFROM table_production_record\n",
+      "pred_sql": "SELECT SUM(downtime_minutes) FROM table_production_record LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_production_record"
+        ],
+        "required_columns": [
+          "downtime_minutes"
+        ]
+      },
+      "cost": {
+        "total_ms": 28703.4,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3171.25
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2342.11
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 2504.85
+          },
+          "召回字段信息": {
+            "duration_ms": 12196.68
+          },
+          "合并召回信息": {
+            "duration_ms": 10.01
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2564.59
+          },
+          "过滤指标信息": {
+            "duration_ms": 2740.54
+          },
+          "补全连接路径": {
+            "duration_ms": 6.71
+          },
+          "添加额外信息": {
+            "duration_ms": 18.36
+          },
+          "生成SQL语句": {
+            "duration_ms": 5926.46
+          },
+          "扇出检测": {
+            "duration_ms": 3.71
+          },
+          "校验SQL语句": {
+            "duration_ms": 14.17
+          },
+          "执行SQL语句": {
+            "duration_ms": 8.1
+          },
+          "翻译列名": {
+            "duration_ms": 1412.38
+          },
+          "数据解读": {
+            "duration_ms": 0.79
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_006",
+      "difficulty": "easy",
+      "category": "single_metric_total",
+      "query": "一共有多少不良品数量？",
+      "gold_sql": "SELECT SUM(defect_quantity) AS defect_quantity\nFROM table_production_record\n",
+      "pred_sql": "SELECT SUM(defect_quantity) AS 不良品总数 FROM table_production_record LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_production_record"
+        ],
+        "required_columns": [
+          "defect_quantity"
+        ]
+      },
+      "cost": {
+        "total_ms": 23183.7,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 2871.65
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 2597.4
+          },
+          "召回指标信息": {
+            "duration_ms": 2671.18
+          },
+          "召回字段信息": {
+            "duration_ms": 6632.87
+          },
+          "合并召回信息": {
+            "duration_ms": 15.62
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2241.89
+          },
+          "过滤指标信息": {
+            "duration_ms": 4391.04
+          },
+          "补全连接路径": {
+            "duration_ms": 4.35
+          },
+          "添加额外信息": {
+            "duration_ms": 17.94
+          },
+          "生成SQL语句": {
+            "duration_ms": 7367.12
+          },
+          "扇出检测": {
+            "duration_ms": 4.16
+          },
+          "校验SQL语句": {
+            "duration_ms": 9.92
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.12
+          },
+          "数据解读": {
+            "duration_ms": 33.46
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_007",
+      "difficulty": "easy",
+      "category": "snowflake_factory",
+      "query": "统计各工厂的实际产量",
+      "gold_sql": "SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nGROUP BY f.factory_name\n",
+      "pred_sql": "SELECT t_f.factory_name, SUM(t_pr.actual_quantity) AS total_actual_quantity FROM table_production_record AS t_pr JOIN table_workshop AS t_ws ON t_pr.workshop_id = t_ws.workshop_id JOIN table_factory AS t_f ON t_ws.factory_id = t_f.factory_id GROUP BY t_f.factory_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 28700.23,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4293.71
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2823.36
+          },
+          "召回字段信息": {
+            "duration_ms": 5462.56
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5643.57
+          },
+          "合并召回信息": {
+            "duration_ms": 28.95
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 3138.84
+          },
+          "过滤指标信息": {
+            "duration_ms": 7410.86
+          },
+          "补全连接路径": {
+            "duration_ms": 6.31
+          },
+          "添加额外信息": {
+            "duration_ms": 11.85
+          },
+          "生成SQL语句": {
+            "duration_ms": 6282.93
+          },
+          "扇出检测": {
+            "duration_ms": 6.02
+          },
+          "校验SQL语句": {
+            "duration_ms": 13.14
+          },
+          "执行SQL语句": {
+            "duration_ms": 10.29
+          },
+          "翻译列名": {
+            "duration_ms": 1665.97
+          },
+          "数据解读": {
+            "duration_ms": 6.25
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_008",
+      "difficulty": "easy",
+      "category": "single_metric_groupby",
+      "query": "统计各车间产线的实际产量",
+      "gold_sql": "SELECT w.workshop_name, w.line_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nGROUP BY w.workshop_id, w.workshop_name, w.line_name\n",
+      "pred_sql": "SELECT w.workshop_name, w.line_name, SUM(pr.actual_quantity) AS actual_quantity FROM table_production_record AS pr INNER JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id GROUP BY w.workshop_name, w.line_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 6,
+        "pred_rows": 6
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "line_name",
+          "workshop_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 33460.42,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3111.34
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2873.74
+          },
+          "召回字段信息": {
+            "duration_ms": 7084.03
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 7176.36
+          },
+          "合并召回信息": {
+            "duration_ms": 19.3
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2650.05
+          },
+          "过滤指标信息": {
+            "duration_ms": 3363.94
+          },
+          "补全连接路径": {
+            "duration_ms": 4.54
+          },
+          "添加额外信息": {
+            "duration_ms": 10.54
+          },
+          "生成SQL语句": {
+            "duration_ms": 14527.13
+          },
+          "扇出检测": {
+            "duration_ms": 8.72
+          },
+          "校验SQL语句": {
+            "duration_ms": 11.88
+          },
+          "执行SQL语句": {
+            "duration_ms": 8.7
+          },
+          "翻译列名": {
+            "duration_ms": 1837.69
+          },
+          "数据解读": {
+            "duration_ms": 1.54
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_009",
+      "difficulty": "easy",
+      "category": "single_metric_groupby",
+      "query": "各产品类别的实际产量分别是多少？",
+      "gold_sql": "SELECT pd.product_category, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_product pd ON p.product_id = pd.product_id\nGROUP BY pd.product_category\n",
+      "pred_sql": "SELECT p.product_category, SUM(pr.actual_quantity) AS 实际产量 FROM table_product AS p JOIN table_production_record AS pr ON p.product_id = pr.product_id GROUP BY p.product_category LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 8,
+        "pred_rows": 8
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "product_category"
+        ]
+      },
+      "cost": {
+        "total_ms": 22850.52,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3720.63
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2393.71
+          },
+          "召回字段信息": {
+            "duration_ms": 2580.83
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 3933.9
+          },
+          "合并召回信息": {
+            "duration_ms": 10.88
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2453.13
+          },
+          "过滤指标信息": {
+            "duration_ms": 4145.68
+          },
+          "补全连接路径": {
+            "duration_ms": 6.31
+          },
+          "添加额外信息": {
+            "duration_ms": 13.44
+          },
+          "生成SQL语句": {
+            "duration_ms": 6098.06
+          },
+          "扇出检测": {
+            "duration_ms": 5.28
+          },
+          "校验SQL语句": {
+            "duration_ms": 11.93
+          },
+          "执行SQL语句": {
+            "duration_ms": 9.71
+          },
+          "翻译列名": {
+            "duration_ms": 1565.07
+          },
+          "数据解读": {
+            "duration_ms": 1.05
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_010",
+      "difficulty": "easy",
+      "category": "snowflake_factory",
+      "query": "统计各工厂的计划产量",
+      "gold_sql": "SELECT f.factory_name, SUM(p.planned_quantity) AS planned_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nGROUP BY f.factory_name\n",
+      "pred_sql": "SELECT factory_name, SUM(planned_quantity) AS total_planned_quantity FROM table_production_record JOIN table_workshop ON table_production_record.workshop_id = table_workshop.workshop_id JOIN table_factory ON table_workshop.factory_id = table_factory.factory_id GROUP BY factory_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "factory_name",
+          "planned_quantity"
+        ]
+      },
+      "cost": {
+        "total_ms": 222235.62,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4748.98
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2877.43
+          },
+          "召回字段信息": {
+            "duration_ms": 5327.2
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 11202.38
+          },
+          "合并召回信息": {
+            "duration_ms": 25.6
+          },
+          "过滤指标信息": {
+            "duration_ms": 3764.48
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 5291.94
+          },
+          "补全连接路径": {
+            "duration_ms": 8.01
+          },
+          "添加额外信息": {
+            "duration_ms": 11.96
+          },
+          "生成SQL语句": {
+            "duration_ms": 194954.04
+          },
+          "扇出检测": {
+            "duration_ms": 3.64
+          },
+          "校验SQL语句": {
+            "duration_ms": 7.28
+          },
+          "执行SQL语句": {
+            "duration_ms": 5.79
+          },
+          "翻译列名": {
+            "duration_ms": 1832.02
+          },
+          "数据解读": {
+            "duration_ms": 1.49
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_011",
+      "difficulty": "easy",
+      "category": "single_metric_groupby",
+      "query": "各工序的总停机时长是多少？",
+      "gold_sql": "SELECT pr.process_name, SUM(p.downtime_minutes) AS downtime_minutes\nFROM table_production_record p\nJOIN table_process pr ON p.process_id = pr.process_id\nGROUP BY pr.process_name\n",
+      "pred_sql": "SELECT tp.process_name, SUM(tpr.downtime_minutes) AS total_downtime_minutes FROM table_production_record AS tpr JOIN table_process AS tp ON tpr.process_id = tp.process_id GROUP BY tp.process_id, tp.process_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 6,
+        "pred_rows": 6
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_process",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "downtime_minutes",
+          "process_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 206883.11,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3233.01
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2967.64
+          },
+          "召回字段信息": {
+            "duration_ms": 4100.69
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5818.31
+          },
+          "合并召回信息": {
+            "duration_ms": 16.31
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2508.66
+          },
+          "过滤指标信息": {
+            "duration_ms": 3790.26
+          },
+          "补全连接路径": {
+            "duration_ms": 8.82
+          },
+          "添加额外信息": {
+            "duration_ms": 15.18
+          },
+          "生成SQL语句": {
+            "duration_ms": 188059.15
+          },
+          "扇出检测": {
+            "duration_ms": 6.68
+          },
+          "校验SQL语句": {
+            "duration_ms": 14.93
+          },
+          "执行SQL语句": {
+            "duration_ms": 11.21
+          },
+          "翻译列名": {
+            "duration_ms": 2752.36
+          },
+          "数据解读": {
+            "duration_ms": 31.5
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "easy_012",
+      "difficulty": "easy",
+      "category": "single_metric_groupby",
+      "query": "统计各产品的实际产量",
+      "gold_sql": "SELECT pd.product_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_product pd ON p.product_id = pd.product_id\nGROUP BY pd.product_name\n",
+      "pred_sql": "SELECT product_name, SUM(actual_quantity) AS total_actual_quantity FROM table_product JOIN table_production_record ON table_product.product_id = table_production_record.product_id GROUP BY product_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 8,
+        "pred_rows": 8
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "product_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 205757.77,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3099.41
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2732.52
+          },
+          "召回字段信息": {
+            "duration_ms": 5429.97
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5576.87
+          },
+          "合并召回信息": {
+            "duration_ms": 17.57
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 102707.52
+          },
+          "过滤指标信息": {
+            "duration_ms": 106270.77
+          },
+          "补全连接路径": {
+            "duration_ms": 8.94
+          },
+          "添加额外信息": {
+            "duration_ms": 17.93
+          },
+          "生成SQL语句": {
+            "duration_ms": 85623.91
+          },
+          "扇出检测": {
+            "duration_ms": 3.85
+          },
+          "校验SQL语句": {
+            "duration_ms": 7.73
+          },
+          "执行SQL语句": {
+            "duration_ms": 5.23
+          },
+          "翻译列名": {
+            "duration_ms": 1303.79
+          },
+          "数据解读": {
+            "duration_ms": 0.77
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_001",
+      "difficulty": "medium",
+      "category": "groupby_orderby",
+      "query": "各工厂的实际产量是多少？按产量从高到低排序",
+      "gold_sql": "SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nGROUP BY f.factory_name\nORDER BY actual_quantity DESC\n",
+      "pred_sql": "SELECT tf.factory_name AS 工厂名, SUM(tpr.actual_quantity) AS 实际产量 FROM table_factory AS tf JOIN table_workshop AS tw ON tf.factory_id = tw.factory_id JOIN table_production_record AS tpr ON tw.workshop_id = tpr.workshop_id GROUP BY tf.factory_name ORDER BY SUM(tpr.actual_quantity) DESC LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 206881.98,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 2702.68
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2040.47
+          },
+          "召回字段信息": {
+            "duration_ms": 4109.92
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 10678.29
+          },
+          "合并召回信息": {
+            "duration_ms": 16.21
+          },
+          "过滤指标信息": {
+            "duration_ms": 96825.0
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 99918.96
+          },
+          "补全连接路径": {
+            "duration_ms": 4.12
+          },
+          "添加额外信息": {
+            "duration_ms": 8.69
+          },
+          "生成SQL语句": {
+            "duration_ms": 90593.19
+          },
+          "扇出检测": {
+            "duration_ms": 4.61
+          },
+          "校验SQL语句": {
+            "duration_ms": 7.59
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.03
+          },
+          "数据解读": {
+            "duration_ms": 6.5
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_002",
+      "difficulty": "medium",
+      "category": "topn",
+      "query": "实际产量最高的前三个产品是哪些？",
+      "gold_sql": "SELECT pd.product_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_product pd ON p.product_id = pd.product_id\nGROUP BY pd.product_name\nORDER BY actual_quantity DESC\nLIMIT 3\n",
+      "pred_sql": "SELECT p.product_name, SUM(pr.actual_quantity) AS total_actual_quantity FROM table_product AS p JOIN table_production_record AS pr ON p.product_id = pr.product_id GROUP BY p.product_name ORDER BY total_actual_quantity DESC LIMIT 3",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 3,
+        "pred_rows": 3
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "product_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 25670.0,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3758.26
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2560.83
+          },
+          "召回字段信息": {
+            "duration_ms": 3261.29
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5333.45
+          },
+          "合并召回信息": {
+            "duration_ms": 8.02
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 3748.01
+          },
+          "过滤指标信息": {
+            "duration_ms": 3784.03
+          },
+          "补全连接路径": {
+            "duration_ms": 5.6
+          },
+          "添加额外信息": {
+            "duration_ms": 13.74
+          },
+          "生成SQL语句": {
+            "duration_ms": 8159.01
+          },
+          "扇出检测": {
+            "duration_ms": 4.97
+          },
+          "校验SQL语句": {
+            "duration_ms": 10.58
+          },
+          "执行SQL语句": {
+            "duration_ms": 5.82
+          },
+          "翻译列名": {
+            "duration_ms": 2003.42
+          },
+          "数据解读": {
+            "duration_ms": 37.23
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_003",
+      "difficulty": "medium",
+      "category": "ratio_metric",
+      "query": "各产品类别的产量达成率是多少？",
+      "gold_sql": "SELECT pd.product_category,\n       SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate\nFROM table_production_record p\nJOIN table_product pd ON p.product_id = pd.product_id\nGROUP BY pd.product_category\n",
+      "pred_sql": "SELECT p.product_category, SUM(pr.actual_quantity) / SUM(pr.planned_quantity) AS 产量达成率 FROM table_product AS p JOIN table_production_record AS pr ON p.product_id = pr.product_id GROUP BY p.product_category LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 8,
+        "pred_rows": 8
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "planned_quantity",
+          "product_category"
+        ]
+      },
+      "cost": {
+        "total_ms": 25616.49,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3018.35
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2430.42
+          },
+          "召回字段信息": {
+            "duration_ms": 4882.33
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 6450.89
+          },
+          "合并召回信息": {
+            "duration_ms": 11.93
+          },
+          "过滤指标信息": {
+            "duration_ms": 1741.29
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2768.85
+          },
+          "补全连接路径": {
+            "duration_ms": 5.38
+          },
+          "添加额外信息": {
+            "duration_ms": 8.53
+          },
+          "生成SQL语句": {
+            "duration_ms": 8660.54
+          },
+          "扇出检测": {
+            "duration_ms": 3.57
+          },
+          "校验SQL语句": {
+            "duration_ms": 10.17
+          },
+          "执行SQL语句": {
+            "duration_ms": 7.94
+          },
+          "翻译列名": {
+            "duration_ms": 1540.8
+          },
+          "数据解读": {
+            "duration_ms": 1.14
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_004",
+      "difficulty": "medium",
+      "category": "ratio_metric_snowflake",
+      "query": "统计各工厂的合格率",
+      "gold_sql": "SELECT f.factory_name,\n       SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nGROUP BY f.factory_name\n",
+      "pred_sql": "SELECT f.factory_name, SUM(pr.qualified_quantity) / SUM(pr.actual_quantity) AS 合格率 FROM table_production_record AS pr JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id JOIN table_factory AS f ON w.factory_id = f.factory_id GROUP BY f.factory_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 0.6667,
+        "missing_tables": [],
+        "missing_columns": [
+          "actual_quantity"
+        ],
+        "required_tables": [
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name",
+          "qualified_quantity"
+        ]
+      },
+      "cost": {
+        "total_ms": 27169.11,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3632.17
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2268.7
+          },
+          "召回字段信息": {
+            "duration_ms": 5087.67
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 6197.18
+          },
+          "合并召回信息": {
+            "duration_ms": 15.05
+          },
+          "过滤指标信息": {
+            "duration_ms": 3537.14
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 6082.21
+          },
+          "补全连接路径": {
+            "duration_ms": 4.58
+          },
+          "添加额外信息": {
+            "duration_ms": 13.59
+          },
+          "生成SQL语句": {
+            "duration_ms": 6327.21
+          },
+          "扇出检测": {
+            "duration_ms": 3.3
+          },
+          "校验SQL语句": {
+            "duration_ms": 6.33
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.02
+          },
+          "翻译列名": {
+            "duration_ms": 1820.88
+          },
+          "数据解读": {
+            "duration_ms": 1.33
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_005",
+      "difficulty": "medium",
+      "category": "ratio_metric_orderby",
+      "query": "各车间产线的不良率是多少？从高到低排列",
+      "gold_sql": "SELECT w.workshop_name, w.line_name,\n       SUM(p.defect_quantity) / SUM(p.actual_quantity) AS defect_rate\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nGROUP BY w.workshop_id, w.workshop_name, w.line_name\nORDER BY defect_rate DESC\n",
+      "pred_sql": "SELECT w.workshop_name AS 车间, w.line_name AS 产线, SUM(r.defect_quantity) / NULLIF(SUM(r.actual_quantity), 0) AS 不良率 FROM table_production_record AS r JOIN table_workshop AS w ON r.workshop_id = w.workshop_id GROUP BY w.workshop_name, w.line_name ORDER BY 不良率 DESC LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 6,
+        "pred_rows": 6
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 0.75,
+        "missing_tables": [],
+        "missing_columns": [
+          "actual_quantity"
+        ],
+        "required_tables": [
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "defect_quantity",
+          "line_name",
+          "workshop_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 36125.48,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 2852.77
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2447.14
+          },
+          "召回字段信息": {
+            "duration_ms": 7788.23
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 8840.71
+          },
+          "合并召回信息": {
+            "duration_ms": 19.12
+          },
+          "过滤指标信息": {
+            "duration_ms": 2205.33
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 4380.51
+          },
+          "补全连接路径": {
+            "duration_ms": 6.68
+          },
+          "添加额外信息": {
+            "duration_ms": 15.74
+          },
+          "生成SQL语句": {
+            "duration_ms": 14832.7
+          },
+          "扇出检测": {
+            "duration_ms": 6.46
+          },
+          "校验SQL语句": {
+            "duration_ms": 16.15
+          },
+          "执行SQL语句": {
+            "duration_ms": 12.07
+          },
+          "数据解读": {
+            "duration_ms": 60.72
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_006",
+      "difficulty": "medium",
+      "category": "time_filter_snowflake",
+      "query": "统计 2026 年各工厂的实际产量",
+      "gold_sql": "SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nJOIN table_date d ON p.date_id = d.date_id\nWHERE d.year = 2026\nGROUP BY f.factory_name\n",
+      "pred_sql": "SELECT tf.factory_name, SUM(pr.actual_quantity) AS total_actual_quantity FROM table_production_record AS pr JOIN table_date AS td ON pr.date_id = td.date_id JOIN table_workshop AS tw ON pr.workshop_id = tw.workshop_id JOIN table_factory AS tf ON tw.factory_id = tf.factory_id WHERE td.year = 2026 GROUP BY tf.factory_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_date",
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name",
+          "year"
+        ]
+      },
+      "cost": {
+        "total_ms": 33841.09,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3121.93
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 3801.79
+          },
+          "召回字段信息": {
+            "duration_ms": 4313.1
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 4839.52
+          },
+          "合并召回信息": {
+            "duration_ms": 17.74
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 4322.4
+          },
+          "过滤指标信息": {
+            "duration_ms": 10869.45
+          },
+          "补全连接路径": {
+            "duration_ms": 15.72
+          },
+          "添加额外信息": {
+            "duration_ms": 29.6
+          },
+          "生成SQL语句": {
+            "duration_ms": 6746.55
+          },
+          "扇出检测": {
+            "duration_ms": 5.33
+          },
+          "校验SQL语句": {
+            "duration_ms": 10.52
+          },
+          "执行SQL语句": {
+            "duration_ms": 7.43
+          },
+          "翻译列名": {
+            "duration_ms": 3451.69
+          },
+          "数据解读": {
+            "duration_ms": 1.6
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_007",
+      "difficulty": "medium",
+      "category": "time_trend",
+      "query": "2026 年每个月的实际产量是多少？",
+      "gold_sql": "SELECT d.month, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_date d ON p.date_id = d.date_id\nWHERE d.year = 2026\nGROUP BY d.month\nORDER BY d.month\n",
+      "pred_sql": "SELECT t.month, SUM(f.actual_quantity) AS actual_quantity FROM table_production_record AS f INNER JOIN table_date AS t ON f.date_id = t.date_id WHERE t.date_id BETWEEN 20260101 AND 20261231 GROUP BY t.month ORDER BY t.month LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 12,
+        "pred_rows": 12
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 0.6667,
+        "missing_tables": [],
+        "missing_columns": [
+          "year"
+        ],
+        "required_tables": [
+          "table_date",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "month",
+          "year"
+        ]
+      },
+      "cost": {
+        "total_ms": 34714.91,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 2842.35
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2394.52
+          },
+          "召回字段信息": {
+            "duration_ms": 3231.26
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 3961.34
+          },
+          "合并召回信息": {
+            "duration_ms": 9.54
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 3781.47
+          },
+          "过滤指标信息": {
+            "duration_ms": 5124.93
+          },
+          "补全连接路径": {
+            "duration_ms": 4.85
+          },
+          "添加额外信息": {
+            "duration_ms": 13.21
+          },
+          "生成SQL语句": {
+            "duration_ms": 15834.49
+          },
+          "扇出检测": {
+            "duration_ms": 4.6
+          },
+          "校验SQL语句": {
+            "duration_ms": 12.68
+          },
+          "执行SQL语句": {
+            "duration_ms": 8.28
+          },
+          "翻译列名": {
+            "duration_ms": 1925.27
+          },
+          "数据解读": {
+            "duration_ms": 1.06
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_008",
+      "difficulty": "medium",
+      "category": "ratio_metric",
+      "query": "各工序的合格率分别是多少？",
+      "gold_sql": "SELECT pr.process_name,\n       SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate\nFROM table_production_record p\nJOIN table_process pr ON p.process_id = pr.process_id\nGROUP BY pr.process_name\n",
+      "pred_sql": "SELECT t.process_name, SUM(r.qualified_quantity) / SUM(r.actual_quantity) AS yield_rate FROM table_production_record AS r JOIN table_process AS t ON r.process_id = t.process_id GROUP BY t.process_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 6,
+        "pred_rows": 6
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 0.6667,
+        "missing_tables": [],
+        "missing_columns": [
+          "actual_quantity"
+        ],
+        "required_tables": [
+          "table_process",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "process_name",
+          "qualified_quantity"
+        ]
+      },
+      "cost": {
+        "total_ms": 29377.54,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3757.29
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2418.31
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5470.37
+          },
+          "召回字段信息": {
+            "duration_ms": 6650.09
+          },
+          "合并召回信息": {
+            "duration_ms": 28.1
+          },
+          "过滤指标信息": {
+            "duration_ms": 2300.88
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 5511.57
+          },
+          "补全连接路径": {
+            "duration_ms": 6.9
+          },
+          "添加额外信息": {
+            "duration_ms": 23.55
+          },
+          "生成SQL语句": {
+            "duration_ms": 8728.27
+          },
+          "扇出检测": {
+            "duration_ms": 3.22
+          },
+          "校验SQL语句": {
+            "duration_ms": 9.17
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.98
+          },
+          "翻译列名": {
+            "duration_ms": 1621.08
+          },
+          "数据解读": {
+            "duration_ms": 1.38
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_009",
+      "difficulty": "medium",
+      "category": "groupby_by_type",
+      "query": "各设备类型的实际产量是多少？",
+      "gold_sql": "SELECT e.equipment_type, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_equipment e ON p.equipment_id = e.equipment_id\nGROUP BY e.equipment_type\n",
+      "pred_sql": "SELECT t2.equipment_type, SUM(t1.actual_quantity) AS actual_quantity FROM table_production_record AS t1 JOIN table_equipment AS t2 ON t1.equipment_id = t2.equipment_id GROUP BY t2.equipment_type LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 8,
+        "pred_rows": 8
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_equipment",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "equipment_type"
+        ]
+      },
+      "cost": {
+        "total_ms": 27025.92,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3406.96
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回字段信息": {
+            "duration_ms": 2575.64
+          },
+          "召回指标信息": {
+            "duration_ms": 2980.72
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 4534.47
+          },
+          "合并召回信息": {
+            "duration_ms": 25.6
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2128.62
+          },
+          "过滤指标信息": {
+            "duration_ms": 3468.76
+          },
+          "补全连接路径": {
+            "duration_ms": 5.15
+          },
+          "添加额外信息": {
+            "duration_ms": 27.29
+          },
+          "生成SQL语句": {
+            "duration_ms": 8164.13
+          },
+          "扇出检测": {
+            "duration_ms": 3.78
+          },
+          "校验SQL语句": {
+            "duration_ms": 7.38
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.51
+          },
+          "翻译列名": {
+            "duration_ms": 2658.22
+          },
+          "数据解读": {
+            "duration_ms": 0.81
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_010",
+      "difficulty": "medium",
+      "category": "topn",
+      "query": "停机时长最长的前五台设备是哪些？",
+      "gold_sql": "SELECT e.equipment_name, SUM(p.downtime_minutes) AS downtime_minutes\nFROM table_production_record p\nJOIN table_equipment e ON p.equipment_id = e.equipment_id\nGROUP BY e.equipment_name\nORDER BY downtime_minutes DESC\nLIMIT 5\n",
+      "pred_sql": "SELECT e.equipment_name, SUM(p.downtime_minutes) AS total_downtime FROM table_production_record AS p JOIN table_equipment AS e ON p.equipment_id = e.equipment_id GROUP BY e.equipment_name ORDER BY total_downtime DESC LIMIT 5",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 5,
+        "pred_rows": 5
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_equipment",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "downtime_minutes",
+          "equipment_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 30093.4,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3232.41
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 4375.97
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 6848.96
+          },
+          "召回字段信息": {
+            "duration_ms": 6906.7
+          },
+          "合并召回信息": {
+            "duration_ms": 17.51
+          },
+          "过滤指标信息": {
+            "duration_ms": 3213.27
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 4615.39
+          },
+          "补全连接路径": {
+            "duration_ms": 4.9
+          },
+          "添加额外信息": {
+            "duration_ms": 9.97
+          },
+          "生成SQL语句": {
+            "duration_ms": 9018.0
+          },
+          "扇出检测": {
+            "duration_ms": 6.47
+          },
+          "校验SQL语句": {
+            "duration_ms": 14.79
+          },
+          "执行SQL语句": {
+            "duration_ms": 11.48
+          },
+          "翻译列名": {
+            "duration_ms": 1618.51
+          },
+          "数据解读": {
+            "duration_ms": 0.86
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_011",
+      "difficulty": "medium",
+      "category": "avg_metric",
+      "query": "各产品类别的平均生产工时是多少？",
+      "gold_sql": "SELECT pd.product_category, AVG(p.production_hours) AS avg_production_hours\nFROM table_production_record p\nJOIN table_product pd ON p.product_id = pd.product_id\nGROUP BY pd.product_category\n",
+      "pred_sql": "SELECT p.product_category, AVG(pr.production_hours) AS avg_production_hours FROM table_production_record AS pr JOIN table_product AS p ON pr.product_id = p.product_id GROUP BY p.product_category LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 8,
+        "pred_rows": 8
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "product_category",
+          "production_hours"
+        ]
+      },
+      "cost": {
+        "total_ms": 25161.05,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 5129.02
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2722.52
+          },
+          "召回字段信息": {
+            "duration_ms": 4541.15
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5421.3
+          },
+          "合并召回信息": {
+            "duration_ms": 9.09
+          },
+          "过滤指标信息": {
+            "duration_ms": 2217.22
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 2668.47
+          },
+          "补全连接路径": {
+            "duration_ms": 5.62
+          },
+          "添加额外信息": {
+            "duration_ms": 9.23
+          },
+          "生成SQL语句": {
+            "duration_ms": 7183.02
+          },
+          "扇出检测": {
+            "duration_ms": 4.37
+          },
+          "校验SQL语句": {
+            "duration_ms": 7.9
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.11
+          },
+          "翻译列名": {
+            "duration_ms": 1796.89
+          },
+          "数据解读": {
+            "duration_ms": 0.7
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_012",
+      "difficulty": "medium",
+      "category": "ratio_metric_orderby_snowflake",
+      "query": "各工厂的产量达成率，按从高到低排序",
+      "gold_sql": "SELECT f.factory_name,\n       SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nGROUP BY f.factory_name\nORDER BY achievement_rate DESC\n",
+      "pred_sql": "SELECT f.factory_name, SUM(pr.actual_quantity) / SUM(pr.planned_quantity) AS yield_achievement_rate FROM table_production_record AS pr JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id JOIN table_factory AS f ON w.factory_id = f.factory_id GROUP BY f.factory_id, f.factory_name ORDER BY yield_achievement_rate DESC LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name",
+          "planned_quantity"
+        ]
+      },
+      "cost": {
+        "total_ms": 30368.74,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3813.96
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2461.94
+          },
+          "召回字段信息": {
+            "duration_ms": 4474.11
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 6232.36
+          },
+          "合并召回信息": {
+            "duration_ms": 25.76
+          },
+          "过滤指标信息": {
+            "duration_ms": 1944.14
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 6068.35
+          },
+          "补全连接路径": {
+            "duration_ms": 4.9
+          },
+          "添加额外信息": {
+            "duration_ms": 10.89
+          },
+          "生成SQL语句": {
+            "duration_ms": 9636.57
+          },
+          "扇出检测": {
+            "duration_ms": 5.4
+          },
+          "校验SQL语句": {
+            "duration_ms": 8.4
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.05
+          },
+          "翻译列名": {
+            "duration_ms": 1593.73
+          },
+          "数据解读": {
+            "duration_ms": 1.03
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "medium_013",
+      "difficulty": "medium",
+      "category": "snowflake_region",
+      "query": "各地区的总实际产量是多少？",
+      "gold_sql": "SELECT f.region, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nGROUP BY f.region\n",
+      "pred_sql": "SELECT tf.region, SUM(pr.actual_quantity) FROM table_production_record AS pr JOIN table_workshop AS ws ON pr.workshop_id = ws.workshop_id JOIN table_factory AS tf ON ws.factory_id = tf.factory_id GROUP BY tf.region LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "region"
+        ]
+      },
+      "cost": {
+        "total_ms": 28093.55,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3956.55
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回字段信息": {
+            "duration_ms": 2835.16
+          },
+          "召回指标信息": {
+            "duration_ms": 3202.33
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 7493.79
+          },
+          "合并召回信息": {
+            "duration_ms": 11.42
+          },
+          "过滤指标信息": {
+            "duration_ms": 2535.48
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 3754.38
+          },
+          "补全连接路径": {
+            "duration_ms": 5.3
+          },
+          "添加额外信息": {
+            "duration_ms": 9.71
+          },
+          "生成SQL语句": {
+            "duration_ms": 7822.15
+          },
+          "扇出检测": {
+            "duration_ms": 6.36
+          },
+          "校验SQL语句": {
+            "duration_ms": 12.86
+          },
+          "执行SQL语句": {
+            "duration_ms": 12.2
+          },
+          "翻译列名": {
+            "duration_ms": 1504.13
+          },
+          "数据解读": {
+            "duration_ms": 1.8
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_001",
+      "difficulty": "hard",
+      "category": "snowflake_time",
+      "query": "统计 2026 年第一季度各工厂的实际产量",
+      "gold_sql": "SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nJOIN table_date d ON p.date_id = d.date_id\nWHERE d.year = 2026 AND d.quarter = 'Q1'\nGROUP BY f.factory_name\n",
+      "pred_sql": "SELECT tf.factory_name, SUM(tpr.actual_quantity) AS 实际产量 FROM table_production_record AS tpr JOIN table_workshop AS tw ON tpr.workshop_id = tw.workshop_id JOIN table_factory AS tf ON tw.factory_id = tf.factory_id WHERE tpr.date_id BETWEEN 20260101 AND 20260331 GROUP BY tf.factory_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": false,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 0.75,
+        "column_recall": 0.75,
+        "missing_tables": [
+          "table_date"
+        ],
+        "missing_columns": [
+          "year"
+        ],
+        "required_tables": [
+          "table_date",
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name",
+          "quarter",
+          "year"
+        ]
+      },
+      "cost": {
+        "total_ms": 40338.17,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4284.26
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2698.28
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 4402.22
+          },
+          "召回字段信息": {
+            "duration_ms": 6053.3
+          },
+          "合并召回信息": {
+            "duration_ms": 33.03
+          },
+          "过滤指标信息": {
+            "duration_ms": 3445.85
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 8278.94
+          },
+          "补全连接路径": {
+            "duration_ms": 7.23
+          },
+          "添加额外信息": {
+            "duration_ms": 16.91
+          },
+          "生成SQL语句": {
+            "duration_ms": 15579.68
+          },
+          "扇出检测": {
+            "duration_ms": 4.83
+          },
+          "校验SQL语句": {
+            "duration_ms": 11.88
+          },
+          "执行SQL语句": {
+            "duration_ms": 8.64
+          },
+          "翻译列名": {
+            "duration_ms": 1737.14
+          },
+          "数据解读": {
+            "duration_ms": 3.64
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_002",
+      "difficulty": "hard",
+      "category": "window_topn_per_group",
+      "query": "每个工厂实际产量最高的产品分别是什么？",
+      "gold_sql": "SELECT factory_name, product_name, actual_quantity\nFROM (\n  SELECT f.factory_name,\n         pd.product_name,\n         SUM(p.actual_quantity) AS actual_quantity,\n         ROW_NUMBER() OVER (\n           PARTITION BY f.factory_name\n           ORDER BY SUM(p.actual_quantity) DESC\n         ) AS rn\n  FROM table_production_record p\n  JOIN table_workshop w ON p.workshop_id = w.workshop_id\n  JOIN table_factory f ON w.factory_id = f.factory_id\n  JOIN table_product pd ON p.product_id = pd.product_id\n  GROUP BY f.factory_name, pd.product_name\n) t\nWHERE rn = 1\n",
+      "pred_sql": "WITH agg AS (SELECT f.factory_name, p.product_name, SUM(pr.actual_quantity) AS total_actual_quantity FROM table_production_record AS pr JOIN table_product AS p ON pr.product_id = p.product_id JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id JOIN table_factory AS f ON w.factory_id = f.factory_id GROUP BY f.factory_name, p.product_name), ranked AS (SELECT factory_name, product_name, total_actual_quantity, RANK() OVER (PARTITION BY factory_name ORDER BY total_actual_quantity DESC) AS rnk FROM agg) SELECT factory_name, product_name, total_actual_quantity FROM ranked WHERE rnk = 1 ORDER BY factory_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": false,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_factory",
+          "table_product",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name",
+          "product_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 55248.44,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4519.42
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 3407.43
+          },
+          "召回字段信息": {
+            "duration_ms": 4677.41
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 11580.61
+          },
+          "合并召回信息": {
+            "duration_ms": 23.53
+          },
+          "过滤指标信息": {
+            "duration_ms": 4705.73
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 5914.63
+          },
+          "补全连接路径": {
+            "duration_ms": 6.81
+          },
+          "添加额外信息": {
+            "duration_ms": 16.4
+          },
+          "生成SQL语句": {
+            "duration_ms": 28228.99
+          },
+          "扇出检测": {
+            "duration_ms": 3.46
+          },
+          "校验SQL语句": {
+            "duration_ms": 8.57
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.61
+          },
+          "翻译列名": {
+            "duration_ms": 1662.36
+          },
+          "数据解读": {
+            "duration_ms": 1.73
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_003",
+      "difficulty": "hard",
+      "category": "window_ratio_of_total",
+      "query": "各产品类别的实际产量占总产量的比例是多少？",
+      "gold_sql": "SELECT pd.product_category,\n       SUM(p.actual_quantity) / SUM(SUM(p.actual_quantity)) OVER () AS ratio\nFROM table_production_record p\nJOIN table_product pd ON p.product_id = pd.product_id\nGROUP BY pd.product_category\n",
+      "pred_sql": "SELECT p.product_category, SUM(pr.actual_quantity) / SUM(SUM(pr.actual_quantity)) OVER () AS ratio FROM table_production_record AS pr INNER JOIN table_product AS p ON pr.product_id = p.product_id GROUP BY p.product_category LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 8,
+        "pred_rows": 8
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "product_category"
+        ]
+      },
+      "cost": {
+        "total_ms": 36077.49,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 5651.16
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2379.96
+          },
+          "召回字段信息": {
+            "duration_ms": 3724.98
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 7552.2
+          },
+          "合并召回信息": {
+            "duration_ms": 14.69
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 3491.16
+          },
+          "过滤指标信息": {
+            "duration_ms": 3683.2
+          },
+          "补全连接路径": {
+            "duration_ms": 8.71
+          },
+          "添加额外信息": {
+            "duration_ms": 31.81
+          },
+          "生成SQL语句": {
+            "duration_ms": 12791.49
+          },
+          "扇出检测": {
+            "duration_ms": 3.12
+          },
+          "校验SQL语句": {
+            "duration_ms": 8.21
+          },
+          "执行SQL语句": {
+            "duration_ms": 10.67
+          },
+          "翻译列名": {
+            "duration_ms": 1673.6
+          },
+          "数据解读": {
+            "duration_ms": 1.13
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_004",
+      "difficulty": "hard",
+      "category": "having_ratio",
+      "query": "哪些车间产线的合格率低于 97%？",
+      "gold_sql": "SELECT w.workshop_name, w.line_name,\n       SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nGROUP BY w.workshop_id, w.workshop_name, w.line_name\nHAVING SUM(p.qualified_quantity) / SUM(p.actual_quantity) < 0.97\n",
+      "pred_sql": "SELECT w.workshop_name, w.line_name, SUM(pr.qualified_quantity) / SUM(pr.actual_quantity) AS qualified_rate FROM table_production_record AS pr JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id GROUP BY w.workshop_name, w.line_name HAVING SUM(pr.qualified_quantity) / SUM(pr.actual_quantity) < 0.97 ORDER BY qualified_rate LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": false
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 0.75,
+        "missing_tables": [],
+        "missing_columns": [
+          "actual_quantity"
+        ],
+        "required_tables": [
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "line_name",
+          "qualified_quantity",
+          "workshop_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 39082.21,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4083.16
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2656.73
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5815.1
+          },
+          "召回字段信息": {
+            "duration_ms": 14171.53
+          },
+          "合并召回信息": {
+            "duration_ms": 19.37
+          },
+          "过滤指标信息": {
+            "duration_ms": 1968.55
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 4441.06
+          },
+          "补全连接路径": {
+            "duration_ms": 4.24
+          },
+          "添加额外信息": {
+            "duration_ms": 10.73
+          },
+          "生成SQL语句": {
+            "duration_ms": 11540.91
+          },
+          "扇出检测": {
+            "duration_ms": 4.08
+          },
+          "校验SQL语句": {
+            "duration_ms": 10.34
+          },
+          "执行SQL语句": {
+            "duration_ms": 9.06
+          },
+          "翻译列名": {
+            "duration_ms": 1749.4
+          },
+          "数据解读": {
+            "duration_ms": 11.15
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_005",
+      "difficulty": "hard",
+      "category": "filter_dim_ratio_topn",
+      "query": "在焊接工序中，合格率最高的车间产线是哪个？",
+      "gold_sql": "SELECT w.workshop_name, w.line_name,\n       SUM(p.qualified_quantity) / SUM(p.actual_quantity) AS qualified_rate\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_process pr ON p.process_id = pr.process_id\nWHERE pr.process_name = '焊接'\nGROUP BY w.workshop_id, w.workshop_name, w.line_name\nORDER BY qualified_rate DESC\nLIMIT 1\n",
+      "pred_sql": "SELECT ws.workshop_name, ws.line_name, SUM(pr.qualified_quantity) / SUM(pr.actual_quantity) AS yield_rate FROM table_production_record AS pr JOIN table_process AS p ON pr.process_id = p.process_id JOIN table_workshop AS ws ON pr.workshop_id = ws.workshop_id WHERE p.process_name = '焊接' GROUP BY ws.workshop_name, ws.line_name ORDER BY yield_rate DESC LIMIT 1",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 1,
+        "pred_rows": 1
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_process",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "line_name",
+          "process_name",
+          "qualified_quantity",
+          "workshop_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 43316.89,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4791.34
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 3589.55
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 4460.35
+          },
+          "召回字段信息": {
+            "duration_ms": 9520.91
+          },
+          "合并召回信息": {
+            "duration_ms": 29.38
+          },
+          "过滤指标信息": {
+            "duration_ms": 2156.13
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 12371.22
+          },
+          "补全连接路径": {
+            "duration_ms": 3.61
+          },
+          "添加额外信息": {
+            "duration_ms": 17.68
+          },
+          "生成SQL语句": {
+            "duration_ms": 11086.73
+          },
+          "扇出检测": {
+            "duration_ms": 3.13
+          },
+          "校验SQL语句": {
+            "duration_ms": 7.2
+          },
+          "执行SQL语句": {
+            "duration_ms": 4.63
+          },
+          "翻译列名": {
+            "duration_ms": 2316.28
+          },
+          "数据解读": {
+            "duration_ms": 1.38
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_006",
+      "difficulty": "hard",
+      "category": "filter_equipment_status_snowflake",
+      "query": "各工厂中处于运行状态的设备的实际产量是多少？",
+      "gold_sql": "SELECT f.factory_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nJOIN table_equipment e ON p.equipment_id = e.equipment_id\nWHERE e.equipment_status = '运行'\nGROUP BY f.factory_name\n",
+      "pred_sql": "SELECT f.factory_name, SUM(pr.actual_quantity) AS 实际产量 FROM table_production_record AS pr JOIN table_equipment AS e ON pr.equipment_id = e.equipment_id JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id JOIN table_factory AS f ON w.factory_id = f.factory_id WHERE e.equipment_status = '运行' GROUP BY f.factory_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_equipment",
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "equipment_status",
+          "factory_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 32839.36,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 5277.15
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 3217.8
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 4195.17
+          },
+          "召回字段信息": {
+            "duration_ms": 5612.27
+          },
+          "合并召回信息": {
+            "duration_ms": 23.28
+          },
+          "过滤指标信息": {
+            "duration_ms": 5511.46
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 8877.21
+          },
+          "补全连接路径": {
+            "duration_ms": 3.69
+          },
+          "添加额外信息": {
+            "duration_ms": 8.27
+          },
+          "生成SQL语句": {
+            "duration_ms": 8299.39
+          },
+          "扇出检测": {
+            "duration_ms": 3.55
+          },
+          "校验SQL语句": {
+            "duration_ms": 6.34
+          },
+          "执行SQL语句": {
+            "duration_ms": 5.38
+          },
+          "翻译列名": {
+            "duration_ms": 1704.65
+          },
+          "数据解读": {
+            "duration_ms": 0.74
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_007",
+      "difficulty": "hard",
+      "category": "subquery_above_avg",
+      "query": "哪些产品的实际产量高于所有产品的平均实际产量？",
+      "gold_sql": "SELECT pd.product_name, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_product pd ON p.product_id = pd.product_id\nGROUP BY pd.product_name\nHAVING SUM(p.actual_quantity) > (\n  SELECT AVG(s) FROM (\n    SELECT SUM(actual_quantity) AS s\n    FROM table_production_record\n    GROUP BY product_id\n  ) x\n)\n",
+      "pred_sql": "SELECT p.product_name, SUM(pr.actual_quantity) AS total_actual FROM table_product AS p JOIN table_production_record AS pr ON p.product_id = pr.product_id GROUP BY p.product_id, p.product_name HAVING SUM(pr.actual_quantity) > (SELECT AVG(total_actual) FROM (SELECT SUM(pr2.actual_quantity) AS total_actual FROM table_product AS p2 JOIN table_production_record AS pr2 ON p2.product_id = pr2.product_id GROUP BY p2.product_id) AS sub) LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_product",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "product_name"
+        ]
+      },
+      "cost": {
+        "total_ms": 39810.65,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4062.48
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回字段信息": {
+            "duration_ms": 2677.45
+          },
+          "召回指标信息": {
+            "duration_ms": 3870.72
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 8292.8
+          },
+          "合并召回信息": {
+            "duration_ms": 8.52
+          },
+          "过滤指标信息": {
+            "duration_ms": 3527.32
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 3789.62
+          },
+          "补全连接路径": {
+            "duration_ms": 6.78
+          },
+          "添加额外信息": {
+            "duration_ms": 17.33
+          },
+          "生成SQL语句": {
+            "duration_ms": 10875.11
+          },
+          "扇出检测": {
+            "duration_ms": 4.43
+          },
+          "校验SQL语句": {
+            "duration_ms": 10.36
+          },
+          "执行SQL语句": {
+            "duration_ms": 6.82
+          },
+          "翻译列名": {
+            "duration_ms": 1874.08
+          },
+          "数据解读": {
+            "duration_ms": 46.46
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_008",
+      "difficulty": "hard",
+      "category": "time_quarter_trend",
+      "query": "2026 年各季度的实际产量分别是多少？",
+      "gold_sql": "SELECT d.quarter, SUM(p.actual_quantity) AS actual_quantity\nFROM table_production_record p\nJOIN table_date d ON p.date_id = d.date_id\nWHERE d.year = 2026\nGROUP BY d.quarter\nORDER BY d.quarter\n",
+      "pred_sql": "SELECT table_date.quarter, SUM(table_production_record.actual_quantity) AS 实际产量 FROM table_production_record JOIN table_date ON table_production_record.date_id = table_date.date_id WHERE table_production_record.date_id BETWEEN 20260101 AND 20261231 GROUP BY table_date.quarter ORDER BY table_date.quarter LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 0.6667,
+        "missing_tables": [],
+        "missing_columns": [
+          "year"
+        ],
+        "required_tables": [
+          "table_date",
+          "table_production_record"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "quarter",
+          "year"
+        ]
+      },
+      "cost": {
+        "total_ms": 35638.81,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 3300.31
+          },
+          "提取关键词": {
+            "duration_ms": 0.01
+          },
+          "召回指标信息": {
+            "duration_ms": 3117.0
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5514.45
+          },
+          "召回字段信息": {
+            "duration_ms": 12533.01
+          },
+          "合并召回信息": {
+            "duration_ms": 13.27
+          },
+          "过滤指标信息": {
+            "duration_ms": 4306.64
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 5804.37
+          },
+          "补全连接路径": {
+            "duration_ms": 4.35
+          },
+          "添加额外信息": {
+            "duration_ms": 7.8
+          },
+          "生成SQL语句": {
+            "duration_ms": 8919.64
+          },
+          "扇出检测": {
+            "duration_ms": 4.97
+          },
+          "校验SQL语句": {
+            "duration_ms": 12.53
+          },
+          "执行SQL语句": {
+            "duration_ms": 8.03
+          },
+          "翻译列名": {
+            "duration_ms": 1703.87
+          },
+          "数据解读": {
+            "duration_ms": 0.82
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_009",
+      "difficulty": "hard",
+      "category": "window_rank_snowflake",
+      "query": "按产量达成率给各工厂排名，并给出名次序号",
+      "gold_sql": "SELECT factory_name,\n       achievement_rate,\n       RANK() OVER (ORDER BY achievement_rate DESC) AS rk\nFROM (\n  SELECT f.factory_name,\n         SUM(p.actual_quantity) / SUM(p.planned_quantity) AS achievement_rate\n  FROM table_production_record p\n  JOIN table_workshop w ON p.workshop_id = w.workshop_id\n  JOIN table_factory f ON w.factory_id = f.factory_id\n  GROUP BY f.factory_name\n) t\n",
+      "pred_sql": "SELECT ROW_NUMBER() OVER (ORDER BY SUM(pr.actual_quantity) / SUM(pr.planned_quantity) DESC) AS 名次, f.factory_name, SUM(pr.actual_quantity) / SUM(pr.planned_quantity) AS 产量达成率 FROM table_production_record AS pr JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id JOIN table_factory AS f ON w.factory_id = f.factory_id GROUP BY f.factory_id, f.factory_name ORDER BY 名次 ASC LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": false,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 4,
+        "pred_rows": 4
+      },
+      "exact_match": {
+        "match": false,
+        "table_match": true,
+        "column_match": false,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 1.0,
+        "missing_tables": [],
+        "missing_columns": [],
+        "required_tables": [
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name",
+          "planned_quantity"
+        ]
+      },
+      "cost": {
+        "total_ms": 54355.59,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 2771.08
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 3238.45
+          },
+          "召回字段信息": {
+            "duration_ms": 3301.36
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 8432.19
+          },
+          "合并召回信息": {
+            "duration_ms": 17.34
+          },
+          "过滤指标信息": {
+            "duration_ms": 1916.83
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 4093.39
+          },
+          "补全连接路径": {
+            "duration_ms": 5.65
+          },
+          "添加额外信息": {
+            "duration_ms": 12.7
+          },
+          "生成SQL语句": {
+            "duration_ms": 34613.67
+          },
+          "扇出检测": {
+            "duration_ms": 6.16
+          },
+          "校验SQL语句": {
+            "duration_ms": 13.04
+          },
+          "执行SQL语句": {
+            "duration_ms": 9.13
+          },
+          "翻译列名": {
+            "duration_ms": 1872.33
+          },
+          "数据解读": {
+            "duration_ms": 0.66
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "hard_010",
+      "difficulty": "hard",
+      "category": "efficiency_metric_filter_snowflake",
+      "query": "2026 年华东工厂各产线的生产效率是多少？",
+      "gold_sql": "SELECT w.line_name,\n       SUM(p.actual_quantity) / SUM(p.production_hours) AS efficiency\nFROM table_production_record p\nJOIN table_workshop w ON p.workshop_id = w.workshop_id\nJOIN table_factory f ON w.factory_id = f.factory_id\nJOIN table_date d ON p.date_id = d.date_id\nWHERE f.factory_name = '华东工厂' AND d.year = 2026\nGROUP BY w.line_name\n",
+      "pred_sql": "SELECT w.line_name AS 产线, SUM(pr.actual_quantity) / SUM(pr.production_hours) AS 生产效率 FROM table_production_record AS pr JOIN table_workshop AS w ON pr.workshop_id = w.workshop_id JOIN table_factory AS f ON w.factory_id = f.factory_id JOIN table_date AS d ON pr.date_id = d.date_id WHERE f.factory_name = '华东工厂' AND d.year = 2026 GROUP BY w.line_name LIMIT 1001",
+      "should_continue": true,
+      "guide_queries": [],
+      "error": null,
+      "execution": {
+        "match": true,
+        "gold_error": null,
+        "pred_error": null,
+        "gold_rows": 3,
+        "pred_rows": 3
+      },
+      "exact_match": {
+        "match": true,
+        "table_match": true,
+        "column_match": true,
+        "aggregate_match": true,
+        "structure_match": true
+      },
+      "schema_linking": {
+        "table_recall": 1.0,
+        "column_recall": 0.8,
+        "missing_tables": [],
+        "missing_columns": [
+          "production_hours"
+        ],
+        "required_tables": [
+          "table_date",
+          "table_factory",
+          "table_production_record",
+          "table_workshop"
+        ],
+        "required_columns": [
+          "actual_quantity",
+          "factory_name",
+          "line_name",
+          "production_hours",
+          "year"
+        ]
+      },
+      "cost": {
+        "total_ms": 49441.83,
+        "step_timings": {
+          "解析用户意图": {
+            "duration_ms": 4376.85
+          },
+          "提取关键词": {
+            "duration_ms": 0.0
+          },
+          "召回指标信息": {
+            "duration_ms": 2968.52
+          },
+          "召回业务数据库数据": {
+            "duration_ms": 5248.4
+          },
+          "召回字段信息": {
+            "duration_ms": 6604.5
+          },
+          "合并召回信息": {
+            "duration_ms": 21.76
+          },
+          "过滤指标信息": {
+            "duration_ms": 2023.91
+          },
+          "过滤数据库表信息": {
+            "duration_ms": 11053.45
+          },
+          "补全连接路径": {
+            "duration_ms": 3.81
+          },
+          "添加额外信息": {
+            "duration_ms": 8.66
+          },
+          "生成SQL语句": {
+            "duration_ms": 23773.7
+          },
+          "扇出检测": {
+            "duration_ms": 9.64
+          },
+          "校验SQL语句": {
+            "duration_ms": 10.15
+          },
+          "执行SQL语句": {
+            "duration_ms": 7.88
+          },
+          "数据解读": {
+            "duration_ms": 1.06
+          }
+        },
+        "token_usage": {
+          "prompt": 0,
+          "completion": 0,
+          "total": 0
+        }
+      }
+    }
+  ],
+  "git_sha": "79061bf",
+  "timestamp": "20260608_150654"
+}

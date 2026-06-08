@@ -34,14 +34,18 @@ from agent.schemas import WSAgentContext, WSAgentState  # noqa: E402
 from clients.es import es_client  # noqa: E402
 from clients.mysql import dw_mysql_client, meta_mysql_client  # noqa: E402
 from clients.qdrant import qdrant_client  # noqa: E402
-from conf.app_config import app_config  # noqa: E402
+from conf.app_config import DEFAULT_DATASOURCE_ID, app_config  # noqa: E402
 from evals.metrics.exact_match import exact_match, strip_injected_limit  # noqa: E402
 from evals.metrics.execution import execution_match  # noqa: E402
 from evals.metrics.schema_linking import schema_linking_recall  # noqa: E402
 from repositories.es import ESRepository  # noqa: E402
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository  # noqa: E402
 
-DEFAULT_DATASET_NAME = "text2sql-db-v1"
+DEFAULT_DATASET_NAME = "text2sql-db-v2"
+
+# agent 召回用的数据源 id;由 main() 按 --datasource 覆盖。
+# 默认 ds_default 是空的,dw/制造库的 meta 物化在某个 ds_xxx 名下,跑前务必用 --datasource 指定。
+_DATASOURCE_ID = DEFAULT_DATASOURCE_ID
 
 
 def _langfuse_client() -> Langfuse:
@@ -59,6 +63,7 @@ def _make_context() -> WSAgentContext:
         es_repo=ESRepository(es_client.client),
         meta_db_client=meta_mysql_client,
         dw_db_client=dw_mysql_client,
+        datasource_id=_DATASOURCE_ID,   # 召回/补路径按该数据源作用域化(dw 在 ds_xxx,非 ds_default)
     )
 
 
@@ -152,7 +157,12 @@ def main() -> None:
     ap.add_argument("--dataset", default=DEFAULT_DATASET_NAME)
     ap.add_argument("--name", default="db-eval", help="实验/run 名称(用于 UI 里区分对比)")
     ap.add_argument("--concurrency", type=int, default=3, help="并发(LLM 限流敏感时调小)")
+    ap.add_argument("--datasource", default=DEFAULT_DATASOURCE_ID,
+                    help="agent 召回用的数据源 id(默认 ds_default 是空的,dw 在 ds_xxx 下)")
     args = ap.parse_args()
+
+    global _DATASOURCE_ID
+    _DATASOURCE_ID = args.datasource
 
     lf = _langfuse_client()
     dataset = lf.get_dataset(args.dataset)
