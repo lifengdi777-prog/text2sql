@@ -97,7 +97,10 @@ function colOf(handle: string | null | undefined): string {
 }
 
 function relayout() {
+  // 先按 dagre 重排节点位置,再据新位置重算连线 —— 否则连线还挂在旧位置算出的锚点侧上,
+  // 会错位/穿表(与拖动表后的 onNodeDragStop 同理,都要 buildEdges 重新就近布线)。
   nodes.value = computeNodes()
+  edges.value = buildEdges()
 }
 
 onMounted(() => {
