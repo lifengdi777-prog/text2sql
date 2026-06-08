@@ -15,23 +15,8 @@ logs/
 #docker相关文件
 docker/mysql
 
-#版本号.md
-版本号.md
-
 #api密钥等敏感信息
 conf/app_config.yaml
-
-#项目架构.MD
-项目架构.MD
-
-#项目架构.MD
-新增方案.md
-
-#新提示词.md
-新提示词.md
-
-#数据库介绍.md
-数据库介绍.md
 
 #chart_agent.md
 agent/chart_agent/README.md
@@ -45,17 +30,4 @@ evals/baselines/*
 
 skills-main/
 
-任务list.md
-
-第1步-地基设计.md
-
 conf/meta_config*.json
-
-normal_production.xlsx
-
-spike_result.xlsx
-
-docs/dataset_edit_agent_design.md
-
-sales_with_dates.xlsx
-
