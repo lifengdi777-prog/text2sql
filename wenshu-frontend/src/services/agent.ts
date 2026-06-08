@@ -3,6 +3,7 @@ import axios from 'axios'
 import type { AgentReplyMessage, ChartConfig, ResultRow } from '@/types/agent'
 import { getToken, redirectToLogin } from '@/lib/authToken'
 import { parseSseChunk, type AgentEvent, type AgentEventData, type AgentResultValue } from '@/lib/sse'
+import { uuid } from '@/lib/uuid'
 
 const agentApi = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '',
@@ -190,7 +191,7 @@ async function runStream(
   let processedLength = 0
   let rest = ''
   let message: AgentReplyMessage = {
-    id: crypto.randomUUID(),
+    id: uuid(),
     role: 'assistant',
     steps: [],
     result: [],

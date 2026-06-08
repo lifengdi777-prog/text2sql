@@ -2,6 +2,7 @@ import axios from 'axios'
 
 import { getToken, redirectToLogin } from '@/lib/authToken'
 import { parseSseChunk } from '@/lib/sse'
+import { uuid } from '@/lib/uuid'
 import type {
   EditSessionResp,
   EditUndoResp,
@@ -167,7 +168,7 @@ export async function streamEditMessage(
   opts: StreamOpts,
 ): Promise<EditTurn> {
   let turn: EditTurn = {
-    id: crypto.randomUUID(),
+    id: uuid(),
     instruction,
     steps: [],
     sql: null,

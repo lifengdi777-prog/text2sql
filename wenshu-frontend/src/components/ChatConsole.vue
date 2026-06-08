@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { hasDisplayableResult } from '@/lib/result-display'
 import { exportRowsToCsv } from '@/lib/export'
+import { uuid } from '@/lib/uuid'
 import { toErrorMessage, generateChart } from '@/services/agent'
 import {
   type ConversationBrief,
@@ -254,7 +255,7 @@ watch(
 
 function createReplyMessage(): AgentReplyMessage {
   return {
-    id: crypto.randomUUID(),
+    id: uuid(),
     role: 'assistant',
     steps: [],
     result: [],
@@ -392,7 +393,7 @@ async function submitQuery() {
   // 上一轮还在执行时,禁止发起新提问:必须等本轮(数据解读 + 图表)全部完成
   if (isLoading.value) return
 
-  const userMessage = { id: crypto.randomUUID(), role: 'user' as const, content: query }
+  const userMessage = { id: uuid(), role: 'user' as const, content: query }
   const replyMessage = createReplyMessage()
 
   messages.value.push(userMessage, replyMessage)
