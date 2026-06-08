@@ -1,5 +1,5 @@
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct, Filter, FieldCondition, MatchValue
+from qdrant_client.models import VectorParams, Distance, PointStruct, Filter, FieldCondition, MatchValue, MatchAny
 from typing import Sequence
 from dtos.qdrant import ColumnQdrantInfo, MetricQdrantInfo, BaseQdrantInfo
 from abc import ABC
@@ -87,9 +87,26 @@ class BaseQdrantRepository(ABC):
 #同时它们重写了父类的 upsert 方法，但内部只是调用 super().upsert()，所以实际逻辑仍然复用父类的方法。
 class ColumnQdrantRepository(BaseQdrantRepository):
     collection_name: str = "column_info"
-    
+
     async def upsert(self, qdrant_infos: list[ColumnQdrantInfo]):
         await super().upsert(qdrant_infos)
+
+    # 只改这些列(按 payload.id 匹配)的 role 字段,不动向量/其它 payload。
+    # 一个列对应多个点(name/description/各 alias 各一条),故按 payload 过滤而非点 id 定位,
+    # 一次 set_payload 把同一列的所有点都更新。供「保存表关系」联动列外键 role 时同步召回侧用。
+    async def set_role_by_column_ids(self, datasource_id: str, column_ids: list[str], role: str):
+        if not column_ids:
+            return
+        if not await self.client.collection_exists(self.collection_name):
+            return
+        await self.client.set_payload(
+            collection_name=self.collection_name,
+            payload={"role": role},
+            points=Filter(must=[
+                FieldCondition(key="datasource_id", match=MatchValue(value=datasource_id)),
+                FieldCondition(key="id", match=MatchAny(any=list(column_ids))),
+            ]),
+        )
 
     async def search(
         self,

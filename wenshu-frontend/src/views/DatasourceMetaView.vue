@@ -8,7 +8,8 @@ import {
   saveDatasourceMetrics,
   saveDatasourceRelationships,
 } from '@/services/datasource'
-import type { DatasourceMeta, MetaColumn } from '@/types/datasource'
+import type { ColumnRole, DatasourceMeta, MetaColumn } from '@/types/datasource'
+import { effectiveColumnRole } from '@/lib/metaRoles'
 import RelationshipErEditor from '@/components/er/RelationshipErEditor.vue'
 
 const route = useRoute()
@@ -96,9 +97,31 @@ async function load() {
   }
 }
 
+function isNonKey(r: ColumnRole): boolean {
+  return r === 'dimension' || r === 'measure'
+}
+
+// 列在当前(可能含未保存关系编辑的)ER 关系下的有效角色,用于即时预览徽章。
+function effRole(c: MetaColumn): ColumnRole {
+  return effectiveColumnRole(c.role, selectedTable.value?.name ?? '', c.name, meta.value?.relationships ?? [])
+}
+
+function roleLabel(r: ColumnRole): string {
+  return ({ primary_key: '主键', foreign_key: '外键', dimension: '维度', measure: '度量' } as const)[r]
+}
+
+// 徽章配色:外键=蓝(与 ER 蓝链接一致)、主键=琥珀(与 ER 金钥匙一致),其余灰。
+function roleBadgeClass(r: ColumnRole): string {
+  if (r === 'foreign_key') return 'bg-sky-50 text-sky-600'
+  if (r === 'primary_key') return 'bg-amber-50 text-amber-600'
+  return 'bg-slate-100 text-slate-400'
+}
+
 function editableRole(c: MetaColumn): boolean {
-  // 主外键是物理事实,不可改;只有维度/度量可在两者间切换
-  return c.role !== 'primary_key' && c.role !== 'foreign_key'
+  // 角色可在「维度/度量」间切换的前提:持久化与有效角色都不是主外键(纯维度/度量列)。
+  // 这样关系新增使某列即时变外键 → 立即只读;关系删除使外键即时预览为维度 → 仍只读,
+  // 待「保存关系」落库、重进编辑页后才成为真正可编辑的维度(避免本地改 role 经表保存漂移)。
+  return isNonKey(c.role) && isNonKey(effRole(c))
 }
 
 // 表类型 → 徽章文案 + 配色
@@ -354,8 +377,12 @@ onMounted(load)
                       <option value="dimension">维度</option>
                       <option value="measure">度量</option>
                     </select>
-                    <span v-else class="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-400">
-                      {{ c.role === 'primary_key' ? '主键' : '外键' }}
+                    <span
+                      v-else
+                      class="inline-flex items-center rounded px-1.5 py-0.5 text-xs"
+                      :class="roleBadgeClass(effRole(c))"
+                    >
+                      {{ roleLabel(effRole(c)) }}
                     </span>
                   </td>
                   <td class="py-2 pr-3">

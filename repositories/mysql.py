@@ -76,7 +76,9 @@ class MetaDBRepository:
     #   · 凡当过某条边 from_column 的列 → role='foreign_key';
     #   · 当前是 foreign_key、但已不再是任何边的 from_column → 退回 'dimension'。
     # 主键(primary_key)是表自身标识,与有无外键指向无关,故永不在此降级。
-    async def replace_relationships(self, relationships: list[DataRelationship]):
+    async def replace_relationships(self, relationships: list[DataRelationship]) -> dict[str, str]:
+        """整表替换关系 + 联动列外键 role。返回 {被改动列 id: 最终 role},
+        供调用方把同样的 role 镜像进 Qdrant payload(召回侧的列 role 读自 Qdrant,不同步会读到旧值)。"""
         await self.session.execute(
             delete(DataRelationshipMySQL).where(DataRelationshipMySQL.datasource_id == self.datasource_id)
         )
@@ -84,27 +86,51 @@ class MetaDBRepository:
 
         # 列 id 约定为 "{table_id}.{列名}";边的 from_table 是表 id、from_column 是列名,故可直接拼。
         fk_col_ids = {f"{rel.from_table}.{rel.from_column}" for rel in relationships}
-        # 升级:作为外键端点的列置为 foreign_key(主键端点 to_column 不动)。
-        if fk_col_ids:
-            await self.session.execute(
-                update(ColumnInfoMySQL)
-                .where(
-                    ColumnInfoMySQL.datasource_id == self.datasource_id,
-                    ColumnInfoMySQL.id.in_(fk_col_ids),
-                )
-                .values(role="foreign_key")
-            )
-        # 退回:当前 foreign_key 但已不在新边里的列 → dimension。
-        # role=='foreign_key' 的条件天然排除了主键/度量,只在 FK↔维度之间联动。
+
+        # 先捕获"将被退回"的列 id(更新前查,否则升级后就查不出来了):
+        # 当前是 foreign_key、但已不再是任何边的 from_column。
         revert_conds = [
             ColumnInfoMySQL.datasource_id == self.datasource_id,
             ColumnInfoMySQL.role == "foreign_key",
         ]
         if fk_col_ids:
             revert_conds.append(ColumnInfoMySQL.id.notin_(fk_col_ids))
-        await self.session.execute(
-            update(ColumnInfoMySQL).where(*revert_conds).values(role="dimension")
+        revert_ids = set((await self.session.scalars(
+            select(ColumnInfoMySQL.id).where(*revert_conds)
+        )).all())
+
+        # 升级:作为外键端点的列置为 foreign_key —— 但主键不动(role != 'primary_key'),
+        # 兼容"既是主键又是外键"的列(如自引用/子类型表的 PK 同时是 FK),与前端 effectiveColumnRole 一致。
+        if fk_col_ids:
+            await self.session.execute(
+                update(ColumnInfoMySQL)
+                .where(
+                    ColumnInfoMySQL.datasource_id == self.datasource_id,
+                    ColumnInfoMySQL.id.in_(fk_col_ids),
+                    ColumnInfoMySQL.role != "primary_key",
+                )
+                .values(role="foreign_key")
+            )
+        # 退回:上面捕获的列 → dimension。
+        if revert_ids:
+            await self.session.execute(
+                update(ColumnInfoMySQL)
+                .where(ColumnInfoMySQL.id.in_(revert_ids),
+                       ColumnInfoMySQL.datasource_id == self.datasource_id)
+                .values(role="dimension")
+            )
+
+        # 读回被改动列的最终 role(含主键保护后的真实结果),让 Qdrant 精确镜像 MySQL。
+        touched = set(fk_col_ids) | revert_ids
+        if not touched:
+            return {}
+        rows = await self.session.execute(
+            select(ColumnInfoMySQL.id, ColumnInfoMySQL.role).where(
+                ColumnInfoMySQL.datasource_id == self.datasource_id,
+                ColumnInfoMySQL.id.in_(touched),
+            )
         )
+        return {row.id: row.role for row in rows}
 
     # 列出本数据源的全部表(给意图解析节点拼"当前数据库领域"上下文用)。
     async def get_all_tables(self) -> list[TableInfo]:

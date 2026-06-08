@@ -12,6 +12,7 @@ import dagre from 'dagre'
 
 import TableNode from './TableNode.vue'
 import type { MetaRelationship, MetaTable } from '@/types/datasource'
+import { effectiveColumnRole } from '@/lib/metaRoles'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -51,7 +52,12 @@ function computeNodes(): Node[] {
       data: {
         name: t.name,
         role: t.role,
-        columns: t.columns.map((c) => ({ name: c.name, type: c.type, role: c.role })),
+        // 图标用「有效角色」:叠加当前(含未保存)关系,拖线/删线即时反映外键身份。
+        columns: t.columns.map((c) => ({
+          name: c.name,
+          type: c.type,
+          role: effectiveColumnRole(c.role, t.name, c.name, relationships.value),
+        })),
       },
     }
   })
@@ -99,14 +105,35 @@ onMounted(() => {
   edges.value = buildEdges()
 })
 
-// 关系变化(拖线新增 / 点线删除 / 列表视图改动)→ 重算连线;节点位置保持不动(不打乱已拖好的布局)
+// 关系变化(拖线新增 / 点线删除 / 列表视图改动)→ 重算连线 + 就地刷新字段图标;
+// 节点位置保持不动(只更新 data.columns 的角色,不重跑 dagre 布局,不打乱已拖好的布局)
 watch(
   relationships,
   () => {
     edges.value = buildEdges()
+    refreshRoles()
   },
   { deep: true },
 )
+
+// 按当前关系重算各节点字段的「有效角色」,原地更新节点 data(保留位置)。
+function refreshRoles() {
+  nodes.value = nodes.value.map((n) => {
+    const t = props.tables.find((tt) => tt.name === n.id)
+    if (!t) return n
+    return {
+      ...n,
+      data: {
+        ...n.data,
+        columns: t.columns.map((c) => ({
+          name: c.name,
+          type: c.type,
+          role: effectiveColumnRole(c.role, t.name, c.name, relationships.value),
+        })),
+      },
+    }
+  })
+}
 
 // 拖线:从任一字段锚点拖到另一字段锚点 → 新增一条关系(还原列名、去重、禁止自连)
 function onConnect(c: Connection) {

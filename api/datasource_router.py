@@ -255,7 +255,7 @@ async def update_datasource_relationships(datasource_id: str, data: Relationship
     async with meta_mysql_client.session() as session:
         repo = MetaDBRepository(session, datasource_id)
         async with session.begin():
-            await repo.replace_relationships([
+            role_changes = await repo.replace_relationships([
                 DataRelationship(
                     from_table=e.from_table, from_column=e.from_column,
                     to_table=e.to_table, to_column=e.to_column,
@@ -265,7 +265,19 @@ async def update_datasource_relationships(datasource_id: str, data: Relationship
             ])
             # JOIN 选路参数随表关系一起存(同一事务)
             await DatasourceRepository(session).set_join_config(datasource_id, data.max_extra, data.k)
-    logger.info(f"[/datasources] user_id={user_id} 更新表关系 {datasource_id}({len(data.relationships)} 条)")
+
+    # MySQL 提交后,把列 role 的变更镜像进 Qdrant payload —— 召回侧的列 role 读自 Qdrant,
+    # 不同步则 LLM 对召回到的列仍看到旧 role。只 set_payload 改 role 字段,不重嵌向量(符合"不重建索引")。
+    if role_changes:
+        ids_by_role: dict[str, list[str]] = {}
+        for col_id, role in role_changes.items():
+            ids_by_role.setdefault(role, []).append(col_id)
+        col_qdrant = ColumnQdrantRepository(qdrant_client.client)
+        for role, col_ids in ids_by_role.items():
+            await col_qdrant.set_role_by_column_ids(datasource_id, col_ids, role)
+
+    logger.info(f"[/datasources] user_id={user_id} 更新表关系 {datasource_id}"
+                f"({len(data.relationships)} 条,联动列 role {len(role_changes)} 处)")
     return {"count": len(data.relationships)}
 
 
