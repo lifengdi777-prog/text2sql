@@ -28,6 +28,15 @@ const ROW_HEIGHT = 34
 const nodes = ref<Node[]>([])
 const edges = ref<Edge[]>([])
 
+// 待删除的关系(打开自定义确认弹窗;null=未打开)。存四端点而非数组下标,
+// 确认时再 findIndex,避免弹窗期间数组变动导致下标失效、误删别的边。
+const pendingDelete = ref<{
+  from_table: string
+  from_column: string
+  to_table: string
+  to_column: string
+} | null>(null)
+
 // dagre 自动布局:按表的字段数估算高度,左→右(rankdir=LR)排开,避免初始全堆在原点
 function computeNodes(): Node[] {
   const g = new dagre.graphlib.Graph()
@@ -178,8 +187,28 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
       r.to_column === toCol,
   )
   if (idx === -1) return
-  if (!window.confirm(`删除关系：${edge.source}.${fromCol} → ${edge.target}.${toCol} ？`)) return
-  relationships.value.splice(idx, 1)
+  // 打开自定义确认弹窗(替代浏览器原生 confirm,统一 UI),确认后再删。
+  pendingDelete.value = {
+    from_table: edge.source,
+    from_column: fromCol,
+    to_table: edge.target,
+    to_column: toCol,
+  }
+}
+
+// 确认删除:按四端点重新定位再删(弹窗期间数组可能变动,不复用打开时的下标)。
+function confirmDelete() {
+  const d = pendingDelete.value
+  if (!d) return
+  const idx = relationships.value.findIndex(
+    (r) =>
+      r.from_table === d.from_table &&
+      r.from_column === d.from_column &&
+      r.to_table === d.to_table &&
+      r.to_column === d.to_column,
+  )
+  if (idx !== -1) relationships.value.splice(idx, 1)
+  pendingDelete.value = null
 }
 </script>
 
@@ -217,6 +246,41 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
         <!-- 方格纸网格:lines 变体画横竖网格线(绘图工具画布那种) -->
         <Background variant="lines" :gap="20" :size="1" pattern-color="#334155" />
       </VueFlow>
+    </div>
+
+    <!-- 删除关系确认弹窗(替代原生 confirm,与保存确认弹窗同款风格) -->
+    <div
+      v-if="pendingDelete"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="pendingDelete = null"
+    >
+      <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+        <h3 class="text-base font-semibold text-slate-800">删除表关系</h3>
+        <p class="mt-1 text-xs text-slate-500">
+          确认删除以下连接关系？删除后需点右上角「保存关系」才会生效。
+        </p>
+        <div class="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 font-mono text-sm">
+          <span class="text-sky-600">{{ pendingDelete.from_table }}.{{ pendingDelete.from_column }}</span>
+          <span class="mx-1.5 text-slate-400">→</span>
+          <span class="text-amber-600">{{ pendingDelete.to_table }}.{{ pendingDelete.to_column }}</span>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
+            @click="pendingDelete = null"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="rounded-xl bg-rose-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-rose-600"
+            @click="confirmDelete"
+          >
+            删除
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
