@@ -35,8 +35,8 @@ async def ensure_databases() -> None:
     """建 meta / upload 库(若不存在)。用 db_meta 的账号连到服务器(不指定库)执行 CREATE DATABASE。
     业务库(dw 等)是用户源数据,不在此创建。"""
     dbs = [app_config.db_meta.database]
-    if app_config.db_upload is not None:
-        dbs.append(app_config.db_upload.database)
+    if app_config.db_wenshu is not None:
+        dbs.append(app_config.db_wenshu.database)
 
     cfg = app_config.db_meta  # 同一台 MySQL,用 meta 的账号建库即可
     admin_uri = f"mysql+asyncmy://{cfg.user}:{cfg.password}@{cfg.host}:{cfg.port}/?charset=utf8mb4"

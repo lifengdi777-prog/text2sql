@@ -55,12 +55,12 @@ _engine = None
 
 
 def get_session_factory() -> async_sessionmaker:
-    """惰性构造 upload 库的 sessionmaker(进程级单例,自带连接池)。"""
+    """惰性构造 wenshu 运营库的 sessionmaker(进程级单例,自带连接池)。"""
     global _session_factory, _engine
     if _session_factory is None:
-        cfg = app_config.db_upload
+        cfg = app_config.db_wenshu
         if cfg is None:
-            raise RuntimeError("未配置 db_upload,请在 app_config.yaml 添加")
+            raise RuntimeError("未配置 db_wenshu,请在 app_config.yaml 添加")
         uri = (f"mysql+asyncmy://{cfg.user}:{cfg.password}@"
                f"{cfg.host}:{cfg.port}/{cfg.database}?charset=utf8mb4")
         _engine = create_async_engine(uri, pool_size=5, max_overflow=10, pool_pre_ping=True)

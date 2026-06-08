@@ -1,4 +1,4 @@
-"""会话历史的 ORM:会话 + 消息两张表(建在 db_upload,与 users/upload_datasets 同库)。
+"""会话历史的 ORM:会话 + 消息两张表(建在 db_wenshu,与 users/upload_datasets 同库)。
 
 表结构:
   conversations

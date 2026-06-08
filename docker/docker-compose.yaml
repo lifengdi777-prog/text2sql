@@ -17,12 +17,6 @@ services:
     command:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_general_ci
-    healthcheck:
-      # 后端启动即建库/建表,必须等 MySQL 真正就绪(见 wenshu-backend.depends_on)
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
 
   elasticsearch:
     build: ./elasticsearch
@@ -69,61 +63,6 @@ services:
       - "9001:9001"   # Web 控制台
     volumes:
       - minio_data:/data
-
-  # ─────────────────────────────────────────────────────────────────────
-  # 文枢后端(FastAPI)。从仓库根的 Dockerfile 构建。
-  #   起核心+后端:    docker compose -f docker/docker-compose.yaml up -d --build
-  # 通过 WENSHU_* 环境变量把配置里的 host 覆盖成容器服务名(见 app_config.yaml.example)。
-  # 真实配置文件(含密钥)运行时挂载进来,不打进镜像。
-  # ─────────────────────────────────────────────────────────────────────
-  wenshu-backend:
-    build:
-      context: ..                 # 上下文=仓库根
-      dockerfile: Dockerfile
-    container_name: wenshu-backend
-    restart: unless-stopped
-    depends_on:
-      mysql: { condition: service_healthy }   # 等 MySQL 就绪,保证启动建表成功
-      elasticsearch: { condition: service_started }
-      qdrant: { condition: service_started }
-      minio: { condition: service_started }
-    ports:
-      - "8000:8000"
-    environment:
-      # 容器内用服务名互通;MySQL 容器内端口是 3306(非宿主映射的 3307)
-      WENSHU_MYSQL_HOST: mysql
-      WENSHU_MYSQL_PORT: "3306"
-      WENSHU_QDRANT_HOST: qdrant
-      WENSHU_ES_HOST: elasticsearch
-      WENSHU_S3_ENDPOINT: http://minio:9000
-      # 管理员初始密码在 conf/app_config.yaml 的 auth.admin_password 配(随 yaml 挂载进来)。
-      # 启用 observability 时打开下一行,后端 trace 才指向容器内 langfuse
-      # WENSHU_LANGFUSE_HOST: http://langfuse-web:3000
-    volumes:
-      - ../conf/app_config.yaml:/app/conf/app_config.yaml:ro   # 真实配置(含密钥)
-      - ../logs:/app/logs                                       # 日志落宿主,便于查看
-    healthcheck:
-      # 镜像无 curl,用自带 python 探活探针 /healthz(只查进程,不查外部依赖,快)
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz',timeout=3).status==200 else 1)"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 40s   # 留出首启建库/建表/装载时间,期间不计失败
-
-  # ─────────────────────────────────────────────────────────────────────
-  # 文枢前端(Vue + nginx)。多阶段构建:node 出包 → nginx 托管 + 反代后端。
-  # 访问 http://localhost:8080;API 走相对路径,由 nginx 代理到 wenshu-backend。
-  # ─────────────────────────────────────────────────────────────────────
-  wenshu-frontend:
-    build:
-      context: ../wenshu-frontend
-      dockerfile: Dockerfile
-    container_name: wenshu-frontend
-    restart: unless-stopped
-    depends_on:
-      wenshu-backend: { condition: service_healthy }   # 等后端探活通过再起,避免早期 502
-    ports:
-      - "8080:80"
 
   # ─────────────────────────────────────────────────────────────────────
   # Langfuse 可观测(可选)。带 profile "observability",默认不启;

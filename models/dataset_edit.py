@@ -1,4 +1,4 @@
-"""「智能助手」编辑会话 + 操作日志的 ORM(建在 db_upload,与 upload_datasets 同库)。
+"""「智能助手」编辑会话 + 操作日志的 ORM(建在 db_wenshu,与 upload_datasets 同库)。
 
 设计见 docs/dataset_edit_agent_design.md §9:
   dataset_edit_sessions  一次性编辑工作区(每数据集至多一个活跃会话)

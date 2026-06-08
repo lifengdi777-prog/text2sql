@@ -1,8 +1,0 @@
-# 构建上下文排除项:加速构建、避免把本地产物带进镜像
-node_modules/
-dist/
-.env
-.env.*
-*.log
-.vscode/
-.DS_Store

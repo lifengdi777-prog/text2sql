@@ -7,7 +7,7 @@
 
 设计取舍(够用即可,不做企业级 SSO):
   - token 无状态:服务端不存 session,改 secret 即可让全部 token 失效;
-  - 用户表跟 upload_datasets 同库(db_upload),共用一套连接池;
+  - 用户表跟 upload_datasets 同库(db_wenshu),共用一套连接池;
   - datasets.user_id 存的就是这里的 str(user.id),登录后归属判断天然对齐。
 """
 from __future__ import annotations

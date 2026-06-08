@@ -152,7 +152,7 @@ class AppConfig(BaseModel):
     es: ESConfig
     llm: LLMConfig
     # 上传功能用,不配置不影响原 DW 路径(用到时才校验)
-    db_upload: UploadDBConfig | None = None
+    db_wenshu: UploadDBConfig | None = None
     # 对象存储,上传功能用;不配置不影响原 DW 路径(用到时才校验)
     s3: S3Config | None = None
     # 登录鉴权(JWT)。不配置则用 AuthConfig 的默认值(本地开发够用)
@@ -165,12 +165,10 @@ class AppConfig(BaseModel):
 config_path = Path(__file__).parent / "app_config.yaml"
 #context就是从app_config.yaml文件中读取的配置数据。
 context = OmegaConf.load(config_path)
-#①resolve=True 展开 ${oc.env:VAR,default} 等插值,允许用环境变量覆盖配置
-#  (Docker 部署:同一份 yaml,裸机走 default=localhost,容器里 env 覆盖成服务名)。
-#  纯字面量的配置不含插值,转换结果与原来完全一致,向后兼容。
-#②model_validate 把 dict 转成 AppConfig 对象;全局 app_config 供各处 import。
-resolved = OmegaConf.to_container(context, resolve=True)
-app_config: AppConfig = AppConfig.model_validate(resolved)
+#①model_validate的作用是将yaml文件的数据转换成AppConfig对象的属性
+#②定义了一个全局的app_config变量，类型是AppConfig，
+#并且通过调用AppConfig.model_validate(context)来初始化这个变量。
+app_config: AppConfig = AppConfig.model_validate(context)
 
 # 多数据源:现有这套手工维护的源,统一挂在这个固定 datasource_id 下。
 # meta 表的作用域列、召回过滤、init_data 写入都用它当单源时的默认值;
