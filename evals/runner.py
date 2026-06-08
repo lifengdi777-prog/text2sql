@@ -49,6 +49,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from agent.db_agent.graph import graph  # noqa: E402
 from agent.schemas import WSAgentContext, WSAgentState  # noqa: E402
+from conf.app_config import DEFAULT_DATASOURCE_ID  # noqa: E402
 from clients.es import es_client  # noqa: E402
 from clients.mysql import dw_mysql_client, meta_mysql_client  # noqa: E402
 from clients.qdrant import qdrant_client  # noqa: E402
@@ -98,6 +99,7 @@ async def evaluate_case(
     case: dict[str, Any],
     *,
     enable_execution: bool = True,
+    datasource_id: str = DEFAULT_DATASOURCE_ID,
 ) -> dict[str, Any]:
     """跑一条 case,返回完整指标。"""
     case_id = case["id"]
@@ -131,6 +133,7 @@ async def evaluate_case(
                 es_repo=ESRepository(es_client.client),
                 meta_db_client=meta_mysql_client,
                 dw_db_client=dw_mysql_client,
+                datasource_id=datasource_id,   # 召回/补路径按该数据源作用域化(dw 在 ds_xxx 名下,非 ds_default)
             )
 
             # 跑图,同时通过 stream_mode="custom" 收集节点时长
@@ -252,6 +255,7 @@ async def run_eval(
     *,
     concurrency: int = 1,
     enable_execution: bool = True,
+    datasource_id: str = DEFAULT_DATASOURCE_ID,
 ) -> list[dict[str, Any]]:
     """对所有 case 跑评估。"""
     sem = asyncio.Semaphore(concurrency)
@@ -259,7 +263,7 @@ async def run_eval(
     async def _bounded(case: dict[str, Any]) -> dict[str, Any]:
         async with sem:
             logger.info(f"评估中: [{case['id']}] {case['query']}")
-            r = await evaluate_case(case, enable_execution=enable_execution)
+            r = await evaluate_case(case, enable_execution=enable_execution, datasource_id=datasource_id)
             _log_one_result(r)
             return r
 
@@ -380,6 +384,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--concurrency", type=int, default=1)
     ap.add_argument("--no-execution", action="store_true",
                     help="跳过执行结果对比(只跑召回+EM,跑得快)")
+    ap.add_argument("--datasource", type=str, default=DEFAULT_DATASOURCE_ID,
+                    help="agent 召回用的数据源 id(dw/制造库的 meta 物化在某个 ds_xxx 名下,默认 ds_default 是空的)")
     return ap.parse_args()
 
 
@@ -394,13 +400,14 @@ async def main() -> None:
         return
 
     logger.info(f"共 {len(cases)} 条 case,concurrency={args.concurrency},"
-                f"execution={'off' if args.no_execution else 'on'}")
+                f"execution={'off' if args.no_execution else 'on'},datasource={args.datasource}")
 
     try:
         results = await run_eval(
             cases,
             concurrency=args.concurrency,
             enable_execution=not args.no_execution,
+            datasource_id=args.datasource,
         )
         summary = summarize(results)
         out_path = save_results(results, summary)
