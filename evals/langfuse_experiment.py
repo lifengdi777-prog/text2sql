@@ -32,7 +32,7 @@ from langfuse import Evaluation, Langfuse  # noqa: E402
 from agent.db_agent.graph import graph  # noqa: E402
 from agent.schemas import WSAgentContext, WSAgentState  # noqa: E402
 from clients.es import es_client  # noqa: E402
-from clients.mysql import dw_mysql_client, meta_mysql_client  # noqa: E402
+from clients.mysql import client_registry, meta_mysql_client  # noqa: E402
 from clients.qdrant import qdrant_client  # noqa: E402
 from conf.app_config import DEFAULT_DATASOURCE_ID, app_config  # noqa: E402
 from evals.metrics.exact_match import exact_match, strip_injected_limit  # noqa: E402
@@ -62,8 +62,7 @@ def _make_context() -> WSAgentContext:
         metric_qdrant_repo=MetricQdrantRepository(qdrant_client.client),
         es_repo=ESRepository(es_client.client),
         meta_db_client=meta_mysql_client,
-        dw_db_client=dw_mysql_client,
-        datasource_id=_DATASOURCE_ID,   # 召回/补路径按该数据源作用域化(dw 在 ds_xxx,非 ds_default)
+        datasource_id=_DATASOURCE_ID,   # 召回/补路径按该数据源作用域化(dw 在 ds_xxx)
     )
 
 
@@ -103,7 +102,8 @@ async def eval_execution(*, input, output, expected_output, metadata=None, **kwa
     pred = strip_injected_limit((output or {}).get("sql"))  # 去掉校验注入的 LIMIT 1001
     if not gold:  # safety 类没有 gold_sql → 跳过该指标
         return Evaluation(name="execution_accuracy", value=None, comment="无 gold_sql,跳过")
-    async with dw_mysql_client.session() as session:
+    client = await client_registry.get_client(_DATASOURCE_ID)
+    async with client.session() as session:
         r = await execution_match(gold, pred, session)
     comment = None
     if not r.match:

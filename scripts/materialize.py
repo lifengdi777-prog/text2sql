@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from clients.embedding import embedding_client
 from clients.es import es_client
-from clients.mysql import client_registry, dw_mysql_client, meta_mysql_client
+from clients.mysql import client_registry, meta_mysql_client
 from clients.qdrant import qdrant_client
 from conf.app_config import DEFAULT_DATASOURCE_ID
 from conf.meta_config import MetaConfig
@@ -202,7 +202,6 @@ async def main():
         print(f"[OK] 数据源 {datasource_id} 物化完成,可问数了。")
     finally:
         await client_registry.close_all()
-        await dw_mysql_client.close()
         await es_client.close()
         await qdrant_client.close()
 

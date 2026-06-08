@@ -51,7 +51,7 @@ from agent.db_agent.graph import graph  # noqa: E402
 from agent.schemas import WSAgentContext, WSAgentState  # noqa: E402
 from conf.app_config import DEFAULT_DATASOURCE_ID  # noqa: E402
 from clients.es import es_client  # noqa: E402
-from clients.mysql import dw_mysql_client, meta_mysql_client  # noqa: E402
+from clients.mysql import client_registry, meta_mysql_client  # noqa: E402
 from clients.qdrant import qdrant_client  # noqa: E402
 from core.log import logger  # noqa: E402
 from evals.metrics.cost import CostTracker, aggregate_latency  # noqa: E402
@@ -124,7 +124,8 @@ async def evaluate_case(
     # 只需要一个独立 session 跑 gold/pred SQL 对比;
     # 图本身按新架构用连接池(meta_db_client/dw_db_client),节点内部用 meta_repo()/dw_repo() 现开现关,
     # 不再向 context 注入长生命周期 session。
-    async with dw_mysql_client.session() as eval_session:
+    eval_client = await client_registry.get_client(datasource_id)
+    async with eval_client.session() as eval_session:
         try:
             initial_state = WSAgentState(messages=[HumanMessage(query)])
             context = WSAgentContext(
@@ -132,8 +133,7 @@ async def evaluate_case(
                 metric_qdrant_repo=MetricQdrantRepository(qdrant_client.client),
                 es_repo=ESRepository(es_client.client),
                 meta_db_client=meta_mysql_client,
-                dw_db_client=dw_mysql_client,
-                datasource_id=datasource_id,   # 召回/补路径按该数据源作用域化(dw 在 ds_xxx 名下,非 ds_default)
+                datasource_id=datasource_id,   # 召回/补路径按该数据源作用域化(dw 在 ds_xxx 名下)
             )
 
             # 跑图,同时通过 stream_mode="custom" 收集节点时长
@@ -420,7 +420,7 @@ async def main() -> None:
         print(f"\n结果已落: {out_path}")
         print(f"生成报告: uv run python -m evals.report --result {out_path}")
     finally:
-        await dw_mysql_client.close()
+        await client_registry.close_all()
         await meta_mysql_client.close()
         await qdrant_client.close()
         await es_client.close()

@@ -22,7 +22,7 @@ from agent.db_agent.nodes.translate_columns import translate_columns  # 结果�
 from agent.common.interpret_result import interpret_result  # 数据解读节点(共享,与图表并行)
 # 图表改为前端按需生成,不再在主图自动链里接入 chart_subgraph
 from langchain.messages import HumanMessage
-from clients.mysql import dw_mysql_client, meta_mysql_client
+from clients.mysql import meta_mysql_client
 from clients.es import es_client
 from clients.qdrant import qdrant_client
 from clients.embedding import embedding_client

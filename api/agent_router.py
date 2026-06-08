@@ -6,7 +6,7 @@ from core.log import logger
 from agent.common.history import stream_with_history
 from clients.langfuse import build_run_config
 from agent.db_agent.graph import graph
-from clients.mysql import dw_mysql_client, meta_mysql_client
+from clients.mysql import meta_mysql_client
 from clients.es import es_client
 from clients.qdrant import qdrant_client
 from clients.embedding import embedding_client
@@ -44,7 +44,6 @@ async def query_graph(query: str, user_id: str | None = None, user_name: str | N
 
     state = WSAgentState(messages=[HumanMessage(query)], history=history)
     context = WSAgentContext(
-        dw_db_client=dw_mysql_client,
         meta_db_client=meta_mysql_client,
         es_repo=es_repo,
         column_qdrant_repo=column_qdrant_repo,

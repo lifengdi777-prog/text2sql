@@ -82,8 +82,8 @@ class WSAgentContext(BaseModel):
     # 节点用下面的 meta_repo()/dw_repo() 上下文管理器,只在真正查库的那一小段开/关会话;
     # LLM 调用等待期间不占用任何 MySQL 连接 —— 同样的连接池能支撑高得多的并发。
     meta_db_client: MySQLClient
-    dw_db_client: MySQLClient
-    # 当前会话查询的数据源 + 库(库不传则用该数据源的默认库)。单源默认 ds_default。
+    # 当前会话查询的数据源 + 库(库不传则用该数据源的默认库)。
+    # DW 连接由 dw_repo() 经 client_registry 按 datasource_id 动态解析。
     # 所有元数据查询/召回/DW 连接都按它作用域化。
     datasource_id: str = DEFAULT_DATASOURCE_ID
     database: str | None = None
@@ -101,8 +101,8 @@ class WSAgentContext(BaseModel):
     async def dw_repo(self):
         """开一个短生命周期的 DW 会话 + repo。
 
-        通过 client_registry 按 datasource_id/库拿对应连接池:ds_default+默认库复用进程级
-        dw_mysql_client(零新建),其它源按需建池。"""
+        通过 client_registry 按 datasource_id/库拿对应连接池(从 meta 库的 datasource 表解析),
+        每个库一个池、按需建。"""
         client = await client_registry.get_client(self.datasource_id, self.database)
         async with client.session() as session:
             yield DWDBRepository(session)

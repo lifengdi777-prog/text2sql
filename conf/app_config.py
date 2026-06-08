@@ -145,7 +145,6 @@ class LangfuseConfig(BaseModel):
 class AppConfig(BaseModel):
     logging: LoggingConfig
     db_meta: DBConfig
-    db_dw: DBConfig
     qdrant: QdrantConfig
     embedding: EmbeddingConfig
     embedding_fallback: EmbeddingFallbackConfig

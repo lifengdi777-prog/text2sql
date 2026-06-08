@@ -2,7 +2,7 @@
 
 - GET /healthz:存活探针(liveness)。进程活着就返回 200,**不查任何外部依赖**,要快。
                 给 K8s livenessProbe / 负载均衡探活用。
-- GET /readyz :就绪探针(readiness)。逐个探 MySQL(meta+dw)/ES/Qdrant 连通性,
+- GET /readyz :就绪探针(readiness)。逐个探 MySQL(meta)/ES/Qdrant 连通性,
                 全通才 200,任一不可达返回 503 + 明细。给 K8s readinessProbe / 上线前自检用
                 ——依赖没就绪就别往这个实例上接流量。
 
@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from clients.es import es_client
-from clients.mysql import dw_mysql_client, meta_mysql_client
+from clients.mysql import meta_mysql_client
 from clients.qdrant import qdrant_client
 from core.log import logger
 
@@ -61,7 +61,6 @@ async def readyz():
     """就绪探针:并行探所有基础依赖,全通才就绪。"""
     results = await asyncio.gather(
         _check_mysql(meta_mysql_client, "mysql_meta"),
-        _check_mysql(dw_mysql_client, "mysql_dw"),
         _check_es(),
         _check_qdrant(),
     )

@@ -30,13 +30,8 @@ db_meta:
   password: root          # ⚠️ 生产改成强密码,并与 compose 里 MYSQL_ROOT_PASSWORD 一致
   database: meta
 
-# ── 数据仓库(你要问数的业务库;应用只读,不会自动创建)──────────────────────
-db_dw:
-  host: localhost   # 若 dw 是外部独立库,直接写它的真实地址
-  port: 3307
-  user: root
-  password: root          # ⚠️ 生产改成强密码
-  database: dw            # 改成你自己的业务库名
+# 注:要问数的业务库(数据仓库)不在这里配 —— 登录后在「数据源管理」里注册,
+#     连接信息存进 meta 库;支持接入多个数据源。
 
 # ── 向量库(列/指标召回)───────────────────────────────────────────────────
 qdrant:

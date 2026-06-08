@@ -21,7 +21,7 @@ from sqlalchemy import text
 
 from agent.llm import llm, fast_llm
 from agent.prompts import load_prompt
-from clients.mysql import dw_mysql_client, client_registry
+from clients.mysql import client_registry
 from conf.app_config import DEFAULT_DATASOURCE_ID
 from conf.meta_config import MetaConfig
 from repositories.mysql import DWDBRepository
@@ -425,9 +425,8 @@ async def main():
             print(f"  {name:<28} {sec:6.1f}s  ({sec / total * 100:4.1f}%)")
         print(f"  {'合计':<28} {total:6.1f}s")
     finally:
-        # 关掉按需建出的连接池 + 默认 DW 池(脚本退出前清理)
+        # 关掉按需建出的连接池(脚本退出前清理)
         await client_registry.close_all()
-        await dw_mysql_client.close()
 
 
 if __name__ == "__main__":

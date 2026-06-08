@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from clients.qdrant import qdrant_client
 from clients.es import es_client
-from clients.mysql import dw_mysql_client, meta_mysql_client, client_registry
+from clients.mysql import meta_mysql_client, client_registry
 from conf.app_config import app_config
 from core.log import logger
 
@@ -51,5 +51,4 @@ async def lifespan(_: FastAPI):
     await qdrant_client.close()
     await es_client.close()
     await client_registry.close_all()
-    await dw_mysql_client.close()
     await meta_mysql_client.close()
