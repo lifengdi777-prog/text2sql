@@ -29,6 +29,22 @@ from services.excel_ingest import get_session_factory
 _BCRYPT_MAX_BYTES = 72
 
 
+# ───────── 角色判定 ─────────────────────────────────────
+# 系统唯一的管理员账号名(写死:不支持新增管理员)。其密码以 conf.yaml 的 auth.admin_password 为准。
+ADMIN_USERNAME = "admin"
+
+
+def is_admin_username(username: str | None) -> bool:
+    """是否管理员。系统只有 admin 一个管理员(普通注册用户永远当不了 admin),
+    不读库里的 role 列(改库也无法越权)。"""
+    return bool(username) and username.strip() == ADMIN_USERNAME
+
+
+def role_of(username: str | None) -> str:
+    """按规则算用户的有效角色,供接口返回前端用。"""
+    return "admin" if is_admin_username(username) else "user"
+
+
 # ───────── 密码哈希 ─────────────────────────────────────
 def hash_password(password: str) -> str:
     """bcrypt 加盐哈希,返回 60 字符串(含算法/cost/盐/摘要)。"""
@@ -125,18 +141,13 @@ async def get_user_by_id(user_id: int) -> UserMySQL | None:
 
 
 # ───────── 启动迁移 + 管理员引导 ──────────────────────────
-# 历史默认密码:仅用于「存量 admin 仍是弱口令」的兼容告警,不再作为新建口令。
-_LEGACY_DEFAULT_PASSWORDS = ("admin123", "admin")
-
-
 async def ensure_admin_user() -> None:
     """启动时:给 users 表幂等补 role 列,并确保存在管理员账号 admin。
 
     - 旧库(users 无 role 列)→ ALTER 补列;新库 ensure_app_tables 已按模型建好该列。
-    - 不存在 admin → 创建。初始密码来源(无全网通用默认口令):
-        1) 环境变量 WENSHU_ADMIN_PASSWORD(≥6 位)→ 用它;
-        2) 否则随机生成强密码,并在日志里**打印一次**(下次启动不再显示)。
-    - 已存在 admin → 只确保 role=admin,**绝不重置密码**;若仍是历史弱口令则告警。
+    - 不存在 admin → 创建:配置 auth.admin_password(≥6 位)用它,否则随机生成并打印一次。
+    - 已存在 admin → **密码以 conf.yaml 的 auth.admin_password 为准,每次启动同步**
+      (配置密码与当前不一致就重写);配置留空则不动。系统只有 admin 一个管理员,不支持新增。
     """
     from core.log import logger
 
@@ -153,18 +164,18 @@ async def ensure_admin_user() -> None:
             await session.commit()
 
         repo = UserRepository(session)
-        admin = await repo.get_by_username("admin")
+        admin = await repo.get_by_username(ADMIN_USERNAME)
+        cfg_pwd = (app_config.auth.admin_password or "").strip()
 
         if admin is None:
-            # 首次创建:优先用配置 auth.admin_password,否则随机生成并打印一次。
-            cfg_pwd = (app_config.auth.admin_password or "").strip()
+            # 首次创建:配置指定了密码就用它,否则随机生成并打印一次。
             if len(cfg_pwd) >= 6:
                 init_pwd, from_cfg = cfg_pwd, True
             else:
                 if cfg_pwd:
                     logger.warning("auth.admin_password 少于 6 位,已忽略,改用随机密码。")
                 init_pwd, from_cfg = secrets.token_urlsafe(12), False
-            admin = await repo.create("admin", hash_password(init_pwd))
+            admin = await repo.create(ADMIN_USERNAME, hash_password(init_pwd))
             admin.role = "admin"
             await session.commit()
             if from_cfg:
@@ -174,17 +185,18 @@ async def ensure_admin_user() -> None:
                     "\n================= 已创建管理员账号 =================\n"
                     "  用户名: admin\n"
                     f"  初始密码(仅本次打印,请立即保存): {init_pwd}\n"
-                    "  下次启动不再显示;可在 conf/app_config.yaml 的 auth.admin_password 指定。\n"
+                    "  下次启动不再显示;在 conf/app_config.yaml 的 auth.admin_password 指定后即以它为准。\n"
                     "==================================================="
                 )
             return
 
-        # 已存在:只确保是管理员,绝不动密码。
+        # 已存在:admin 密码以 conf.yaml 的 auth.admin_password 为准 —— 每次启动对齐。
+        # 仅当配置密码(≥6 位)与当前不一致才重写哈希,避免每次重启都无谓改库。
         admin.role = "admin"
+        if len(cfg_pwd) >= 6:
+            if not verify_password(cfg_pwd, admin.password_hash):
+                admin.password_hash = hash_password(cfg_pwd)
+                logger.info("已按 conf.yaml 的 auth.admin_password 同步管理员 admin 的密码。")
+        elif cfg_pwd:
+            logger.warning("auth.admin_password 少于 6 位,已忽略,未改 admin 密码。")
         await session.commit()
-        # 兼容告警:存量 admin 仍是历史弱口令 → 提醒修改。
-        if any(verify_password(p, admin.password_hash) for p in _LEGACY_DEFAULT_PASSWORDS):
-            logger.warning(
-                "管理员 admin 仍是历史默认弱口令,请尽快修改(当前无应用内改密,"
-                "可直接改库 users.password_hash,或后续补改密接口)。"
-            )

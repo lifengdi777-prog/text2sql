@@ -114,7 +114,8 @@ class AuthConfig(BaseModel):
     secret: str = DEFAULT_JWT_SECRET
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7   # 7 天
-    # 管理员 admin 的初始密码(仅首次创建账号时用)。留空则随机生成并打印日志一次。
+    # 管理员 admin 的登录密码:以此为准,每次启动同步到 admin 账号(改这里→重启→admin 密码就变)。
+    # 留空则首次随机生成并打印日志一次、之后不动。少于 6 位忽略。
     admin_password: str = ""
 
     model_config = ConfigDict(from_attributes=True)

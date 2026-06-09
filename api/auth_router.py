@@ -41,14 +41,14 @@ class TokenOut(BaseModel):
 async def register(body: RegisterBody) -> TokenOut:
     user = await auth_service.register_user(body.username, body.password)
     token = auth_service.create_access_token(user.id, user.username)
-    return TokenOut(access_token=token, user=UserOut(id=user.id, username=user.username, role=getattr(user, "role", "user")))
+    return TokenOut(access_token=token, user=UserOut(id=user.id, username=user.username, role=auth_service.role_of(user.username)))
 
 
 @router.post("/login", response_model=TokenOut)
 async def login(body: LoginBody) -> TokenOut:
     user = await auth_service.authenticate_user(body.username, body.password)
     token = auth_service.create_access_token(user.id, user.username)
-    return TokenOut(access_token=token, user=UserOut(id=user.id, username=user.username, role=getattr(user, "role", "user")))
+    return TokenOut(access_token=token, user=UserOut(id=user.id, username=user.username, role=auth_service.role_of(user.username)))
 
 
 @router.get("/me", response_model=UserOut)
@@ -58,4 +58,4 @@ async def me(user_id: str = Depends(get_current_user)) -> UserOut:
     if user is None:
         # token 有效但用户被删了(极少见),按未登录处理。
         raise HTTPException(status_code=401, detail="用户不存在")
-    return UserOut(id=user.id, username=user.username, role=getattr(user, "role", "user"))
+    return UserOut(id=user.id, username=user.username, role=auth_service.role_of(user.username))

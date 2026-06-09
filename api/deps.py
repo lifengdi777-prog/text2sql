@@ -13,7 +13,7 @@ from fastapi import Depends, Header, HTTPException
 
 from models.upload import UploadDatasetMySQL
 from repositories.upload import UploadDatasetRepository
-from services.auth import decode_access_token, decode_access_token_username, get_user_by_id
+from services.auth import decode_access_token, decode_access_token_username, get_user_by_id, is_admin_username
 from services.excel_ingest import get_session_factory
 
 
@@ -47,11 +47,12 @@ async def get_current_username(authorization: str | None = Header(default=None))
 async def require_admin(user_id: str = Depends(get_current_user)) -> str:
     """管理员校验:用于数据源的增/删/改/重建等管理操作。
 
-    实时查库判角色(不依赖 token 里的角色),撤销管理员权限可立即生效。
+    管理员身份的唯一真相源是 conf.yaml 的 auth.admin_usernames(按用户名判,不读库 role)。
+    实时按当前配置判,故在配置里增减管理员、重启后立即生效。
     非管理员 → 403。返回 user_id,供路由继续用(日志/审计)。
     """
     user = await get_user_by_id(int(user_id))
-    if user is None or getattr(user, "role", "user") != "admin":
+    if user is None or not is_admin_username(user.username):
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user_id
 
