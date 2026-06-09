@@ -45,12 +45,17 @@ async def _build_tables(datasource_id, tables, dw_repo: DWDBRepository):
             description=table.description, datasource_id=datasource_id,
         ))
         column_types = await dw_repo.get_column_types(table.name)
-        column_values = await dw_repo.get_column_values(table.name, [c.name for c in table.columns])
         for column in table.columns:
+            # 按【单列】取 distinct 值做 examples(与 generate_draft 一致):
+            # get_column_values 传单列 → SELECT DISTINCT 该列 LIMIT 20,低基数维度(季度/状态/类别)能采全,
+            # 高基数列(名称等)取前 20 个样本即可。切勿传多列——那样 DISTINCT 是按整行去重、又只取前若干行,
+            # 会让维度列只采到靠前数据的值(如 quarter 只剩 'Q1'),模型筛选时会猜错取值格式。
+            examples = (await dw_repo.get_column_values(table.name, [column.name], limit=20))[column.name]
+            examples = list(dict.fromkeys(examples))  # 保序去重
             column_infos.append(ColumnInfo(
                 id=f"{table.name}.{column.name}", name=column.name,
                 type=column_types[column.name], role=column.role,
-                examples=list(set(column_values[column.name])),
+                examples=examples,
                 description=column.description, alias=column.alias,
                 table_id=table.name, sync=column.sync, datasource_id=datasource_id,
             ))
