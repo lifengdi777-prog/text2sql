@@ -3,7 +3,7 @@ import json
 from agent.schemas import WSAgentContext, WSAgentState, WSStepInfo
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
-from agent.llm import llm
+from agent.llm import fast_llm
 from agent.prompts import load_prompt
 from langchain.messages import SystemMessage, HumanMessage
 from core.log import logger
@@ -63,7 +63,7 @@ async def parse_query_intention(state: WSAgentState, runtime: Runtime[WSAgentCon
 
     try:
         prompt = await load_prompt("parse_query_intention")
-        structured_llm = llm.with_structured_output(ParseQueryResult, method="json_mode")
+        structured_llm = fast_llm.with_structured_output(ParseQueryResult, method="json_mode")
 
         # 当前数据源的领域(表+指标)单独注入:守门判断与引导问题按本源领域走,不写死行业。
         async with runtime.context.meta_repo() as meta_repo:
