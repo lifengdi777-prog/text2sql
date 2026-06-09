@@ -4,7 +4,7 @@ from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo
 from agent.prompts import load_prompt
 from langchain_core.prompts import PromptTemplate
-from agent.llm import fast_llm
+from agent.llm import llm
 from langchain_core.output_parsers import JsonOutputParser
 from dtos.es import ValueInfo
 from core.log import logger
@@ -22,7 +22,7 @@ async def recall_values(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     # 先使用大模型拓展关键词
     prompt = await load_prompt("extend_keywords_for_value_recall")
     prompt_template = PromptTemplate(template=prompt, input_variables=['query'])
-    chain = prompt_template | fast_llm | JsonOutputParser()
+    chain = prompt_template | llm | JsonOutputParser()
     # 关键词扩展失败/返回非列表时回退基础关键词,不拖垮整条召回(同 recall_columns)。
     try:
         result = await chain.ainvoke({"query": query})  # type: ignore

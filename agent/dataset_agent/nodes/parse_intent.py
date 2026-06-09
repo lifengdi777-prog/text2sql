@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from agent.dataset_agent.nodes import latest_user_query
 from agent.dataset_agent.schemas import DatasetAgentContext, DatasetAgentState
-from agent.llm import fast_llm
+from agent.llm import llm
 from agent.schemas import WSStepInfo
 from core.log import logger
 
@@ -76,7 +76,7 @@ async def parse_intent(state: DatasetAgentState, runtime: Runtime[DatasetAgentCo
         return {"should_continue": False}
 
     try:
-        structured = fast_llm.with_structured_output(IntentResult, method="json_mode")
+        structured = llm.with_structured_output(IntentResult, method="json_mode")
         # schema / 历史各作为一条 SystemMessage 注入(不塞进 messages,避免 prompt 大括号转义问题);
         # 当前追问仍是 state.messages 最后一条。LLM 据历史把追问改写成自包含问题 standalone_query。
         result: IntentResult = await structured.ainvoke([  # type: ignore

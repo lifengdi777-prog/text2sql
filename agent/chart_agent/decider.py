@@ -12,7 +12,7 @@ from typing import Any
 from langchain.messages import HumanMessage, SystemMessage
 
 from agent.chart_agent.schemas import ChartTypeDecision, DataShape
-from agent.llm import fast_llm
+from agent.llm import llm
 from agent.prompts import load_prompt
 from core.log import logger
 
@@ -45,7 +45,7 @@ async def decide_chart_type(
     均由上层(enforce_limits 等)再校验。
     """
     prompt = await load_prompt("chart_type_picker")
-    structured_llm = fast_llm.with_structured_output(ChartTypeDecision, method="json_mode")
+    structured_llm = llm.with_structured_output(ChartTypeDecision, method="json_mode")
 
     user_msg = (
         f"用户问题:{query}\n\n"

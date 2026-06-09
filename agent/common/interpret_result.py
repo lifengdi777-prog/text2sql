@@ -16,7 +16,7 @@ from langgraph.runtime import Runtime
 
 from agent.chart_agent import analyzer
 from agent.llm import llm
-from agent.llm import fast_llm
+from agent.llm import llm
 from agent.prompts import load_prompt
 from agent.schemas import WSAgentContext, WSAgentState, WSStepInfo
 from core.log import logger
@@ -95,7 +95,7 @@ async def interpret_result(state: WSAgentState, runtime: Runtime[WSAgentContext]
     accumulated = ""
     try:
         # 流式：每来一段 token 就把“累计文本”推给前端，前端替换显示 → 逐字蹦
-        async for chunk in fast_llm.astream(messages):
+        async for chunk in llm.astream(messages):
             delta = chunk.content
             if not isinstance(delta, str) or not delta:
                 continue

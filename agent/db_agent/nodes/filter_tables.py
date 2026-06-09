@@ -1,7 +1,7 @@
 from langgraph.runtime import Runtime
 from agent.schemas import WSAgentState, WSAgentContext, WSStepInfo, WSAgentTableInfoState
 from agent.prompts import load_prompt
-from agent.llm import fast_llm
+from agent.llm import llm
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from core.log import logger
@@ -20,10 +20,10 @@ async def filter_tables(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     prompt_template = PromptTemplate(template=prompt, input_variables=['query', 'table_infos'])
     #定义了一个langchian的链式调用，包含了提示词模板、LLM调用和JSON输出解析三个步骤。
     #JsonOutputParser()	的作用是把LLM返回的文本解析成JSON格式，方便后续处理。
-    chain = prompt_template | fast_llm | JsonOutputParser()
+    chain = prompt_template | llm | JsonOutputParser()
     result = await chain.ainvoke({"query": query, "table_infos": [table_info.model_dump() for table_info in table_infos]})
 
-    # 形状校验 + 失败放行:result 期望是 {表名: [列名]}。fast_llm 偶发返回 list / 多包一层 /
+    # 形状校验 + 失败放行:result 期望是 {表名: [列名]}。llm 偶发返回 list / 多包一层 /
     # 用 id 当 key,会让所有表名都匹配不上而被静默清空,甚至 result[name] 对 list 取下标直接崩。
     # 与其给下游一个空表集(generate_sql 会写出空/瞎编 SQL),不如放行保留召回表,交后续节点取舍。
     if not isinstance(result, dict):

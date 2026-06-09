@@ -12,7 +12,7 @@ from typing import Literal
 from langchain.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from agent.llm import fast_llm, llm
+from agent.llm import llm
 from core.log import logger
 from services.duckdb_edit import EditWorkbook, diff_sheet
 
@@ -53,8 +53,8 @@ def schema_brief(info: dict) -> str:
 
 
 async def classify_intent(instruction: str, brief: str) -> EditIntent:
-    """前置意图分类(轻量 fast_llm):edit / query / chitchat。失败默认 edit,不误伤正常编辑。"""
-    structured = fast_llm.with_structured_output(EditIntent, method="json_mode")
+    """前置意图分类(轻量 llm):edit / query / chitchat。失败默认 edit,不误伤正常编辑。"""
+    structured = llm.with_structured_output(EditIntent, method="json_mode")
     user = f"# 数据集结构\n{brief}\n\n# 用户输入\n{instruction}"
     try:
         return await structured.ainvoke([SystemMessage(content=_read(_INTENT_PROMPT)),

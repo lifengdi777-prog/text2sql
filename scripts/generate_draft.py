@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from agent.llm import llm, fast_llm
+from agent.llm import llm
 from agent.prompts import load_prompt
 from clients.mysql import client_registry
 from conf.app_config import DEFAULT_DATASOURCE_ID
@@ -170,8 +170,8 @@ def _parse_json(content: str) -> dict:
 
 
 # 起草用快模型:description/alias 这类简单结构化任务不需要推理模型。
-# 推理模型(llm)每次调用有很高的固定延迟,并发也救不回来;快模型(fast_llm)延迟低很多。
-DRAFT_LLM = fast_llm
+# 推理模型(llm)每次调用有很高的固定延迟,并发也救不回来;快模型(llm)延迟低很多。
+DRAFT_LLM = llm
 # 并发上限:别一次把几十个请求全砸给 LLM 服务(限流/超时)。
 _LLM_SEMAPHORE = asyncio.Semaphore(12)
 
