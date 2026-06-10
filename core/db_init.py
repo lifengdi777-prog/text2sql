@@ -19,6 +19,10 @@ from models.meta import (
     TableInfoMySQL,
 )
 from models.sql_cache import SqlCacheMySQL
+from models.conversation import ConversationMySQL, MessageMySQL
+from models.dataset_edit import DatasetEditOp, DatasetEditSession
+from models.upload import UploadDatasetMySQL
+from models.user import UserMySQL
 
 
 # meta 库要建的表(只建这些,别在 meta 库里建出 users/会话等运营表)
@@ -30,6 +34,18 @@ _META_TABLES = [
     ColumnMetricMySQL.__table__,
     DataRelationshipMySQL.__table__,
     SqlCacheMySQL.__table__,  # SQL 缓存表(新表,create_all 幂等自动建)
+]
+
+# wenshu 库要建的表(用户/会话/上传/编辑会话等运营数据;不要把 meta 域的表建过来)。
+# 之前这里用无参 create_all,会把 Base.metadata 里所有表(含 meta 域)都在 wenshu 建成空壳,
+# 易造成"看错库"的困惑。改成显式列出本库该有的表,与 _META_TABLES 同一套路。
+_WENSHU_TABLES = [
+    UserMySQL.__table__,
+    ConversationMySQL.__table__,
+    MessageMySQL.__table__,
+    UploadDatasetMySQL.__table__,
+    DatasetEditSession.__table__,
+    DatasetEditOp.__table__,
 ]
 
 
@@ -53,19 +69,17 @@ async def ensure_databases() -> None:
 
 
 async def ensure_app_tables() -> None:
-    """在 meta 库建 6 张元数据表;在 upload 库建用户/上传相关表(沿用 init_upload 的 create_all)。"""
+    """在 meta 库建元数据表;在 wenshu 库建用户/上传/会话相关表。两边都只建本库该有的表。"""
     from clients.mysql import meta_mysql_client
     from services.excel_ingest import get_session_factory
-    # 导入以注册到 Base.metadata,供下面 upload 库 create_all 一并建表(编辑会话/操作日志)
-    from models.dataset_edit import DatasetEditOp, DatasetEditSession  # noqa: F401
 
-    # meta 库:只建这 6 张
+    # meta 库:只建元数据 + SQL 缓存表
     async with meta_mysql_client.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=_META_TABLES)
 
-    # upload 库:建用户/上传/会话等表(create_all 幂等;与 init_upload 行为一致)
+    # wenshu 库:只建运营数据表(显式列表,不再无参全量建,避免误建 meta 域空壳表)
     session_factory = get_session_factory()
     async with session_factory() as session:
         conn = await session.connection()
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(Base.metadata.create_all, tables=_WENSHU_TABLES)
         await session.commit()
