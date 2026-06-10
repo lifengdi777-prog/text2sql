@@ -30,6 +30,7 @@ from core import crypto
 from core.log import logger
 from dtos.datasource import DatasourceCreate, DatasourceInfo
 from repositories.datasource import DatasourceRepository
+from repositories.sql_cache import SqlCacheRepository
 from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
@@ -301,6 +302,8 @@ async def delete_datasource(datasource_id: str, data: DatasourceDeleteInput,
                 raise HTTPException(status_code=404, detail=f"数据源 {datasource_id} 不存在")
             # 连带清掉该源在 meta 库的 5 张表行
             await MetaDBRepository(session, datasource_id).clear_all()
+            # 连带清掉该源的 SQL 缓存(同在 meta 库,同一事务)
+            cache_removed = await SqlCacheRepository(session).delete_by_datasource(datasource_id)
     # 再清该源的 Qdrant 向量 + ES 值文档(都是按 datasource_id 过滤删除,不动别的源)
     await ColumnQdrantRepository(qdrant_client.client).delete_by_datasource(datasource_id)
     await MetricQdrantRepository(qdrant_client.client).delete_by_datasource(datasource_id)
@@ -315,6 +318,6 @@ async def delete_datasource(datasource_id: str, data: DatasourceDeleteInput,
             convs_removed = await ConversationRepository(conv_session).delete_by_datasource(datasource_id)
     logger.info(
         f"[/datasources] user_id={user_id} 删除数据源 {datasource_id}"
-        f"(含 meta/Qdrant/ES 清理 + 会话 {convs_removed} 条)"
+        f"(含 meta/Qdrant/ES 清理 + 会话 {convs_removed} 条 + SQL缓存 {cache_removed} 条)"
     )
     return {"deleted": datasource_id}
