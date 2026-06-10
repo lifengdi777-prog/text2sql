@@ -18,9 +18,10 @@ from models.meta import (
     MetricInfoMySQL,
     TableInfoMySQL,
 )
+from models.sql_cache import SqlCacheMySQL
 
 
-# meta 库要建的 6 张表(只建这些,别在 meta 库里建出 users/会话等运营表)
+# meta 库要建的表(只建这些,别在 meta 库里建出 users/会话等运营表)
 _META_TABLES = [
     DatasourceMySQL.__table__,
     TableInfoMySQL.__table__,
@@ -28,6 +29,7 @@ _META_TABLES = [
     MetricInfoMySQL.__table__,
     ColumnMetricMySQL.__table__,
     DataRelationshipMySQL.__table__,
+    SqlCacheMySQL.__table__,  # SQL 缓存表(新表,create_all 幂等自动建)
 ]
 
 

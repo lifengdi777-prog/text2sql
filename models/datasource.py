@@ -33,4 +33,7 @@ class DatasourceMySQL(Base):
     #   候选连接路径收"最短+join_max_extra 跳"内、最多 join_k 条;稠密/多重关系库可调大。
     join_max_extra: Mapped[int] = mapped_column(Integer, default=1, server_default="1", comment="候选路径额外跳数容忍")
     join_k: Mapped[int] = mapped_column(Integer, default=3, server_default="3", comment="候选路径最多条数")
+    # 元数据版本:每次重建/保存元数据成功后 +1。编进 SQL 缓存键 → 版本一变旧缓存全部自动失效,
+    # 避免拿着旧 schema/指标下生成的 SQL(可能引用已删的列或错的 join)去查库。
+    meta_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", comment="元数据版本(SQL缓存失效用)")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())

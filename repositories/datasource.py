@@ -70,6 +70,12 @@ class DatasourceRepository:
         if table_count is not None:
             ds.table_count = table_count
 
+    async def bump_meta_version(self, datasource_id: str) -> None:
+        """元数据版本 +1(每次重建/保存元数据成功后调)。版本一变,该源旧 SQL 缓存键全部失效。"""
+        ds = await self.get_by_id(datasource_id)
+        if ds is not None:
+            ds.meta_version = (ds.meta_version or 1) + 1
+
     def to_db_config(self, ds: DatasourceMySQL, database: str | None = None) -> DBConfig:
         """解密密码 + 组装成连接用的 DBConfig(供 ClientRegistry 建连接池)。
 
