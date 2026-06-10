@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, START, END
 from agent.schemas import WSAgentState, WSAgentContext
 from core.log import logger
 from agent.db_agent.nodes.parse_query_intention import parse_query_intention
+from agent.db_agent.nodes.lookup_sql_cache import lookup_sql_cache
 from agent.db_agent.nodes.extract_keywords import extract_keywords
 from agent.db_agent.nodes.recall_columns import recall_columns
 from agent.db_agent.nodes.recall_metrics import recall_metrics
@@ -36,6 +37,7 @@ from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 graph_builder = StateGraph(state_schema=WSAgentState, context_schema=WSAgentContext)
 #添加节点
 graph_builder.add_node(parse_query_intention)
+graph_builder.add_node(lookup_sql_cache)
 graph_builder.add_node(extract_keywords)
 graph_builder.add_node(recall_columns)
 graph_builder.add_node(recall_metrics)
@@ -62,9 +64,9 @@ graph_builder.add_edge(START, "parse_query_intention")
 #根据当前 state 的内容，决定下一步走哪个节点。
 def judge(state: WSAgentState):
     logger.info(f"should_continue: {state.should_continue}")
-    #如果should_continue为True，继续执行extract_keywords节点；如果为False，结束流程。
+    #可答 → 先去查 SQL 缓存(命中则跳过整段生成);不可答 → 结束流程。
     if state.should_continue:
-        return "extract_keywords"
+        return "lookup_sql_cache"
     #返回end节点
     return END
 
@@ -72,8 +74,19 @@ def judge(state: WSAgentState):
 graph_builder.add_conditional_edges(
     "parse_query_intention", # 从哪个节点出发
     judge,                     # 用哪个函数来判断走哪条路
-    {"extract_keywords": "extract_keywords", END: END}# 路由映射表
+    {"lookup_sql_cache": "lookup_sql_cache", END: END}# 路由映射表
     #{ 路由函数的返回值: 实际节点名 }
+)
+
+#查缓存之后:命中 → 直接去 validate_sql(跳过 提词/召回/过滤/选路/生成/扇出检测);
+#未命中 → 进入原完整生成流程(extract_keywords)。
+def route_after_cache(state: WSAgentState):
+    return "validate_sql" if state.from_cache else "extract_keywords"
+
+graph_builder.add_conditional_edges(
+    "lookup_sql_cache",
+    route_after_cache,
+    {"validate_sql": "validate_sql", "extract_keywords": "extract_keywords"},
 )
 #
 graph_builder.add_edge("extract_keywords", "recall_columns")
