@@ -3,6 +3,7 @@ from agent.schemas import WSAgentState, WSAgentContext
 from core.log import logger
 from agent.db_agent.nodes.parse_query_intention import parse_query_intention
 from agent.db_agent.nodes.lookup_sql_cache import lookup_sql_cache
+from agent.db_agent.nodes.invalidate_sql_cache import invalidate_sql_cache
 from agent.db_agent.nodes.extract_keywords import extract_keywords
 from agent.db_agent.nodes.recall_columns import recall_columns
 from agent.db_agent.nodes.recall_metrics import recall_metrics
@@ -38,6 +39,7 @@ graph_builder = StateGraph(state_schema=WSAgentState, context_schema=WSAgentCont
 #添加节点
 graph_builder.add_node(parse_query_intention)
 graph_builder.add_node(lookup_sql_cache)
+graph_builder.add_node(invalidate_sql_cache)
 graph_builder.add_node(extract_keywords)
 graph_builder.add_node(recall_columns)
 graph_builder.add_node(recall_metrics)
@@ -128,15 +130,19 @@ graph_builder.add_edge("fanout_clarify", END)
 #SQL 校正的最大重试次数：超过后即便仍未通过也不再校正，避免无限循环。
 MAX_CORRECT_ATTEMPTS = 3
 
-#校验之后的路由：决定继续校正、放弃修复、还是执行。
+#校验之后的路由：决定清缓存自愈、继续校正、放弃修复、还是执行。
 def route_after_validate(state: WSAgentState):
     #1. 校验通过（无 error）→ 直接执行
     if not state.error:
         return "execute_sql"
-    #2. 校验失败但还没到重试上限 → 继续进入校正流程
+    #2. 命中缓存的 SQL 校验失败 → 缓存已过期：清掉它,回退完整生成(自愈)。
+    #   不走 correct_sql：缓存 SQL 是历史成功产物,失败多因 schema 变了,重生成比修补更对。
+    if state.from_cache:
+        return "invalidate_sql_cache"
+    #3. 校验失败但还没到重试上限 → 继续进入校正流程
     if state.correct_attempts < MAX_CORRECT_ATTEMPTS:
         return "correct_sql"
-    #3. 已达重试上限仍未修好 → 不再校正，交给 execute_sql 走它的异常分支，
+    #4. 已达重试上限仍未修好 → 不再校正，交给 execute_sql 走它的异常分支，
     #   把真实错误以"查询失败"结果返回给用户，避免在校验↔校正间无限循环撞 recursion_limit。
     logger.warning(f"SQL 校正已达上限 {MAX_CORRECT_ATTEMPTS} 次仍未通过，停止修复。最后错误：{state.error}")
     return "execute_sql"
@@ -145,8 +151,11 @@ def route_after_validate(state: WSAgentState):
 graph_builder.add_conditional_edges(
     "validate_sql",
     route_after_validate,
-    {"correct_sql": "correct_sql", "execute_sql": "execute_sql"}
+    {"correct_sql": "correct_sql", "execute_sql": "execute_sql",
+     "invalidate_sql_cache": "invalidate_sql_cache"}
 )
+#清掉过期缓存后,回到完整生成链重新生成 SQL。
+graph_builder.add_edge("invalidate_sql_cache", "extract_keywords")
 #如果需要校正，校正完后继续执行SQL。
 graph_builder.add_edge("correct_sql", "validate_sql")
 #execute_sql 完成后先翻译列名(英文→中文),再并行 fan-out 到两个分支：

@@ -42,3 +42,10 @@ class SqlCacheRepository:
         row = await self.session.get(SqlCacheMySQL, cache_key)
         if row is not None:
             await self.session.delete(row)
+
+    async def delete_by_datasource(self, datasource_id: str) -> int:
+        """删某数据源名下的全部缓存(删数据源时连带清理)。返回删除条数。"""
+        res = await self.session.execute(
+            delete(SqlCacheMySQL).where(SqlCacheMySQL.datasource_id == datasource_id)
+        )
+        return res.rowcount or 0
