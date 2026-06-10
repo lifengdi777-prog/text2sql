@@ -96,6 +96,7 @@ async def ensure_datasource_columns(engine) -> None:
     cols = {
         "build_status": "VARCHAR(16) NULL", "last_error": "TEXT NULL", "table_count": "INT NULL",
         "join_max_extra": "INT NOT NULL DEFAULT 1", "join_k": "INT NOT NULL DEFAULT 3",
+        "meta_version": "INT NOT NULL DEFAULT 1",
     }
     async with engine.begin() as conn:
         existing = set((await conn.execute(text(

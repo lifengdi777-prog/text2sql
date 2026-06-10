@@ -71,6 +71,15 @@ class WSAgentState(BaseModel):
     chart_config: dict[str, Any] | None = None
     # interpret_result 节点产出的自然语言解读(与图表并行生成)
     interpretation: str | None = None
+    # ── SQL 缓存(lookup_sql_cache 节点写入)─────────────────────────────
+    # 本轮缓存键(归一化问题+数据源+库+版本的 sha256)。命中/未命中都会算出来,
+    # 供命中判断 + 未命中时执行成功后写回缓存。
+    cache_key: str | None = None
+    # 是否命中缓存:True 时 sql 来自缓存(跳过生成,直接校验执行);
+    # 也用于「命中的 SQL 校验失败 → 回退完整生成」的自愈路由。
+    from_cache: bool = False
+    # 算缓存键时读到的该数据源元数据版本,写回缓存时复用(避免再查一次库)
+    meta_version: int | None = None
 
 
 #WSAgentContext是一个Pydantic模型，定义了在整个图的执行过程中共享的上下文信息。

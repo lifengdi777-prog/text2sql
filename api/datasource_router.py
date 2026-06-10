@@ -145,7 +145,11 @@ async def get_datasource_meta(datasource_id: str, _: str = Depends(get_current_u
 async def _set_status(datasource_id: str, status: str, **kw) -> None:
     async with meta_mysql_client.session() as session:
         async with session.begin():
-            await DatasourceRepository(session).set_build_status(datasource_id, status, **kw)
+            repo = DatasourceRepository(session)
+            await repo.set_build_status(datasource_id, status, **kw)
+            # 物化/保存元数据成功(置 ready)→ 元数据版本 +1,该源旧 SQL 缓存全部失效。
+            if status == "ready":
+                await repo.bump_meta_version(datasource_id)
 
 
 async def _materialize_and_track(datasource_id: str, config: MetaConfig,
@@ -264,7 +268,10 @@ async def update_datasource_relationships(datasource_id: str, data: Relationship
                 for e in data.relationships
             ])
             # JOIN 选路参数随表关系一起存(同一事务)
-            await DatasourceRepository(session).set_join_config(datasource_id, data.max_extra, data.k)
+            ds_repo = DatasourceRepository(session)
+            await ds_repo.set_join_config(datasource_id, data.max_extra, data.k)
+            # 表关系/选路改了会影响 JOIN → 元数据版本 +1,该源旧 SQL 缓存失效
+            await ds_repo.bump_meta_version(datasource_id)
 
     # MySQL 提交后,把列 role 的变更镜像进 Qdrant payload —— 召回侧的列 role 读自 Qdrant,
     # 不同步则 LLM 对召回到的列仍看到旧 role。只 set_payload 改 role 字段,不重嵌向量(符合"不重建索引")。
