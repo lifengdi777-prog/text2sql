@@ -8,7 +8,7 @@
               ↓
           run_dims(逐维度子查询) ──(全部失败)──→ END
               ↓
-          synthesize(第 3 步接入) → END
+          synthesize(综合归因:结论 + 主维度表 + 对比图) → END
 """
 from langgraph.graph import END, START, StateGraph
 
@@ -16,6 +16,7 @@ from agent.attribution_agent.nodes.confirm_phenomenon import confirm_phenomenon
 from agent.attribution_agent.nodes.parse_target import parse_target
 from agent.attribution_agent.nodes.plan_dimensions import plan_dimensions
 from agent.attribution_agent.nodes.run_dims import run_dims
+from agent.attribution_agent.nodes.synthesize import synthesize
 from agent.attribution_agent.schemas import AttributionContext, AttributionState
 
 
@@ -29,6 +30,7 @@ def _build():
     g.add_node("confirm_phenomenon", confirm_phenomenon)
     g.add_node("plan_dimensions", plan_dimensions)
     g.add_node("run_dims", run_dims)
+    g.add_node("synthesize", synthesize)
 
     g.add_edge(START, "parse_target")
     g.add_conditional_edges("parse_target", _route_continue,
@@ -37,7 +39,9 @@ def _build():
                             {"continue": "plan_dimensions", END: END})
     g.add_conditional_edges("plan_dimensions", _route_continue,
                             {"continue": "run_dims", END: END})
-    g.add_edge("run_dims", END)
+    g.add_conditional_edges("run_dims", _route_continue,
+                            {"continue": "synthesize", END: END})
+    g.add_edge("synthesize", END)
     return g.compile()
 
 
