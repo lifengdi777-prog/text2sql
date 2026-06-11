@@ -142,6 +142,17 @@ def enforce_limits(chart_type: str, field_map: dict[str, Any], shape: DataShape 
     if chart_type == "stacked_bar" and not series:
         return "bar", "未指定分组列,降级为普通 bar"
 
+    # 2.5 折线图语义红线:折线表达「沿横轴的连续变化」,横轴必须是时间或连续数值列。
+    #     「工厂/产品类别」这类分类横轴点与点之间没有顺序,连线没有意义 → 改用柱状对比。
+    #     列语义来自 _infer_semantic_type(列名时间特征/日期值→temporal,数值→numeric),
+    #     是确定性规则而非猜测,故纳入红线;它同时管住三处:LLM 选型兜底、用户点名
+    #     图型的可行性判断、compatible_types 切换项过滤。
+    if chart_type in ("line", "multi_line"):
+        dim_feat = next((c for c in shape.columns if c.name == dim), None)
+        if dim_feat is not None and dim_feat.semantic_type == "categorical":
+            fallback = "stacked_bar" if chart_type == "multi_line" else "bar"
+            return fallback, f"折线图需要时间或连续数值横轴,「{dim}」是分类列,改用柱状对比"
+
     # 3. 多系列分组过多 → 表格(线/堆叠段太多看不清)
     if chart_type in ("multi_line", "stacked_bar") and series and card.get(series, 0) > _SERIES_MAX_CARD:
         return "table", f"分组列「{series}」有 {card[series]} 个值 > {_SERIES_MAX_CARD},降级为表格"

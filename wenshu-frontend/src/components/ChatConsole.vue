@@ -317,8 +317,14 @@ const chartLoading = ref<Record<string, boolean>>({})
 // 出图后后端只能给表格(line/bar/pie 等都画不出)→ 提示「该数据无法生成图表」。
 // 直接由已落库的 chartConfig 派生(chart_type==='table' 即降级),所以历史回放也能重现提示;
 // 未出图时 chartConfig 为 null(默认表格走 TABLE_CONFIG),不会误报。
+// 例外:带 notice(点名图型画不出的说明横幅)或还有可切换的图型时不提示——
+// 此时数据其实画得出别的图,角标的「无法生成图表」会和提示条信息打架。
 function isUnchartable(message: AgentReplyMessage): boolean {
-  return message.chartConfig?.chart_type === 'table'
+  const cfg = message.chartConfig
+  if (!cfg || cfg.chart_type !== 'table') return false
+  if (cfg.notice) return false
+  const ct = cfg.compatible_types
+  return !Array.isArray(ct) || ct.filter((t) => t !== 'table').length === 0
 }
 
 // 该回复对应的用户问题(图表标题用):取它前面最近一条 user 消息

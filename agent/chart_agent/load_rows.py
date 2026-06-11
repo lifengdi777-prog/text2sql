@@ -62,10 +62,16 @@ async def load_rows(state: ChartAgentState, runtime: Runtime[ChartAgentContext])
         ))
         return {}
 
+    # 把取到的结果行原样发给前端(数组 + finish,与 execute_sql 的结果事件同协议):
+    # 前端 ChartPanel 的「切换图型 / 表格」按 message.result 在本地重建,本轮消息必须
+    # 自带 rows —— 否则只有数据内嵌在 option 里的默认图能显示,一切换就空白。
+    # 落库侧 ReplyAccumulator 同样按结果行捕获进 payload.result,历史回放可正常切换。
     writer(WSStepInfo(
         step="读取查询结果",
         status="success",
-        data={"rows": len(last["rows"]), "question": last.get("question")},
+        data=last["rows"],
+        sql=last.get("sql"),
+        finish=True,
     ))
     # sql 一并带回:后续构图出错降级 error 卡时能展示来源 SQL
     return {"sql_result": last["rows"], "sql": last.get("sql")}

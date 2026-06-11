@@ -34,6 +34,8 @@ export interface ChartConfig {
   // error 卡专用
   message?: string
   hint?: string
+  // 后端附带的用户提示(如「点名的图型画不出:原因 + 可生成的图型」),横幅展示
+  notice?: string | null
   original_sql?: string | null
   // 6 种正常图表 / table 的字段由前端按 chart_type 分别解析,这里不强制
   [key: string]: unknown

@@ -100,6 +100,7 @@ const activeOption = computed(() => {
     'metrics',
     'message',
     'hint',
+    'notice',
     'original_sql',
     'row_count',
     'columns',
@@ -168,6 +169,14 @@ function fmt(v: unknown): string {
         </button>
       </div>
     </div>
+
+    <!-- 后端提示:如「点名的图型画不出 → 原因 + 可生成的图型」,落库在 chartConfig 里,历史回放同样显示 -->
+    <p
+      v-if="config.notice"
+      class="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 sm:text-sm"
+    >
+      {{ config.notice }}
+    </p>
 
     <div class="px-2 py-4 sm:px-4 sm:py-5">
       <!-- 表格 -->
