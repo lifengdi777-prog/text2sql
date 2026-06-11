@@ -33,11 +33,16 @@
 - mom_baseline / yoy_baseline:观察期的两个候选基准期,**都要给出**——
   mom_baseline = 上一可比期(2026年3月→2026年2月;2026年Q1→2025年Q4);
   yoy_baseline = 去年同期(2026年3月→2025年3月;2026年Q1→2025年Q1)。
+- additive:指标是否"求和可加"——各维度成员的值直接相加等于总量。
+  产量/销售额/订单数/金额 这类计数与求和指标 = true;
+  合格率/毛利率/达成率/占比/平均值/客单价/单价 这类比率、平均、单价指标 = false
+  (它们不能按成员相加,归因会被拒绝并提示用户改归因分子/分母)。
 
 # 输出格式(严格 JSON,不要任何多余文字)
 {
   "metric": "...", "scope": "...", "target_period": "...",
   "direction": "down|up|unknown",
   "mom_baseline": "...", "yoy_baseline": "...",
+  "additive": true,
   "feasible": true, "infeasible_reason": ""
 }

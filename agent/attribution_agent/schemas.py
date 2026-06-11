@@ -35,6 +35,9 @@ class AttributionTarget(BaseModel):
     # 两个候选基准(LLM 必给,供按口径回填/无数据改口径建议用)
     mom_baseline: str = ""
     yoy_baseline: str = ""
+    # 指标是否"求和可加"(产量/销售额=True)。比率/平均/单价类(合格率/毛利率/客单价)=False:
+    # 贡献度公式(成员变化÷总变化)只对可加指标成立,非可加指标直接拒绝归因
+    additive: bool = True
     # 连观察期都识别不出(结果无时间信息、问题也没给期间)→ False,
     # 并在 infeasible_reason 说明;有显式口径后单期结果也可归因
     feasible: bool = True

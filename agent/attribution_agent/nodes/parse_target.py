@@ -44,6 +44,14 @@ def _render_history(history: list[dict] | None) -> str:
 
 _BASIS_CN = {"mom": "环比(与上一可比期对比)", "yoy": "同比(与去年同期对比)"}
 
+# 非可加指标的关键词兜底(LLM 判断 additive 之外的第二道保险):
+# 贡献度 = 成员变化÷总变化 只对求和型指标成立,比率/平均/单价类硬算出来是错的数字
+_RATIO_HINTS = ("率", "占比", "比例", "平均", "人均", "均值", "单价")
+
+
+def _looks_non_additive(metric: str) -> bool:
+    return any(k in metric for k in _RATIO_HINTS)
+
 
 async def _llm_parse(question: str, history: list[dict] | None,
                      seed_question: str | None = None,
@@ -87,6 +95,21 @@ async def parse_target(state: AttributionState, runtime: Runtime[AttributionCont
         writer(WSStepInfo(step="解析归因目标", status="error",
                           data={"error": "归因目标解析失败,请换一种问法重试"}, finish=True))
         return {"halt": True, "error": str(exc)}
+
+    # 比率/平均类指标:贡献分解公式不成立,直接拒绝并指引归因分子/分母
+    # (LLM 判断 + 关键词兜底双保险,宁可错杀也不给错误数字)
+    if not target.additive or _looks_non_additive(target.metric):
+        writer(WSStepInfo(
+            step="解析归因目标", status="success",
+            data={"clarify": (
+                f"「{target.metric}」是比率/平均类指标,各成员不能直接相加,"
+                "无法做贡献度分解归因。可以改为分别归因它的分子和分母"
+                "(如 合格率 → 先归因合格数量,再归因总数量)"
+            )},
+            finish=True,
+        ))
+        logger.info(f"归因终止:非可加指标({target.metric!r})")
+        return {"target": target, "halt": True}
 
     # 观察期前置:多期结果时用户在弹层里选过,原样回填(不信 LLM 的改写),
     # 与口径同理 —— 选择权在用户;单期结果没传,观察期由 LLM 从问题/结果里识别
