@@ -13,7 +13,7 @@
  * 说明卡带 suggest_compare_type 时渲染「改用环比/同比重试」按钮;
  * 「下载 PDF」走浏览器打印导出(图表用 SVG 渲染,保证打印可见)。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import VChart from 'vue-echarts'
 
@@ -227,9 +227,35 @@ function rerun() {
 }
 
 // 下载 PDF:走浏览器打印(长内容自动分页、文字矢量、零依赖);
-// 打印样式隐藏交互元素(口径按钮/进度区/SQL/chips),只留结果本体
-function downloadPdf() {
+// 打印样式隐藏交互元素(口径按钮/进度区/SQL/chips),只留结果本体。
+// 图表特殊处理:打印快照里动态渲染的 canvas/SVG 不可靠(实测空白),
+// 打印前把图表导出成静态 <img>(打印时显示,屏幕上隐藏),<img> 在打印里必现。
+const chartRef = ref<{ getDataURL?: (opts?: object) => string } | null>(null)
+const printImg = ref<HTMLImageElement | null>(null)
+const printChartSrc = ref('')
+
+async function preparePrintChart() {
+  printChartSrc.value = chartRef.value?.getDataURL?.({ backgroundColor: '#ffffff' }) ?? ''
+  if (!printChartSrc.value) return
+  await nextTick()
+  try {
+    // 等图片解码完成再调起打印,否则快照里还是空白
+    await printImg.value?.decode()
+  } catch {
+    /* 解码失败就让浏览器尽力而为 */
+  }
+}
+
+// Ctrl+P 直接打印的兜底:beforeprint 里同步生成打印图(来不及 await 解码,尽力而为;
+// 走「下载 PDF」按钮的路径会提前生成并等解码完成)
+function onBeforePrint() {
+  printChartSrc.value =
+    chartRef.value?.getDataURL?.({ backgroundColor: '#ffffff' }) ?? printChartSrc.value
+}
+
+async function downloadPdf() {
   if (!result.value) return
+  await preparePrintChart()
   const original = document.title
   // 打印对话框的默认文件名取自 document.title
   document.title = `归因分析_${query.value}_${COMPARE_CN[compareType.value]}`
@@ -241,6 +267,7 @@ function downloadPdf() {
 }
 
 onMounted(() => {
+  window.addEventListener('beforeprint', onBeforePrint)
   const entry = handoffId.value ? loadAttributionEntry(handoffId.value) : null
   if (!entry) {
     missing.value = true
@@ -260,7 +287,10 @@ onMounted(() => {
   void run(entry.req)
 })
 
-onBeforeUnmount(() => controller?.abort())
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeprint', onBeforePrint)
+  controller?.abort()
+})
 
 // ── 展示派生 ────────────────────────────────────────────
 const phenomenon = computed(() => result.value?.phenomenon ?? null)
@@ -595,10 +625,20 @@ const barOption = computed(() => {
             </div>
             <div class="px-3 py-4">
               <VChart
+                ref="chartRef"
+                class="print:hidden"
                 :option="barOption"
                 :autoresize="true"
                 :init-options="{ renderer: 'svg' }"
                 :style="{ height: `${chartHeight}px`, width: '100%' }"
+              />
+              <!-- 打印专用静态图(downloadPdf 时生成):打印快照里动态图表不可靠,<img> 必现 -->
+              <img
+                v-if="printChartSrc"
+                ref="printImg"
+                :src="printChartSrc"
+                alt="贡献度排名"
+                class="hidden w-full print:block"
               />
             </div>
           </section>
