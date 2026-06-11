@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { hasDisplayableResult } from '@/lib/result-display'
 import { exportRowsToCsv } from '@/lib/export'
 import { uuid } from '@/lib/uuid'
-import { toErrorMessage, generateChart, fetchHotQuestions } from '@/services/agent'
+import { toErrorMessage, generateChart, generateReport, fetchHotQuestions } from '@/services/agent'
 import {
   type ConversationBrief,
   type ConversationSource,
@@ -387,6 +387,41 @@ async function onGenerateChart(message: AgentReplyMessage) {
     /* 出图失败静默,用户可重试 */
   } finally {
     chartLoading.value = { ...chartLoading.value, [message.id]: false }
+  }
+}
+
+// ── 按需分析报告:对该轮结果生成 HTML 报告,新标签页打开(浏览器可另存/打印 PDF) ──
+const reportLoading = ref<Record<string, boolean>>({})
+async function onGenerateReport(message: AgentReplyMessage) {
+  if (!shouldShowResult(message.result) || reportLoading.value[message.id]) return
+  // 必须在点击手势的同步上下文里开窗:await 之后再 window.open 会被浏览器弹窗拦截
+  const win = window.open('', '_blank')
+  if (win) {
+    win.document.write(
+      '<title>生成分析报告中…</title><p style="font:14px system-ui;color:#475569;padding:40px">报告生成中,约需 10 秒,请稍候…</p>',
+    )
+  }
+  reportLoading.value = { ...reportLoading.value, [message.id]: true }
+  try {
+    const html = await generateReport(message.result, questionFor(message), message.sql)
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+    if (win) {
+      win.location.href = url
+    } else {
+      // 开窗被拦截的兜底:转为下载文件
+      const a = document.createElement('a')
+      a.href = url
+      a.download = '分析报告.html'
+      a.click()
+    }
+    // 给新标签页留足加载时间后再释放 blob URL,避免内存常驻
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (e) {
+    win?.close()
+    console.error('[生成分析报告] 失败:', e)
+    /* 失败静默,用户可重试(与生成图表一致) */
+  } finally {
+    reportLoading.value = { ...reportLoading.value, [message.id]: false }
   }
 }
 
@@ -939,6 +974,34 @@ onBeforeUnmount(() => {
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               导出数据
+            </button>
+
+            <!-- 按需分析报告:对该轮结果生成 HTML 报告,新标签页打开 -->
+            <button
+              v-if="shouldShowResult(message.result)"
+              type="button"
+              :disabled="reportLoading[message.id]"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
+              @click="onGenerateReport(message)"
+            >
+              <!-- 加载中:旋转 spinner;否则文档图标 -->
+              <svg
+                v-if="reportLoading[message.id]"
+                class="h-3.5 w-3.5 animate-spin"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"
+              >
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <svg
+                v-else
+                class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              {{ reportLoading[message.id] ? '生成中…' : '生成分析报告' }}
             </button>
 
             <!-- 按需生成图表:有结果且尚未出图时显示;生成后(echarts 图)自动隐藏 -->

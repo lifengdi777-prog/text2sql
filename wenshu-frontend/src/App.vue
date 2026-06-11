@@ -129,7 +129,6 @@ async function logout() {
             退出
           </button>
         </div>
-        <div class="px-2 text-[11px] text-slate-400">Text2SQL · MVP</div>
       </div>
     </aside>
 

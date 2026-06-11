@@ -298,6 +298,20 @@ export async function generateChart(
   return data?.chart_config ?? null
 }
 
+// 按需分析报告:把结果行 + 问题 + SQL 发给后端,返回自包含 HTML(新标签页打开)。
+export async function generateReport(
+  rows: ResultRow[],
+  query: string,
+  sql: string | null,
+): Promise<string> {
+  const { data } = await agentApi.post<string>(
+    '/report',
+    { rows, query, sql },
+    { responseType: 'text', headers: { Accept: 'text/html' } },
+  )
+  return data
+}
+
 // 问数页空状态的「历史热门问题」:本数据源缓存里命中最多的问题。
 // 点选后逐字提问 → 必然精确命中 SQL 缓存,秒出结果。拉取失败返回空数组(区块不显示),不影响问数。
 export async function fetchHotQuestions(datasourceId: string, limit = 6): Promise<string[]> {

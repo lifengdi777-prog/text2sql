@@ -45,6 +45,11 @@ export default defineConfig({
         target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      // 按需分析报告接口 POST /report
+      '^/report(/|$)': {
+        target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
       // 注意:列表请求是 /conversations?source=db(裸资源+查询串),
       // 末尾要额外匹配 '?',否则 '?' 既非 '/' 也非结尾,会漏匹配 → 不走代理。
       '^/conversations(/|\\?|$)': {
