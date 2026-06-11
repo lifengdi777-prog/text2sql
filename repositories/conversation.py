@@ -172,7 +172,13 @@ class ConversationRepository:
         """加载最近 max_turns 轮历史,供多轮改写(指代消解)用。
 
         把消息按「user → 紧邻的 assistant」配对成一轮,每轮取:
-          - question:该轮用户问题文本
+          - question:该轮的「自包含问题」,按保真度取:
+            ① 意图节点改写后落库的 standaloneQuestion(查询轮);
+            ② 图表配置里的 source_question(纯画图轮,user 消息是"换成柱状图"这类指令,
+               数据问题在 chartConfig 里);
+            ③ 都没有(老数据/拦截轮)回退原始消息。
+            原始消息常是"2025年呢"这类残句,残句接力几轮后时间范围等条件就丢了;
+            每轮历史自带完整问题,改写 prompt 的「条件继承」规则才有可靠依据。
           - sql:assistant payload 里真正执行的 SQL(含 region='华东' 这类筛选,换参数型追问靠它)
           - rows:结果前 max_rows 行(按展示顺序,位置型/名称型追问靠它取值)
 
@@ -187,8 +193,13 @@ class ConversationRepository:
             nxt = msgs[i + 1] if i + 1 < len(msgs) else None
             if cur.role == "user" and nxt is not None and nxt.role == "assistant":
                 payload = nxt.payload or {}
+                cfg = payload.get("chartConfig") or {}
+                candidates = (payload.get("standaloneQuestion"),
+                              cfg.get("source_question") if isinstance(cfg, dict) else None)
+                question = next((c.strip() for c in candidates
+                                 if isinstance(c, str) and c.strip()), cur.content)
                 turns.append({
-                    "question": cur.content,
+                    "question": question,
                     "sql": payload.get("sql"),
                     "rows": (payload.get("result") or [])[:max_rows],
                 })
