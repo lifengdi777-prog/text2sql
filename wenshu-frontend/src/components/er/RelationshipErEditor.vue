@@ -130,21 +130,22 @@ watch(
 
 // 按当前关系重算各节点字段的「有效角色」,原地更新节点 data(保留位置)。
 function refreshRoles() {
-  nodes.value = nodes.value.map((n) => {
+  // 原地更新 n.data,不 {...n} 整个 Node 重建 —— spread Node 会让 TS 展开
+  // @vue-flow 的深层泛型联合直接 TS2589;只动 data 字段类型最浅,语义不变。
+  for (const n of nodes.value) {
     const t = props.tables.find((tt) => tt.name === n.id)
-    if (!t) return n
-    return {
-      ...n,
-      data: {
-        ...n.data,
-        columns: t.columns.map((c) => ({
-          name: c.name,
-          type: c.type,
-          role: effectiveColumnRole(c.role, t.name, c.name, relationships.value),
-        })),
-      },
+    if (!t) continue
+    n.data = {
+      ...n.data,
+      columns: t.columns.map((c) => ({
+        name: c.name,
+        type: c.type,
+        role: effectiveColumnRole(c.role, t.name, c.name, relationships.value),
+      })),
     }
-  })
+  }
+  // 不再整体重赋值 nodes.value:ref 是深响应的,n.data 的原地赋值即可触发更新
+  // (对 Node[] 做 spread/重赋值还会让 TS 的 UnwrapRef 递归展开深层泛型,报 TS2589)
 }
 
 // 拖线:从任一字段锚点拖到另一字段锚点 → 新增一条关系(还原列名、去重、禁止自连)
