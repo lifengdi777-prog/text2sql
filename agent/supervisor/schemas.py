@@ -19,6 +19,9 @@ class SupervisorState(BaseModel):
     dataset_id: int | None = None
     # route_intent 的路由决策
     route: Literal["chart", "query"] | None = None
+    # route_intent 的 LLM 已完成「分流+改写+守门」(messages[-1] 已是自包含问题)→
+    # 子图意图节点据此短路,不再重复调用 LLM
+    intent_pre_parsed: bool = False
 
 
 class SupervisorContext(BaseModel):

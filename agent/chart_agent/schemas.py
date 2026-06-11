@@ -73,6 +73,9 @@ class ChartAgentState(BaseModel):
     sql: str | None = None
     # analyzer 算出的数据形状摘要
     data_shape: DataShape | None = None
+    # 上一轮已生成的图表配置(load_rows 从会话历史带回)。点名换图时若它带 field_map,
+    # 走零 LLM 快通道:直接用上轮映射 + 目标类型构图,不再调 LLM 选型
+    prev_chart_config: dict[str, Any] | None = None
     # 最终 ECharts 配置(前端拿这个 setOption)
     chart_config: dict[str, Any] | None = None
 

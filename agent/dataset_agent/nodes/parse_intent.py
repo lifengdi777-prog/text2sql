@@ -75,6 +75,15 @@ async def parse_intent(state: DatasetAgentState, runtime: Runtime[DatasetAgentCo
         ))
         return {"should_continue": False}
 
+    # supervisor 路由已在同一次 LLM 调用里完成「分流+多轮改写+守门」(判定为数据查询,
+    # messages[-1] 已是改写后的自包含问题)→ 短路放行,省一次 LLM 调用。
+    if state.intent_pre_parsed:
+        writer(WSStepInfo(
+            step="意图识别", status="success",
+            data={"should_continue": True, "standalone_query": query},
+        ))
+        return {"should_continue": True}
+
     try:
         structured = llm.with_structured_output(IntentResult, method="json_mode")
         # schema / 历史各作为一条 SystemMessage 注入(不塞进 messages,避免 prompt 大括号转义问题);

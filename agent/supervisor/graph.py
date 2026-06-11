@@ -67,11 +67,13 @@ def build_supervisor(query_graph, make_query_state: Callable[[SupervisorState], 
 # 问数页入口:db_agent | chart_agent
 db_supervisor = build_supervisor(
     db_graph,
-    lambda s: WSAgentState(messages=s.messages, history=s.history),
+    lambda s: WSAgentState(messages=s.messages, history=s.history,
+                           intent_pre_parsed=s.intent_pre_parsed),
 )
 
 # 数据集页入口:dataset_agent | chart_agent
 dataset_supervisor = build_supervisor(
     dataset_graph,
-    lambda s: DatasetAgentState(messages=s.messages, dataset_id=s.dataset_id, history=s.history),
+    lambda s: DatasetAgentState(messages=s.messages, dataset_id=s.dataset_id, history=s.history,
+                                intent_pre_parsed=s.intent_pre_parsed),
 )

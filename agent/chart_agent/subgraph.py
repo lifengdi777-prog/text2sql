@@ -64,6 +64,41 @@ def _requested_type(query: str) -> str | None:
     return None
 
 
+def _build_for_requested(requested: str, target: str, field_map: dict,
+                         shape, rows: list[dict[str, Any]], title: str) -> dict[str, Any]:
+    """用户点名图型的统一出图(LLM 选型路径与换图快通道共用)。
+
+    target 画得出(过 enforce_limits)→ 直接构图,只出点名的图(无切换项);
+    画不出 → 不"静默换图":默认展示推荐的可生成图 + notice 说明原因与可切换项,
+    什么图都画不出才落到数据表格。
+    """
+    final_t, req_reason = enforce_limits(target, field_map, shape)
+    if final_t == target:
+        if target == "table":
+            config = _build_table_config(rows, title, "用户指定表格")
+        else:
+            config = build_chart_option(target, rows, field_map, title)
+            config["compatible_types"] = [target]
+            config["field_map"] = field_map
+        return config
+
+    drawable = _filter_compatible(list(SUPPORTED_CHART_TYPES), field_map, shape)
+    why = (req_reason or "不满足该图型的数据要求").split(",降级")[0].split(",改用")[0]
+    if drawable:
+        # 默认直接展示推荐图(可生成列表的第一个),其余可生成图型 + 表格做切换项
+        best = drawable[0]
+        others = "、".join(_TYPE_CN.get(t, t) for t in drawable[1:] + ["table"])
+        config = build_chart_option(best, rows, field_map, title)
+        config["compatible_types"] = drawable + ["table"]
+        config["field_map"] = field_map
+        config["notice"] = (f"当前数据无法生成{_TYPE_CN[requested]}({why}),"
+                            f"已改用{_TYPE_CN.get(best, best)}展示;可切换:{others}")
+    else:
+        config = _build_table_config(rows, title, f"用户指定{_TYPE_CN[requested]}画不出:{why}")
+        config["notice"] = f"当前数据无法生成{_TYPE_CN[requested]}({why}),已展示数据表格"
+    return config
+
+
 def _make_title(query: Any) -> str:
     """标题:复用用户问题,去掉常见前缀动词,截断到 25 字。"""
     t = str(query or "查询结果").strip()
@@ -154,6 +189,30 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
     shape = state.data_shape
     query = state.messages[0].content if state.messages else "查询结果"
     title = _make_title(query)
+    requested = _requested_type(str(query))
+
+    # ── 换图快通道:点名图型 + 上轮已有字段映射 → 零 LLM 直接构图 ────────────
+    # "换成饼图/画成柱状图"这类请求作用在同一份数据上,列映射沿用上一轮即可,
+    # 无需再让 LLM 判列选型;可行性与提示仍由 _build_for_requested 统一把关。
+    prev_fm = (state.prev_chart_config or {}).get("field_map") or None
+    if requested and prev_fm and shape:
+        # 防御:映射列必须仍存在于当前数据(rows 与上轮图表同源,正常必一致)
+        valid = {c.name for c in shape.columns}
+        fm_cols: set[str] = set()
+        for v in prev_fm.values():
+            fm_cols.update(v if isinstance(v, list) else [v])
+        if fm_cols and fm_cols <= valid:
+            try:
+                # 上轮映射带分组列时,"折线/柱状"诉求升级为多系列变体,保住分组信息
+                target = ({"line": "multi_line", "bar": "stacked_bar"}.get(requested, requested)
+                          if prev_fm.get("series") else requested)
+                config = _build_for_requested(requested, target, prev_fm, shape, rows, title)
+                logger.info(f"换图快通道(零 LLM):{requested} → {config.get('chart_type')}")
+                writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
+                return {"chart_config": config}
+            except Exception as exc:
+                # 快通道任何意外 → 回退正常 LLM 选型链,不影响出图
+                logger.warning(f"换图快通道失败,回退 LLM 选型:{exc}")
 
     # 整段构图包一层 try/except:任何意外异常都不让它冒出去断流,
     # 一律兜底成表格,保证图表分支永远能给前端一个可渲染的结果。
@@ -171,41 +230,19 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
             reason = decision.reason
 
             # ── 用户点名了图表类型(如"画成折线图""换成饼图")────────────────
-            #   - 点名的画得出(过 enforce_limits)→ 直接尊重,覆盖 LLM 的选型;
-            #   - 画不出 → 不"静默换图":默认展示推荐的可生成图 + notice 明确告知原因,
-            #     其余可生成图型与表格做切换项;什么图都画不出才落到表格。
+            #   统一交给 _build_for_requested:画得出 → 只出点名的图(无切换项);
+            #   画不出 → 默认推荐图 + notice 提示原因与可切换项,绝不静默换图。
             #   注意:LLM 顺着用户点名选了该类型、但 enforce_limits 判画不出的情况,
-            #   也必须走提示分支 —— 否则会被后面的兜底校验静默降级,用户以为生成错图。
-            requested = _requested_type(str(query))
+            #   也走这里 —— 否则会被后面的兜底校验静默降级,用户以为生成错图。
             if requested:
                 # 目标类型:LLM 已选了满足诉求的类型(如点名"折线"它选了 multi_line)就用它,
-                # 否则用点名类型本身;统一判可行性,画不出一律提示。
+                # 否则用点名类型本身。
                 target = chart_type if chart_type in _SATISFIES.get(requested, {requested}) else requested
-                final_req, req_reason = enforce_limits(target, field_map, shape)
-                if final_req == target:
-                    if chart_type != target:
-                        reason = f"用户指定{_TYPE_CN[requested]}｜{reason}"
-                    chart_type = target
-                else:
-                    drawable = _filter_compatible(list(SUPPORTED_CHART_TYPES), field_map, shape)
-                    why = (req_reason or "不满足该图型的数据要求").split(",降级")[0].split(",改用")[0]
-                    if drawable:
-                        # 默认直接展示推荐图(可生成列表的第一个),不让用户先看一版表格;
-                        # 其余可生成图型 + 表格做切换项(切换在前端按 field_map 本地构图)
-                        best = drawable[0]
-                        others = "、".join(_TYPE_CN.get(t, t) for t in drawable[1:] + ["table"])
-                        config = build_chart_option(best, rows, field_map, title)
-                        config["compatible_types"] = drawable + ["table"]
-                        config["field_map"] = field_map
-                        config["notice"] = (f"当前数据无法生成{_TYPE_CN[requested]}({why}),"
-                                            f"已改用{_TYPE_CN.get(best, best)}展示;可切换:{others}")
-                    else:
-                        config = _build_table_config(rows, title, f"用户指定{_TYPE_CN[requested]}画不出:{why}")
-                        config["notice"] = f"当前数据无法生成{_TYPE_CN[requested]}({why}),已展示数据表格"
-                    logger.info(f"图表生成:用户点名 {requested} 画不出({req_reason}),"
-                                f"默认展示 {drawable[0] if drawable else 'table'},可生成:{drawable}")
-                    writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
-                    return {"chart_config": config}
+                config = _build_for_requested(requested, target, field_map, shape, rows, title)
+                logger.info(f"图表生成(点名{_TYPE_CN[requested]}):type={config.get('chart_type')}"
+                            f"{',notice:' + config['notice'] if config.get('notice') else ''}")
+                writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
+                return {"chart_config": config}
 
             # 代码兜底校验:用真实基数查硬限制(扇区/柱子/系列数上限、必需映射齐不齐),违反则降级(可能降到 table)。
             # 只查精确事实,不做语义猜测。LLM 映射无效/缺失时,这里也会因"缺必需映射"降级表格。
@@ -225,10 +262,6 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
                     compat = [chart_type] + compat
                 if "table" not in compat:
                     compat.append("table")
-                # 用户点名了图型且本图已满足诉求 → 只出点名的图,不提供切换按钮
-                # (收成单元素,前端 showToggle 自动隐藏;没点名时保留完整切换项)
-                if requested and chart_type in _SATISFIES.get(requested, {requested}):
-                    compat = [chart_type]
                 config["compatible_types"] = compat
                 config["field_map"] = field_map
 

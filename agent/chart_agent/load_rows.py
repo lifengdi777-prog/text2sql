@@ -73,5 +73,7 @@ async def load_rows(state: ChartAgentState, runtime: Runtime[ChartAgentContext])
         sql=last.get("sql"),
         finish=True,
     ))
-    # sql 一并带回:后续构图出错降级 error 卡时能展示来源 SQL
-    return {"sql_result": last["rows"], "sql": last.get("sql")}
+    # sql 一并带回:后续构图出错降级 error 卡时能展示来源 SQL;
+    # prev_chart_config:上轮图表配置(带 field_map 时,点名换图走零 LLM 快通道)
+    return {"sql_result": last["rows"], "sql": last.get("sql"),
+            "prev_chart_config": last.get("chart_config")}

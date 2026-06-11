@@ -27,6 +27,10 @@ class WSAgentState(BaseModel):
     #加载后注入。parse_query_intention 用它做指代消解,把当前追问改写成自包含问题;改写完即用完,
     #下游节点不读它(它们只读改写后的 messages[-1])。
     history: list[dict[str, Any]] | None = None
+    #supervisor 路由已在同一次 LLM 调用里完成「分流+多轮改写+守门」(判定为数据查询,
+    #messages[-1] 已是改写后的自包含问题)→ 意图节点据此短路,不再重复调用 LLM。
+    #直接调用本图(evals 等)不设此标志,意图节点行为与从前完全一致。
+    intent_pre_parsed: bool = False
     #Optional的作用是表示这个字段(should_continue)是可选的，
     # 可以为bool类型的值，也可以为None。
     should_continue: Optional[bool] = None

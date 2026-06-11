@@ -61,6 +61,17 @@ async def parse_query_intention(state: WSAgentState, runtime: Runtime[WSAgentCon
     writer = runtime.stream_writer
     writer(WSStepInfo(step="解析用户意图", status="running"))
 
+    # supervisor 路由已在同一次 LLM 调用里完成「分流+多轮改写+守门」(判定为数据查询,
+    # messages[-1] 已是改写后的自包含问题)→ 短路放行,省一次 LLM 调用。
+    # 步骤事件照发,前端执行链路展示与从前一致。
+    if state.intent_pre_parsed:
+        writer(WSStepInfo(
+            step="解析用户意图", status="success",
+            data={"should_continue": True,
+                  "standalone_query": str(state.messages[-1].content)},
+        ))
+        return {"should_continue": True}
+
     try:
         prompt = await load_prompt("parse_query_intention")
         structured_llm = llm.with_structured_output(ParseQueryResult, method="json_mode")
