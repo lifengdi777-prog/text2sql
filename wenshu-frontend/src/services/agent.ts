@@ -294,6 +294,8 @@ export interface AttributionRequest {
   query: string
   sql: string | null
   compareType: CompareType
+  // 观察期:多期结果由弹层让用户选定(观察期前置);单期结果不传
+  targetPeriod?: string
   conversationId?: number | null
   datasourceId?: string
   datasetId?: number
@@ -325,6 +327,7 @@ export async function streamAttributionEvents(
       query: req.query,
       sql: req.sql,
       compare_type: req.compareType,
+      target_period: req.targetPeriod ?? null,
       conversation_id: req.conversationId ?? null,
       datasource_id: req.datasourceId,
       dataset_id: req.datasetId ?? null,

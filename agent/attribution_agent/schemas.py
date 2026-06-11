@@ -57,6 +57,9 @@ class AttributionState(BaseModel):
     seed_rows: list[dict[str, Any]] | None = None
     # 对比口径:前端弹层选定后随请求传入(口径前置,不再让 LLM 猜/向用户澄清)
     compare_type: Literal["mom", "yoy"] = "mom"
+    # 观察期:多期结果(如"各月份产量")由前端弹层让用户选定后传入,代码原样回填
+    # (观察期前置,与口径同理 —— 不让 LLM 暗中替用户挑"最近一期");单期结果不传
+    target_period: str | None = None
     # parse_target 写入
     target: AttributionTarget | None = None
     # confirm_phenomenon 写入:{target_value, baseline_value, change, change_pct, ...}

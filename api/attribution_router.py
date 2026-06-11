@@ -37,6 +37,8 @@ class AttributionBody(BaseModel):
     query: str = ""
     # 对比口径:前端口径弹层选定(口径前置,二期再加自定义日期)
     compare_type: Literal["mom", "yoy"]
+    # 观察期:多期结果(如"各月份产量")由弹层让用户选定(观察期前置);单期结果不传
+    target_period: str | None = None
     sql: str | None = None
     conversation_id: int | None = None
     # db 页来源
@@ -83,7 +85,7 @@ async def _chunks(body: AttributionBody, user_id: str, user_name: str | None,
     state = AttributionState(
         messages=[HumanMessage(content=f"归因分析:{body.query}")],
         seed_question=body.query, seed_sql=body.sql, seed_rows=body.rows,
-        compare_type=body.compare_type,
+        compare_type=body.compare_type, target_period=body.target_period,
     )
     ctx = AttributionContext(run_query=run_query, domain_md=domain_md)
     run_config = build_run_config(

@@ -48,7 +48,8 @@ _BASIS_CN = {"mom": "环比(与上一可比期对比)", "yoy": "同比(与去年
 async def _llm_parse(question: str, history: list[dict] | None,
                      seed_question: str | None = None,
                      seed_rows: list[dict] | None = None,
-                     compare_type: str = "mom") -> AttributionTarget:
+                     compare_type: str = "mom",
+                     target_period: str | None = None) -> AttributionTarget:
     """LLM 解析归因目标。结果模式(归因按钮)额外注入当前查询与结果数据。独立成函数,便于测试替换。"""
     msgs = [
         SystemMessage(content=_get_prompt()),
@@ -56,6 +57,11 @@ async def _llm_parse(question: str, history: list[dict] | None,
         SystemMessage(content=f"用户已选口径:{_BASIS_CN.get(compare_type, compare_type)}"),
         SystemMessage(content="# 对话历史(供指代消解)\n" + _render_history(history)),
     ]
+    if target_period:
+        msgs.append(SystemMessage(content=(
+            f"用户已选观察期:{target_period}"
+            "(target_period 必须用它;mom_baseline / yoy_baseline 按它推导)"
+        )))
     if seed_rows:
         msgs.append(SystemMessage(content=(
             "# 结果模式\n当前查询:" + (seed_question or "") + "\n结果数据:"
@@ -75,13 +81,17 @@ async def parse_target(state: AttributionState, runtime: Runtime[AttributionCont
     try:
         target = await _llm_parse(question, state.history,
                                   seed_question=state.seed_question, seed_rows=state.seed_rows,
-                                  compare_type=compare)
+                                  compare_type=compare, target_period=state.target_period)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"归因目标解析失败:{exc}")
         writer(WSStepInfo(step="解析归因目标", status="error",
                           data={"error": "归因目标解析失败,请换一种问法重试"}, finish=True))
         return {"halt": True, "error": str(exc)}
 
+    # 观察期前置:多期结果时用户在弹层里选过,原样回填(不信 LLM 的改写),
+    # 与口径同理 —— 选择权在用户;单期结果没传,观察期由 LLM 从问题/结果里识别
+    if state.target_period:
+        target.target_period = state.target_period
     # 口径前置:LLM 不输出口径/基准期,代码按前端选定的口径从候选里回填
     target.compare_type = compare
     target.baseline_period = target.mom_baseline if compare == "mom" else target.yoy_baseline

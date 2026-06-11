@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 
 import { hasDisplayableResult } from '@/lib/result-display'
 import { stashAttributionRequest } from '@/lib/attribution-handoff'
+import { detectPeriodCandidates } from '@/lib/periods'
 import { exportRowsToCsv } from '@/lib/export'
 import { uuid } from '@/lib/uuid'
 import {
@@ -548,14 +549,20 @@ async function submitQuery() {
   await runTurn(query, (opts) => props.streamFn(query, opts))
 }
 
-// ── 归因分析:口径弹层(同比/环比)→ 新标签页独立页面,完全不占用聊天 ──────
+// ── 归因分析:口径弹层(同比/环比 + 多期结果选观察期)→ 新标签页独立页面 ──────
 // 待归因的那条回复(非 null 时显示口径弹层)
 const attributionTarget = ref<AgentReplyMessage | null>(null)
 const attributionCompareType = ref<CompareType>('mom')
+// 观察期前置:结果含多个期间时(如"各月份产量"),观察期由用户在弹层里选,
+// 不让系统暗中挑"最近一期"(与口径前置同一道理);单期/识别不出 → 候选为空,不显示选择
+const attributionPeriods = ref<string[]>([])
+const attributionPeriod = ref('')
 
 function onAttribution(message: AgentReplyMessage) {
   if (!shouldShowResult(message.result)) return
   attributionCompareType.value = 'mom'
+  attributionPeriods.value = detectPeriodCandidates(message.result)
+  attributionPeriod.value = attributionPeriods.value[0] ?? '' // 默认最近一期
   attributionTarget.value = message
 }
 
@@ -574,6 +581,7 @@ function confirmAttribution() {
     query: questionFor(message),
     sql: message.sql,
     compareType: attributionCompareType.value,
+    targetPeriod: attributionPeriods.value.length >= 2 ? attributionPeriod.value : undefined,
     datasetId: props.source === 'dataset' ? props.datasetId : undefined,
     datasourceId: props.datasourceId,
     conversationId: activeConversationId.value,
@@ -1334,7 +1342,20 @@ onBeforeUnmount(() => {
     >
       <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
         <h3 class="text-base font-semibold text-slate-800">归因分析</h3>
-        <p class="mt-1 text-xs text-slate-400">选择对比口径，分析将在新页面打开，不影响继续提问</p>
+        <p class="mt-1 text-xs text-slate-400">
+          {{ attributionPeriods.length >= 2 ? '选择观察期与对比口径' : '选择对比口径' }}，分析将在新页面打开，不影响继续提问
+        </p>
+
+        <!-- 观察期:结果含多个期间时由用户选(默认最近一期),归因该期的变化 -->
+        <div v-if="attributionPeriods.length >= 2" class="mt-4">
+          <label class="text-xs font-medium text-slate-500">观察期（归因哪一期的变化）</label>
+          <select
+            v-model="attributionPeriod"
+            class="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-sky-300"
+          >
+            <option v-for="p in attributionPeriods" :key="p" :value="p">{{ p }}</option>
+          </select>
+        </div>
 
         <div class="mt-4 grid grid-cols-2 gap-3">
           <button
