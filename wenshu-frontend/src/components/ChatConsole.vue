@@ -292,6 +292,7 @@ function createReplyMessage(): AgentReplyMessage {
     interpretation: null,
     sql: null,
     guideQueries: [],
+    standaloneQuestion: null,
     status: 'streaming',
   }
 }
@@ -356,13 +357,16 @@ function isUnchartable(message: AgentReplyMessage): boolean {
   return !Array.isArray(ct) || ct.filter((t) => t !== 'table').length === 0
 }
 
-// 该回复对应的「数据问题」(出图标题/分析报告/归因都用它):
-// 图表指令轮("生成折线图")前面最近的 user 消息是指令本身,不是产生数据的问题 →
-// 优先用后端随 chart_config 带回的 source_question(数据源头的完整问题,换图也传承);
-// 没有(查询轮未出图/老历史数据)再回退到前面最近一条 user 消息。
+// 该回复对应的「数据问题」(出图标题/分析报告/归因都用它),按保真度取:
+// 1) chart_config 的 source_question(数据源头的完整问题,换图也传承);
+// 2) 意图节点改写后的自包含问题 standaloneQuestion ——
+//    追问轮("2025年呢")的原始消息是残句,出图标题必须用改写后的完整问题;
+// 3) 都没有(老历史数据)再回退到前面最近一条 user 消息。
 function questionFor(message: AgentReplyMessage): string {
   const sq = message.chartConfig?.source_question
   if (typeof sq === 'string' && sq.trim()) return sq.trim()
+  const stq = message.standaloneQuestion
+  if (typeof stq === 'string' && stq.trim()) return stq.trim()
   const i = messages.value.findIndex((m) => m.id === message.id)
   for (let j = i - 1; j >= 0; j--) {
     const m = messages.value[j]

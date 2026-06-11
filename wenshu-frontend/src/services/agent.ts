@@ -73,6 +73,18 @@ function isFanoutData(data: AgentEventData): data is { fanout: boolean; message?
   )
 }
 
+// 意图节点(db="解析用户意图" / dataset="意图识别")的改写问题:按 data 形状识别,
+// 只认守门放行(should_continue===true)且改写非空的事件。追问轮的原始消息是
+// "2025年呢"这类残句,按需出图/报告/归因要用这里的自包含问题。
+function standaloneQuestionOf(data: AgentEventData): string | null {
+  if (!data || Array.isArray(data) || typeof data !== 'object') return null
+  const d = data as Record<string, unknown>
+  if (d.should_continue === true && typeof d.standalone_query === 'string' && d.standalone_query.trim()) {
+    return d.standalone_query.trim()
+  }
+  return null
+}
+
 function isChartConfigData(data: AgentEventData): data is ChartConfig {
   // chart_agent 的 finish 事件:data 是带 chart_type 字段的对象
   return (
@@ -130,6 +142,8 @@ function mergeReplyMessage(
     interpretation: isInterpretationEvent ? (event.data as string) : current.interpretation,
     // 执行成功事件带上的真正执行 SQL;后续事件没有 sql 时保留已存的
     sql: event.sql ?? current.sql,
+    // 意图节点的改写问题;后续事件不带时保留已存的
+    standaloneQuestion: standaloneQuestionOf(event.data) ?? current.standaloneQuestion,
     guideQueries: event.finish && event.guide_queries && event.guide_queries.length > 0
       ? event.guide_queries
       : current.guideQueries,
@@ -199,6 +213,7 @@ async function runStream(
     interpretation: null,
     sql: null,
     guideQueries: [],
+    standaloneQuestion: null,
     fanout: false,
     fanoutMessage: null,
     status: 'streaming',

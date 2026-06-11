@@ -56,6 +56,9 @@ export interface AgentReplyMessage {
   interpretation: string | null     // 由 interpret_result 节点产出的自然语言解读
   sql: string | null                // 真正执行的那条 SQL(执行成功事件带上),供「查看 SQL」展示
   guideQueries: string[]
+  // 意图节点改写后的自包含问题(多轮指代消解结果,如"2025年呢"→"2025年第一季度各工厂的实际产量")。
+  // 按需出图/报告/归因的标题与上下文优先用它,不能用原始残句
+  standaloneQuestion?: string | null
   // 扇出风险:为 true 时前端用"警告图标 + 危险色"渲染引导区,fanoutMessage 是风险说明文案
   fanout?: boolean
   fanoutMessage?: string | null
