@@ -1,17 +1,21 @@
 """Attribution Agent 的图编排。
 
-当前(第 1 步骨架):
-    START → parse_target ──(口径已明确)──→ plan_dimensions → END
-                         └─(需澄清/失败)──→ END
-
-后续接入(第 2/3 步):
-    parse_target → confirm_phenomenon(现象确认/基准期无数据提示)
-                 → plan_dimensions → run_dims → synthesize → END
+    START → parse_target ──(需澄清口径/失败)──→ END
+              ↓
+          confirm_phenomenon ──(基准期/目标期无数据、现象不成立)──→ END
+              ↓
+          plan_dimensions ──(无可用维度/失败)──→ END
+              ↓
+          run_dims(逐维度子查询) ──(全部失败)──→ END
+              ↓
+          synthesize(第 3 步接入) → END
 """
 from langgraph.graph import END, START, StateGraph
 
+from agent.attribution_agent.nodes.confirm_phenomenon import confirm_phenomenon
 from agent.attribution_agent.nodes.parse_target import parse_target
 from agent.attribution_agent.nodes.plan_dimensions import plan_dimensions
+from agent.attribution_agent.nodes.run_dims import run_dims
 from agent.attribution_agent.schemas import AttributionContext, AttributionState
 
 
@@ -22,12 +26,18 @@ def _route_continue(state: AttributionState) -> str:
 def _build():
     g = StateGraph(state_schema=AttributionState, context_schema=AttributionContext)
     g.add_node("parse_target", parse_target)
+    g.add_node("confirm_phenomenon", confirm_phenomenon)
     g.add_node("plan_dimensions", plan_dimensions)
+    g.add_node("run_dims", run_dims)
 
     g.add_edge(START, "parse_target")
     g.add_conditional_edges("parse_target", _route_continue,
+                            {"continue": "confirm_phenomenon", END: END})
+    g.add_conditional_edges("confirm_phenomenon", _route_continue,
                             {"continue": "plan_dimensions", END: END})
-    g.add_edge("plan_dimensions", END)
+    g.add_conditional_edges("plan_dimensions", _route_continue,
+                            {"continue": "run_dims", END: END})
+    g.add_edge("run_dims", END)
     return g.compile()
 
 
