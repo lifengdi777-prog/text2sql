@@ -285,23 +285,68 @@ export async function streamDatasetQuery(
   )
 }
 
-// 归因分析:对当前结果做"为什么变化"的多维拆解(结果卡「归因分析」按钮,SSE 流式)。
-export async function streamAttribution(
-  payload: { rows: ResultRow[]; query: string; sql: string | null; datasetId?: number },
-  options: QueryOptions,
+// ── 归因分析(面板形态)────────────────────────────────────
+// 口径前置:同比/环比由弹层选定后必传;归因在右侧面板独立进行,不作为对话轮次。
+export type CompareType = 'mom' | 'yoy'
+
+export interface AttributionRequest {
+  rows: ResultRow[]
+  query: string
+  sql: string | null
+  compareType: CompareType
+  conversationId?: number | null
+  datasourceId?: string
+  datasetId?: number
+}
+
+// SSE 原始事件直通(步骤卡 + 流末 attribution_result),由 AttributionPanel 自行渲染;
+// 不走 runStream 的 AgentReplyMessage 合并逻辑(那套是对话轮次的形状)。
+export async function streamAttributionEvents(
+  req: AttributionRequest,
+  options: { signal?: AbortSignal; onEvent: (event: AgentEvent) => void },
 ): Promise<void> {
-  await runStream(
+  let processedLength = 0
+  let rest = ''
+
+  const handle = (input: string) => {
+    const parsed = parseSseChunk(input)
+    rest = parsed.rest
+    for (const event of parsed.events) {
+      if (event.step && event.status) {
+        options.onEvent(event)
+      }
+    }
+  }
+
+  await agentApi.post(
     '/agent/attribution',
     {
-      rows: payload.rows,
-      query: payload.query,
-      sql: payload.sql,
-      conversation_id: options.conversationId ?? null,
-      datasource_id: options.datasourceId,
-      dataset_id: payload.datasetId ?? null,
+      rows: req.rows,
+      query: req.query,
+      sql: req.sql,
+      compare_type: req.compareType,
+      conversation_id: req.conversationId ?? null,
+      datasource_id: req.datasourceId,
+      dataset_id: req.datasetId ?? null,
     },
-    options,
+    {
+      signal: options.signal,
+      onDownloadProgress: (progressEvent) => {
+        const target = progressEvent.event?.target as XMLHttpRequest | undefined
+        const responseText = target?.responseText
+        if (typeof responseText !== 'string' || responseText.length <= processedLength) {
+          return
+        }
+        const chunk = responseText.slice(processedLength)
+        processedLength = responseText.length
+        handle(rest + chunk)
+      },
+    },
   )
+
+  if (rest.trim()) {
+    handle(`${rest}\n\n`)
+  }
 }
 
 // 按需生成图表:把问数结果行 + 问题发给后端,返回 chart_config(用户点「生成图表」时调)。

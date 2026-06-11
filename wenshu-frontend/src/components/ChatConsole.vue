@@ -9,7 +9,7 @@ import {
   generateChart,
   generateReport,
   fetchHotQuestions,
-  streamAttribution,
+  type CompareType,
   type QueryOptions,
 } from '@/services/agent'
 import {
@@ -28,6 +28,7 @@ import MetricCard from '@/components/MetricCard.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import EmptyCard from '@/components/EmptyCard.vue'
 import ChartPanel from '@/components/ChartPanel.vue'
+import AttributionPanel from '@/components/AttributionPanel.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -539,21 +540,36 @@ async function submitQuery() {
   await runTurn(query, (opts) => props.streamFn(query, opts))
 }
 
-// ── 归因分析:对该轮结果做"为什么变化"的多维拆解(SSE 新一轮,复用整套渲染) ──
-async function onAttribution(message: AgentReplyMessage) {
-  if (!shouldShowResult(message.result) || isLoading.value) return
-  const q = questionFor(message)
-  await runTurn(`归因分析:${q}`, (opts) =>
-    streamAttribution(
-      {
-        rows: message.result,
-        query: q,
-        sql: message.sql,
-        datasetId: props.source === 'dataset' ? props.datasetId : undefined,
-      },
-      { ...opts, datasourceId: props.datasourceId },
-    ),
-  )
+// ── 归因分析:口径弹层(同比/环比)→ 右侧面板独立 SSE,不占用聊天 ──────
+const attributionPanel = ref<InstanceType<typeof AttributionPanel> | null>(null)
+// 待归因的那条回复(非 null 时显示口径弹层)
+const attributionTarget = ref<AgentReplyMessage | null>(null)
+const attributionCompareType = ref<CompareType>('mom')
+
+function onAttribution(message: AgentReplyMessage) {
+  if (!shouldShowResult(message.result)) return
+  attributionCompareType.value = 'mom'
+  attributionTarget.value = message
+}
+
+function closeAttributionModal() {
+  attributionTarget.value = null
+}
+
+// 确定归因:关弹层,在右侧面板里发起(归因不挂 isLoading,聊天照常可用)
+function confirmAttribution() {
+  const message = attributionTarget.value
+  if (!message) return
+  attributionTarget.value = null
+  void attributionPanel.value?.open({
+    rows: message.result,
+    query: questionFor(message),
+    sql: message.sql,
+    compareType: attributionCompareType.value,
+    datasetId: props.source === 'dataset' ? props.datasetId : undefined,
+    datasourceId: props.datasourceId,
+    conversationId: activeConversationId.value,
+  })
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -1009,12 +1025,11 @@ onBeforeUnmount(() => {
               导出数据
             </button>
 
-            <!-- 归因分析:对该轮结果做"为什么变化"的多维拆解(新一轮 SSE 对话) -->
+            <!-- 归因分析:口径弹层选同比/环比 → 右侧面板独立分析(不占用聊天,无需禁用) -->
             <button
               v-if="shouldShowResult(message.result)"
               type="button"
-              :disabled="isLoading"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
               @click="onAttribution(message)"
             >
               <!-- 分叉/拆解图标 -->
@@ -1301,5 +1316,63 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <!-- 归因口径弹层:先选同比/环比,点「确定归因」才开始 -->
+    <div
+      v-if="attributionTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      @click.self="closeAttributionModal"
+    >
+      <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+        <h3 class="text-base font-semibold text-slate-800">归因分析</h3>
+        <p class="mt-1 text-xs text-slate-400">选择对比口径，分析将在右侧面板进行，不影响继续提问</p>
+
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <button
+            v-for="opt in ([
+              { value: 'mom', label: '环比', desc: '与上一期对比' },
+              { value: 'yoy', label: '同比', desc: '与去年同期对比' },
+            ] as { value: CompareType; label: string; desc: string }[])"
+            :key="opt.value"
+            type="button"
+            class="rounded-2xl border px-4 py-3 text-left transition"
+            :class="
+              attributionCompareType === opt.value
+                ? 'border-sky-400 bg-sky-50 shadow-[0_0_0_3px_rgba(186,230,253,0.7)]'
+                : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/50'
+            "
+            @click="attributionCompareType = opt.value"
+          >
+            <p
+              class="text-sm font-semibold"
+              :class="attributionCompareType === opt.value ? 'text-sky-700' : 'text-slate-700'"
+            >
+              {{ opt.label }}
+            </p>
+            <p class="mt-0.5 text-xs text-slate-400">{{ opt.desc }}</p>
+          </button>
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+            @click="closeAttributionModal"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
+            @click="confirmAttribution"
+          >
+            确定归因
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 归因面板:右侧滑出,独立 SSE,不碰聊天状态 -->
+    <AttributionPanel ref="attributionPanel" />
   </div>
 </template>
