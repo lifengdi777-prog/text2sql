@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { hasDisplayableResult } from '@/lib/result-display'
 import { exportRowsToCsv } from '@/lib/export'
 import { uuid } from '@/lib/uuid'
-import { toErrorMessage, generateChart } from '@/services/agent'
+import { toErrorMessage, generateChart, fetchHotQuestions } from '@/services/agent'
 import {
   type ConversationBrief,
   type ConversationSource,
@@ -240,16 +240,33 @@ async function confirmDelete() {
   }
 }
 
-onMounted(loadConversations)
+// ── 空状态「历史热门问题」:本数据源缓存命中最多的问题 ────────────────
+// 点选直接提问:问题文本与缓存逐字相同 → 必然精确命中 SQL 缓存,秒出结果。
+const hotQuestions = ref<string[]>([])
+async function loadHotQuestions() {
+  if (props.source !== 'db' || !props.datasourceId) return
+  hotQuestions.value = await fetchHotQuestions(props.datasourceId)
+}
+function askHotQuestion(q: string) {
+  if (isLoading.value) return
+  inputValue.value = q
+  void submitQuery()
+}
+
+onMounted(() => {
+  void loadConversations()
+  void loadHotQuestions()
+})
 
 // 切换数据源(/db 路由数据源在 query 里,切源不会重挂载组件):
-// 重置对话区 + 重新拉取该源的历史列表,避免残留上一个源的会话。
+// 重置对话区 + 重新拉取该源的历史列表与热门问题,避免残留上一个源的内容。
 watch(
   () => props.datasourceId,
   () => {
     if (props.source !== 'db') return
     newConversation()
     void loadConversations()
+    void loadHotQuestions()
   },
 )
 
@@ -671,6 +688,41 @@ onBeforeUnmount(() => {
       ref="scrollContainer"
       class="flex-1 space-y-6 overflow-y-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.48),rgba(241,245,249,0.72))] px-4 py-6 sm:px-6 lg:px-8"
     >
+      <!-- 空状态:历史热门问题(本数据源缓存命中最多的问题;点选逐字提问 → 必中 SQL 缓存,秒出结果) -->
+      <div
+        v-if="messages.length === 0 && hotQuestions.length > 0"
+        class="mx-auto w-full max-w-5xl"
+      >
+        <section class="rounded-3xl border border-sky-100 bg-sky-50/70 p-4 sm:p-5">
+          <div class="mb-4 flex items-center gap-2.5">
+            <span
+              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm"
+            >
+              <!-- 火焰图标(热门) -->
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+              </svg>
+            </span>
+            <div>
+              <p class="text-sm font-semibold text-slate-800">大家都在问</p>
+              <p class="mt-0.5 text-xs text-slate-500">点击直接提问 · 历史已验证的问题，响应更快</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              v-for="q in hotQuestions"
+              :key="q"
+              type="button"
+              class="rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left text-xs leading-6 text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 sm:text-sm"
+              :disabled="isLoading"
+              @click="askHotQuestion(q)"
+            >
+              {{ q }}
+            </button>
+          </div>
+        </section>
+      </div>
+
       <div
         v-for="message in messages"
         :key="message.id"

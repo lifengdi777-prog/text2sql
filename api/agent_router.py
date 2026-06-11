@@ -16,12 +16,35 @@ from clients.embedding import embedding_client
 from repositories.es import ESRepository
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 from repositories.conversation import ConversationRepository
+from repositories.datasource import DatasourceRepository
+from repositories.sql_cache import SqlCacheRepository
 from services.excel_ingest import get_session_factory
 from langchain.messages import HumanMessage
 from agent.schemas import WSAgentContext
 
 
 router = APIRouter(prefix="/agent")
+
+
+@router.get("/hot-questions")
+async def hot_questions(datasource_id: str = "ds_default", limit: int = 6,
+                        user_id: str = Depends(get_current_user)):
+    """问数页空状态的「历史热门问题」:本数据源当前版本下命中最多的缓存问题。
+
+    点选后逐字提问 → 必然精确命中 SQL 缓存,秒出结果(行为层提升缓存命中率)。
+    任何异常都返回空列表:这是锦上添花的区块,绝不影响问数主流程。
+    """
+    limit = max(1, min(limit, 12))
+    try:
+        async with meta_mysql_client.session() as session:
+            ds = await DatasourceRepository(session).get_by_id(datasource_id)
+            meta_version = (ds.meta_version if ds else 1) or 1
+            questions = await SqlCacheRepository(session).top_questions(
+                datasource_id, meta_version, limit)
+        return {"questions": questions}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"取热门问题失败(前端将不显示该区块):{exc}")
+        return {"questions": []}
 
 
 async def query_graph(query: str, user_id: str | None = None, user_name: str | None = None,
