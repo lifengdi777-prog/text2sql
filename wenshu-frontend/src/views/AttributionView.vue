@@ -11,7 +11,7 @@
  * 结构:进度区(步骤卡)→ 结果区(指标卡+变化徽章 → 核心结论 →
  *       维度 chips → 贡献度横向条形(ECharts)→ 维度明细表 → 查看 SQL)。
  * 说明卡带 suggest_compare_type 时渲染「改用环比/同比重试」按钮;
- * 「保存到对话」把结论+主维度明细落进发起归因的那个会话(可回放)。
+ * 「下载 PDF」走浏览器打印导出(图表用 SVG 渲染,保证打印可见)。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -20,7 +20,7 @@ import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import { SVGRenderer } from 'echarts/renderers'
 
 import {
   streamAttributionEvents,
@@ -29,9 +29,7 @@ import {
   type CompareType,
 } from '@/services/agent'
 import { loadAttributionEntry, saveAttributionEntry } from '@/lib/attribution-handoff'
-import { appendConversationMessage } from '@/services/conversation'
 import type { AgentEvent } from '@/lib/sse'
-import type { ResultRow } from '@/types/agent'
 import {
   isAttributionResult,
   type AttributionResult,
@@ -39,7 +37,8 @@ import {
   type AttributionStep,
 } from '@/types/attribution'
 
-use([CanvasRenderer, BarChart, GridComponent, TooltipComponent])
+// SVG 渲染(而非 canvas):「下载 PDF」走浏览器打印,canvas 在打印快照里是空白,SVG 矢量必现
+use([SVGRenderer, BarChart, GridComponent, TooltipComponent])
 
 const COMPARE_CN: Record<CompareType, string> = { mom: '环比', yoy: '同比' }
 const COMPARE_OPTIONS: { value: CompareType; label: string; desc: string }[] = [
@@ -101,8 +100,6 @@ function restoreSnapshot(snap: AttributionSnapshot) {
   sqlExpanded.value = false
   stepsCollapsed.value = null
   running.value = false
-  saveState.value = 'idle'
-  savableConvId.value = lastRequest?.conversationId ?? null
 }
 
 function persistEntry() {
@@ -116,7 +113,6 @@ function persistEntry() {
 function resetState(req: AttributionRequest) {
   query.value = req.query
   compareType.value = req.compareType
-  savableConvId.value = req.conversationId ?? null
   steps.value = []
   result.value = null
   clarify.value = null
@@ -125,7 +121,6 @@ function resetState(req: AttributionRequest) {
   activeDimIndex.value = 0
   sqlExpanded.value = false
   stepsCollapsed.value = null
-  saveState.value = 'idle'
 }
 
 function extractDetail(data: AgentEvent['data']): string | undefined {
@@ -231,36 +226,6 @@ function rerun() {
   void run(lastRequest)
 }
 
-// ── 保存到对话:结论 + 主维度贡献明细落进发起归因的会话(历史可回放)──
-const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
-const savableConvId = ref<number | null>(null)
-
-function buildSavePayload(): Record<string, unknown> {
-  const r = result.value!
-  const ph = r.phenomenon
-  const main = r.dimensions[0]
-  // 主维度贡献清单拍成结果行:历史回放时走现有表格渲染
-  const rows: ResultRow[] = main
-    ? main.members.map((m) => ({
-        [main.name]: m.member,
-        [`观察期(${ph.target_period})`]: m.target_value,
-        [`基准期(${ph.baseline_period})`]: m.baseline_value,
-        变化量: m.change,
-        '增幅%': m.change_pct === null ? null : Number(m.change_pct.toFixed(1)),
-        '贡献度%': m.contribution_pct === null ? null : Number(m.contribution_pct.toFixed(1)),
-      }))
-    : []
-  return {
-    steps: [{ step: '归因分析', status: 'success' }],
-    result: rows,
-    chartConfig: null,
-    interpretation: [ph.description, r.conclusion].filter(Boolean).join('\n\n'),
-    sql: main?.target_sql ?? null,
-    guideQueries: [],
-    status: 'success',
-  }
-}
-
 // 下载 PDF:走浏览器打印(长内容自动分页、文字矢量、零依赖);
 // 打印样式隐藏交互元素(口径按钮/进度区/SQL/chips),只留结果本体
 function downloadPdf() {
@@ -272,21 +237,6 @@ function downloadPdf() {
     window.print()
   } finally {
     document.title = original
-  }
-}
-
-async function saveToConversation() {
-  const convId = savableConvId.value
-  if (!result.value || convId === null || saveState.value === 'saving' || saveState.value === 'saved') return
-  saveState.value = 'saving'
-  const ph = result.value.phenomenon
-  const question = `归因分析:${query.value}(${COMPARE_CN[compareType.value]},观察期 ${ph.target_period})`
-  try {
-    await appendConversationMessage(convId, question, buildSavePayload())
-    saveState.value = 'saved'
-  } catch (error) {
-    console.error('[归因保存到对话] 失败:', error)
-    saveState.value = 'error'
   }
 }
 
@@ -427,7 +377,7 @@ const barOption = computed(() => {
           </div>
         </div>
 
-        <!-- 口径切换(命中快照直接回放)/ 重新分析 / 下载 PDF / 保存到对话 -->
+        <!-- 口径切换(命中快照直接回放)/ 重新分析 / 下载 PDF -->
         <div v-if="!missing" class="flex shrink-0 items-center gap-1.5 print:hidden">
           <button
             v-for="opt in COMPARE_OPTIONS"
@@ -470,31 +420,6 @@ const barOption = computed(() => {
               <line x1="12" y1="15" x2="12" y2="3" stroke-linecap="round" />
             </svg>
             下载 PDF
-          </button>
-
-          <button
-            v-if="result && savableConvId !== null"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition disabled:cursor-not-allowed"
-            :class="
-              saveState === 'saved'
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-600'
-                : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
-            "
-            :disabled="saveState === 'saving' || saveState === 'saved'"
-            @click="saveToConversation"
-          >
-            <svg v-if="saveState !== 'saved'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-              <path d="M17 21v-8H7v8M7 3v5h8" />
-            </svg>
-            <span v-else aria-hidden="true">✓</span>
-            {{
-              saveState === 'saving' ? '保存中…'
-              : saveState === 'saved' ? '已保存'
-              : saveState === 'error' ? '保存失败,重试'
-              : '保存到对话'
-            }}
           </button>
         </div>
       </div>
@@ -672,6 +597,7 @@ const barOption = computed(() => {
               <VChart
                 :option="barOption"
                 :autoresize="true"
+                :init-options="{ renderer: 'svg' }"
                 :style="{ height: `${chartHeight}px`, width: '100%' }"
               />
             </div>
