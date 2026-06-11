@@ -25,6 +25,7 @@ from agent.dataset_edit_agent.graph import dataset_edit_graph
 from agent.dataset_edit_agent.schemas import DatasetEditContext, DatasetEditState
 from api.deps import get_current_user, require_owned_dataset
 from core.log import logger
+from core.rate_limit import llm_rate_limiter
 from repositories.dataset_edit import DatasetEditRepository
 from services.dataset_loader import get_dataset_info
 from services.duckdb_edit import EditWorkbook
@@ -148,6 +149,9 @@ async def edit_message(dataset_id: int, session_id: int, body: EditMessageBody,
     )
     context = DatasetEditContext(user_id=user_id)
 
+    # 按用户限流(并发+频率),防单用户打满 LLM 配额;超限抛 429,流结束自动释放并发槽
+    llm_rate_limiter.acquire(user_id)
+
     async def _sse():
         yield f"data: {json.dumps({'session_id': session_id})}\n\n"
         try:
@@ -163,7 +167,8 @@ async def edit_message(dataset_id: int, session_id: int, body: EditMessageBody,
                              data={"error": "服务处理异常,请重试"}, finish=True)
             yield f"data: {err.model_dump_json()}\n\n"
 
-    return StreamingResponse(_sse(), media_type="text/event-stream")
+    return StreamingResponse(llm_rate_limiter.stream(user_id, _sse()),
+                             media_type="text/event-stream")
 
 
 # ───────────────────────── 撤销 ─────────────────────────

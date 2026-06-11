@@ -133,6 +133,21 @@ class CORSConfig(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RateLimitConfig(BaseModel):
+    """按用户限流,保护吃 LLM 配额的端点(问数/数据集问答/智能编辑/按需图表)。
+
+    单进程内存实现(零依赖):多 worker 部署时各进程独立计数,
+    实际上限 ≈ 配置值 × worker 数;需要跨进程精确限流再换 Redis。
+    """
+    enabled: bool = True
+    # 单用户同时进行中的 LLM 管线数(SSE 流从开始到结束都算占用)
+    max_concurrent: int = 2
+    # 单用户每分钟最多发起的请求次数(滑动窗口)
+    max_per_minute: int = 20
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class LangfuseConfig(BaseModel):
     """Langfuse 可观测(自托管/云)。enabled=false 或缺 key → 不追踪,全链路零侵入。"""
     enabled: bool = False
@@ -161,6 +176,8 @@ class AppConfig(BaseModel):
     cors: CORSConfig = CORSConfig()
     # Langfuse 可观测。不配置/enabled=false 则不追踪(本地开发默认关)
     langfuse: LangfuseConfig = LangfuseConfig()
+    # 按用户限流(LLM 端点)。不配置则用默认值(并发 2 / 每分钟 20)
+    rate_limit: RateLimitConfig = RateLimitConfig()
 
 config_path = Path(__file__).parent / "app_config.yaml"
 #context就是从app_config.yaml文件中读取的配置数据。

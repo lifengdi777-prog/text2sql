@@ -107,3 +107,11 @@ langfuse:
   public_key: "pk-lf-..."
   secret_key: "sk-lf-..."
   host: "http://localhost:3000"
+
+# ── 按用户限流(LLM 端点)──────────────────────────────────────────────────
+# 保护吃 LLM 配额的端点(问数/数据集问答/智能编辑/按需图表),防单用户打满配额。
+# 不配置即用默认值;单进程内存实现,多 worker 时各进程独立计数(上限 ≈ 配置 × worker 数)。
+# rate_limit:
+#   enabled: true
+#   max_concurrent: 2     # 单用户同时进行中的 LLM 管线数(SSE 全程算占用)
+#   max_per_minute: 20    # 单用户每分钟最多请求次数(滑动窗口)

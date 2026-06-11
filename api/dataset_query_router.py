@@ -15,6 +15,7 @@ from agent.supervisor.graph import dataset_supervisor
 from agent.supervisor.schemas import SupervisorContext, SupervisorState
 from api.deps import get_current_user, get_current_username, require_owned_dataset
 from clients.langfuse import build_run_config
+from core.rate_limit import llm_rate_limiter
 
 router = APIRouter(prefix="/dataset")
 
@@ -75,8 +76,10 @@ async def query_dataset(
     # 先校验归属:不属于当前用户(或不存在)→ 404,绝不进入流式计算管线
     await require_owned_dataset(dataset_id, user_id)
     request_id = getattr(request.state, "request_id", None)
+    # 按用户限流(并发+频率),防单用户打满 LLM 配额;超限抛 429,流结束自动释放并发槽
+    llm_rate_limiter.acquire(user_id)
     return StreamingResponse(
-        stream_with_history(
+        llm_rate_limiter.stream(user_id, stream_with_history(
             _graph_chunks(dataset_id, body.query, user_id, user_name=user_name,
                           request_id=request_id, session_id=body.conversation_id),
             user_id=user_id,
@@ -84,6 +87,6 @@ async def query_dataset(
             query=body.query,
             conversation_id=body.conversation_id,
             dataset_id=dataset_id,
-        ),
+        )),
         media_type="text/event-stream",
     )

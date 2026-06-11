@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from api.schemas import QueryInput
 from api.deps import get_current_user, get_current_username
 from core.log import logger
+from core.rate_limit import llm_rate_limiter
 from agent.common.history import stream_with_history
 from clients.langfuse import build_run_config
 from agent.supervisor.graph import db_supervisor
@@ -85,9 +86,11 @@ async def query_data(data: QueryInput, request: Request, user_id: str = Depends(
     query = data.query
     request_id = getattr(request.state, "request_id", None)
     logger.info(f"[/agent/query] user_id={user_id} query={query!r}")  # 审计:记录谁问了什么
+    # 按用户限流(并发+频率),防单用户打满 LLM 配额;超限抛 429,流结束自动释放并发槽
+    llm_rate_limiter.acquire(user_id)
     # 用 stream_with_history 包一层:落库会话历史(归属当前用户),并回传 conversation_id
     return StreamingResponse(
-        stream_with_history(
+        llm_rate_limiter.stream(user_id, stream_with_history(
             query_graph(query, user_id=user_id, user_name=user_name, request_id=request_id,
                         session_id=data.conversation_id,
                         datasource_id=data.datasource_id, database=data.database),
@@ -96,6 +99,6 @@ async def query_data(data: QueryInput, request: Request, user_id: str = Depends(
             query=query,
             conversation_id=data.conversation_id,
             datasource_id=data.datasource_id,
-        ),
+        )),
         media_type="text/event-stream",
     )
