@@ -1,15 +1,17 @@
 <script setup lang="ts">
 /**
- * 归因分析右侧滑出面板(非阻塞):独立消费 /agent/attribution 的 SSE,
- * 不走 runTurn、不碰聊天状态 —— 归因进行中聊天照常可用。
+ * 归因分析独立页面:从聊天页结果卡发起,window.open 新标签页打开(完全不占用聊天)。
+ *
+ * 数据交接:URL 只带 ?id=,请求体(结果行/问题/口径等)经 localStorage 传递
+ * (见 lib/attribution-handoff.ts);F5 刷新凭 id 重跑,子查询命中后端 SQL 缓存。
  *
  * 结构:进度区(步骤卡)→ 结果区(指标卡+变化徽章 → 核心结论 →
  *       维度 chips → 贡献度横向条形(ECharts)→ 维度明细表 → 查看 SQL)。
- * 说明卡带 suggest_compare_type 时渲染「改用环比/同比重试」按钮(带新口径重发请求)。
- *
- * 父组件通过 defineExpose 的 open(params) 发起归因;重复 open 会中止上一次。
+ * 头部可直接切换口径(环比/同比)对同一份数据重跑;
+ * 说明卡带 suggest_compare_type 时渲染「改用环比/同比重试」按钮。
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import VChart from 'vue-echarts'
 
 import { use } from 'echarts/core'
@@ -23,6 +25,7 @@ import {
   type AttributionRequest,
   type CompareType,
 } from '@/services/agent'
+import { loadAttributionRequest, restashAttributionRequest } from '@/lib/attribution-handoff'
 import type { AgentEvent } from '@/lib/sse'
 import type { StepStatus } from '@/types/agent'
 import { isAttributionResult, type AttributionResult } from '@/types/attribution'
@@ -30,6 +33,10 @@ import { isAttributionResult, type AttributionResult } from '@/types/attribution
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent])
 
 const COMPARE_CN: Record<CompareType, string> = { mom: '环比', yoy: '同比' }
+const COMPARE_OPTIONS: { value: CompareType; label: string; desc: string }[] = [
+  { value: 'mom', label: '环比', desc: '与上一期对比' },
+  { value: 'yoy', label: '同比', desc: '与去年同期对比' },
+]
 
 interface PanelStep {
   step: string
@@ -37,7 +44,11 @@ interface PanelStep {
   detail?: string
 }
 
-const visible = ref(false)
+const route = useRoute()
+const handoffId = computed(() => (typeof route.query.id === 'string' ? route.query.id : ''))
+
+// 交接数据缺失(链接过期/直接访问):显示引导而非空白页
+const missing = ref(false)
 const running = ref(false)
 const query = ref('')
 const compareType = ref<CompareType>('mom')
@@ -118,13 +129,12 @@ function onEvent(event: AgentEvent) {
   }
 }
 
-async function open(req: AttributionRequest) {
+async function run(req: AttributionRequest) {
   controller?.abort()
   const current = new AbortController()
   controller = current
   lastRequest = req
   resetState(req)
-  visible.value = true
   running.value = true
 
   try {
@@ -143,22 +153,30 @@ async function open(req: AttributionRequest) {
   }
 }
 
-// 「改用环比/同比重试」:同一份数据,换口径重发
-function retryWithSuggested() {
-  if (!lastRequest || !suggestCompareType.value) return
-  void open({ ...lastRequest, compareType: suggestCompareType.value })
+// 切换口径:同一份数据换口径重跑;回写交接条目让 F5 保留最后选择
+function switchCompare(ct: CompareType) {
+  if (!lastRequest || ct === compareType.value) return
+  const req = { ...lastRequest, compareType: ct }
+  if (handoffId.value) restashAttributionRequest(handoffId.value, req)
+  void run(req)
 }
 
-function close() {
-  controller?.abort()
-  controller = null
-  running.value = false
-  visible.value = false
+// 「改用环比/同比重试」(基准期无数据时的建议)
+function retryWithSuggested() {
+  if (suggestCompareType.value) switchCompare(suggestCompareType.value)
 }
+
+onMounted(() => {
+  const req = handoffId.value ? loadAttributionRequest(handoffId.value) : null
+  if (!req) {
+    missing.value = true
+    return
+  }
+  document.title = `归因分析 · ${req.query}`
+  void run(req)
+})
 
 onBeforeUnmount(() => controller?.abort())
-
-defineExpose({ open })
 
 // ── 展示派生 ────────────────────────────────────────────
 const phenomenon = computed(() => result.value?.phenomenon ?? null)
@@ -188,12 +206,12 @@ function fmtPct(v: number | null | undefined, signed = false): string {
 const CONTRIB_POS = '#f43f5e'
 const CONTRIB_NEG = '#10b981'
 
-const chartHeight = computed(() => Math.max(150, chartMembers.value.length * 32 + 30))
+const chartHeight = computed(() => Math.max(170, chartMembers.value.length * 34 + 40))
 
 const barOption = computed(() => {
   const members = [...chartMembers.value].reverse()
   return {
-    grid: { left: 8, right: 56, top: 8, bottom: 8, containLabel: true },
+    grid: { left: 8, right: 64, top: 12, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis' as const,
       axisPointer: { type: 'shadow' as const },
@@ -211,20 +229,20 @@ const barOption = computed(() => {
     },
     xAxis: {
       type: 'value' as const,
-      axisLabel: { formatter: '{value}%', fontSize: 10, color: '#94a3b8' },
+      axisLabel: { formatter: '{value}%', fontSize: 11, color: '#94a3b8' },
       splitLine: { lineStyle: { color: '#f1f5f9' } },
     },
     yAxis: {
       type: 'category' as const,
       data: members.map((m) => m.member),
-      axisLabel: { fontSize: 11, color: '#475569' },
+      axisLabel: { fontSize: 12, color: '#475569' },
       axisTick: { show: false },
       axisLine: { lineStyle: { color: '#e2e8f0' } },
     },
     series: [
       {
         type: 'bar' as const,
-        barMaxWidth: 16,
+        barMaxWidth: 18,
         data: members.map((m) => ({
           value: m.contribution_pct === null ? 0 : Number(m.contribution_pct.toFixed(1)),
           itemStyle: {
@@ -235,7 +253,7 @@ const barOption = computed(() => {
         label: {
           show: true,
           position: 'right' as const,
-          fontSize: 10,
+          fontSize: 11,
           color: '#64748b',
           formatter: '{c}%',
         },
@@ -246,55 +264,74 @@ const barOption = computed(() => {
 </script>
 
 <template>
-  <Transition
-    enter-active-class="transition-transform duration-300 ease-out"
-    enter-from-class="translate-x-full"
-    enter-to-class="translate-x-0"
-    leave-active-class="transition-transform duration-200 ease-in"
-    leave-from-class="translate-x-0"
-    leave-to-class="translate-x-full"
-  >
-    <aside
-      v-show="visible"
-      class="fixed inset-y-0 right-0 z-40 flex w-[480px] max-w-[94vw] flex-col border-l border-slate-200 bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.18)]"
-    >
-      <!-- 头部 -->
-      <header class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+  <div class="min-h-screen bg-[linear-gradient(180deg,rgba(255,255,255,0.6),rgba(241,245,249,0.9))]">
+    <!-- 顶栏 -->
+    <header class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 backdrop-blur">
+      <div class="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <h3 class="text-base font-semibold text-slate-900">归因分析</h3>
+          <div class="flex items-center gap-2.5">
             <span
-              class="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700"
+              class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-rose-500 text-white shadow-sm"
             >
-              {{ COMPARE_CN[compareType] }}
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="12" r="3" />
+                <path d="M9 6h4a2 2 0 0 1 2 2v0" />
+                <path d="M9 18h4a2 2 0 0 0 2-2v0" />
+              </svg>
             </span>
+            <div class="min-w-0">
+              <h1 class="text-base font-semibold text-slate-900">归因分析</h1>
+              <p class="truncate text-xs text-slate-500" :title="query">{{ query }}</p>
+            </div>
             <span
               v-if="running"
-              class="h-4 w-4 rounded-full border-2 border-sky-200 border-t-sky-500 animate-spin"
+              class="h-4 w-4 shrink-0 rounded-full border-2 border-sky-200 border-t-sky-500 animate-spin"
             />
           </div>
-          <p class="mt-1 truncate text-xs text-slate-500" :title="query">{{ query }}</p>
         </div>
-        <button
-          type="button"
-          class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-          title="关闭"
-          @click="close"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
-            <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
-          </svg>
-        </button>
-      </header>
 
-      <!-- 内容区 -->
-      <div class="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <!-- 口径切换:对同一份数据换口径重跑 -->
+        <div v-if="!missing" class="flex shrink-0 items-center gap-1.5">
+          <button
+            v-for="opt in COMPARE_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="rounded-full border px-3 py-1 text-xs font-medium transition"
+            :class="
+              compareType === opt.value
+                ? 'border-amber-400 bg-amber-50 text-amber-700'
+                : 'border-slate-200 bg-white text-slate-500 hover:border-amber-300 hover:text-amber-600'
+            "
+            :title="opt.desc"
+            @click="switchCompare(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-3xl space-y-4 px-4 py-5 sm:px-6">
+      <!-- 交接数据缺失:链接过期或直接访问 -->
+      <section
+        v-if="missing"
+        class="rounded-2xl border border-slate-200 bg-white p-8 text-center"
+      >
+        <p class="text-sm font-medium text-slate-700">没有找到归因数据</p>
+        <p class="mt-2 text-xs leading-6 text-slate-500">
+          归因链接已过期或被直接访问。请回到问数页面，在查询结果卡上点「归因分析」重新发起。
+        </p>
+      </section>
+
+      <template v-else>
         <!-- 进度区:结果出来后折叠为一行,可展开回看 -->
         <section v-if="steps.length > 0">
           <button
             v-if="showStepsCollapsed"
             type="button"
-            class="flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-left transition hover:border-sky-300 hover:bg-sky-50"
+            class="flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left transition hover:border-sky-300 hover:bg-sky-50"
             @click="stepsCollapsed = false"
           >
             <span
@@ -310,7 +347,7 @@ const barOption = computed(() => {
             <div
               v-for="step in steps"
               :key="step.step"
-              class="flex items-start gap-2.5 rounded-xl border border-slate-100 bg-slate-50/80 px-3.5 py-2.5"
+              class="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5"
             >
               <span
                 v-if="step.status === 'running'"
@@ -353,7 +390,7 @@ const barOption = computed(() => {
         >
           <div class="flex items-start gap-2">
             <span class="text-base leading-6">💡</span>
-            <p class="text-xs leading-6 text-amber-800">{{ clarify }}</p>
+            <p class="text-xs leading-6 text-amber-800 sm:text-sm">{{ clarify }}</p>
           </div>
           <button
             v-if="suggestCompareType"
@@ -371,7 +408,7 @@ const barOption = computed(() => {
         <!-- 错误卡 -->
         <section
           v-if="errorMessage"
-          class="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-xs leading-6 text-rose-700"
+          class="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-xs leading-6 text-rose-700 sm:text-sm"
         >
           {{ errorMessage }}
         </section>
@@ -379,38 +416,38 @@ const barOption = computed(() => {
         <!-- 结果区 -->
         <template v-if="result && phenomenon">
           <!-- 指标卡:本期总值 + 变化徽章 -->
-          <section class="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4">
-            <p class="text-xs text-slate-500">
+          <section class="rounded-2xl border border-slate-200 bg-white p-5">
+            <p class="text-xs text-slate-500 sm:text-sm">
               {{ phenomenon.target_period }}{{ phenomenon.scope || '' }} · {{ phenomenon.metric }}
             </p>
-            <div class="mt-1.5 flex flex-wrap items-baseline gap-2.5">
-              <span class="text-2xl font-bold tracking-tight text-slate-900">
+            <div class="mt-2 flex flex-wrap items-baseline gap-3">
+              <span class="text-3xl font-bold tracking-tight text-slate-900">
                 {{ fmtNum(phenomenon.target_value) }}
               </span>
               <span
-                class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold sm:text-sm"
                 :class="changeUp ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'"
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3 w-3">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="h-3.5 w-3.5">
                   <path v-if="changeUp" d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round" />
                   <path v-else d="M12 5v14M19 12l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
                 {{ fmtSigned(phenomenon.change) }}({{ fmtPct(phenomenon.change_pct, true) }})
               </span>
             </div>
-            <p class="mt-1.5 text-[11px] text-slate-400">
+            <p class="mt-2 text-xs text-slate-400">
               {{ COMPARE_CN[compareType] }}基准:{{ phenomenon.baseline_period }} ·
               {{ fmtNum(phenomenon.baseline_value) }}
             </p>
           </section>
 
           <!-- 核心结论 -->
-          <section class="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+          <section class="rounded-2xl border border-violet-100 bg-violet-50/60 p-5">
             <div class="mb-2 flex items-center gap-2">
               <span class="h-1.5 w-1.5 rounded-full bg-violet-400"></span>
-              <span class="text-xs font-semibold text-violet-700">核心结论</span>
+              <span class="text-xs font-semibold text-violet-700 sm:text-sm">核心结论</span>
             </div>
-            <p class="whitespace-pre-line text-xs leading-6 text-slate-700">
+            <p class="whitespace-pre-line text-xs leading-7 text-slate-700 sm:text-sm">
               {{ result.conclusion }}
             </p>
           </section>
@@ -421,7 +458,7 @@ const barOption = computed(() => {
               v-for="(dim, i) in result.dimensions"
               :key="dim.name"
               type="button"
-              class="rounded-full border px-3.5 py-1.5 text-xs font-medium transition"
+              class="rounded-full border px-4 py-1.5 text-xs font-medium transition sm:text-sm"
               :class="
                 i === activeDimIndex
                   ? 'border-sky-400 bg-sky-50 text-sky-700 shadow-[0_0_0_3px_rgba(186,230,253,0.6)]'
@@ -435,16 +472,16 @@ const barOption = computed(() => {
 
           <!-- 贡献度排名(横向条形) -->
           <section v-if="activeDim" class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2.5">
-              <h4 class="text-xs font-semibold text-slate-700">
+            <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
+              <h4 class="text-xs font-semibold text-slate-700 sm:text-sm">
                 {{ activeDim.name }} · 贡献度排名
               </h4>
-              <span class="text-[10px] text-slate-400">
+              <span class="text-[11px] text-slate-400">
                 <span :style="{ color: CONTRIB_POS }">■</span> 推动变化
                 <span class="ml-1.5" :style="{ color: CONTRIB_NEG }">■</span> 反向变动
               </span>
             </div>
-            <div class="px-2 py-3">
+            <div class="px-3 py-4">
               <VChart
                 :option="barOption"
                 :autoresize="true"
@@ -454,17 +491,17 @@ const barOption = computed(() => {
           </section>
 
           <!-- 维度明细表 -->
-          <section v-if="activeDim" class="overflow-hidden rounded-2xl border border-slate-200">
+          <section v-if="activeDim" class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div class="overflow-x-auto">
-              <table class="w-full text-xs">
+              <table class="w-full text-xs sm:text-sm">
                 <thead>
                   <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-500">
-                    <th class="px-3 py-2 font-medium">{{ activeDim.name }}</th>
-                    <th class="px-3 py-2 text-right font-medium">观察期</th>
-                    <th class="px-3 py-2 text-right font-medium">基准期</th>
-                    <th class="px-3 py-2 text-right font-medium">变化量</th>
-                    <th class="px-3 py-2 text-right font-medium">增幅</th>
-                    <th class="px-3 py-2 text-right font-medium">贡献度</th>
+                    <th class="px-4 py-2.5 font-medium">{{ activeDim.name }}</th>
+                    <th class="px-4 py-2.5 text-right font-medium">观察期</th>
+                    <th class="px-4 py-2.5 text-right font-medium">基准期</th>
+                    <th class="px-4 py-2.5 text-right font-medium">变化量</th>
+                    <th class="px-4 py-2.5 text-right font-medium">增幅</th>
+                    <th class="px-4 py-2.5 text-right font-medium">贡献度</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -473,21 +510,21 @@ const barOption = computed(() => {
                     :key="m.member"
                     class="border-b border-slate-100 last:border-0 hover:bg-slate-50/70"
                   >
-                    <td class="max-w-[120px] truncate px-3 py-2 font-medium text-slate-700" :title="m.member">
+                    <td class="max-w-[160px] truncate px-4 py-2.5 font-medium text-slate-700" :title="m.member">
                       {{ m.member }}
                     </td>
-                    <td class="px-3 py-2 text-right tabular-nums text-slate-600">{{ fmtNum(m.target_value) }}</td>
-                    <td class="px-3 py-2 text-right tabular-nums text-slate-600">{{ fmtNum(m.baseline_value) }}</td>
+                    <td class="px-4 py-2.5 text-right tabular-nums text-slate-600">{{ fmtNum(m.target_value) }}</td>
+                    <td class="px-4 py-2.5 text-right tabular-nums text-slate-600">{{ fmtNum(m.baseline_value) }}</td>
                     <td
-                      class="px-3 py-2 text-right font-medium tabular-nums"
+                      class="px-4 py-2.5 text-right font-medium tabular-nums"
                       :class="m.change > 0 ? 'text-emerald-600' : m.change < 0 ? 'text-rose-600' : 'text-slate-500'"
                     >
                       {{ fmtSigned(m.change) }}
                     </td>
-                    <td class="px-3 py-2 text-right tabular-nums text-slate-600">
+                    <td class="px-4 py-2.5 text-right tabular-nums text-slate-600">
                       {{ m.change_pct === null ? '新增' : fmtPct(m.change_pct, true) }}
                     </td>
-                    <td class="px-3 py-2 text-right font-semibold tabular-nums text-slate-700">
+                    <td class="px-4 py-2.5 text-right font-semibold tabular-nums text-slate-700">
                       {{ fmtPct(m.contribution_pct) }}
                     </td>
                   </tr>
@@ -500,7 +537,7 @@ const barOption = computed(() => {
           <section v-if="activeDim && (activeDim.target_sql || activeDim.baseline_sql)">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
               @click="sqlExpanded = !sqlExpanded"
             >
               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -529,11 +566,11 @@ const barOption = computed(() => {
         <!-- 起始占位:还没有任何事件时 -->
         <p
           v-if="steps.length === 0 && !result && !errorMessage && running"
-          class="py-8 text-center text-xs text-slate-400"
+          class="py-10 text-center text-xs text-slate-400 sm:text-sm"
         >
           正在发起归因分析…
         </p>
-      </div>
-    </aside>
-  </Transition>
+      </template>
+    </main>
+  </div>
 </template>

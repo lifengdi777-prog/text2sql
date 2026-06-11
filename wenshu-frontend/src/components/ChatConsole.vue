@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { hasDisplayableResult } from '@/lib/result-display'
+import { stashAttributionRequest } from '@/lib/attribution-handoff'
 import { exportRowsToCsv } from '@/lib/export'
 import { uuid } from '@/lib/uuid'
 import {
@@ -28,7 +30,6 @@ import MetricCard from '@/components/MetricCard.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import EmptyCard from '@/components/EmptyCard.vue'
 import ChartPanel from '@/components/ChartPanel.vue'
-import AttributionPanel from '@/components/AttributionPanel.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -55,6 +56,8 @@ const props = withDefaults(
     backTo: '',
   },
 )
+
+const router = useRouter()
 
 // 判断 chart_type 是否走 ECharts 渲染(否则走表格 / 状态卡)
 function isEChartsType(t: string | undefined | null): boolean {
@@ -540,8 +543,7 @@ async function submitQuery() {
   await runTurn(query, (opts) => props.streamFn(query, opts))
 }
 
-// ── 归因分析:口径弹层(同比/环比)→ 右侧面板独立 SSE,不占用聊天 ──────
-const attributionPanel = ref<InstanceType<typeof AttributionPanel> | null>(null)
+// ── 归因分析:口径弹层(同比/环比)→ 新标签页独立页面,完全不占用聊天 ──────
 // 待归因的那条回复(非 null 时显示口径弹层)
 const attributionTarget = ref<AgentReplyMessage | null>(null)
 const attributionCompareType = ref<CompareType>('mom')
@@ -556,12 +558,13 @@ function closeAttributionModal() {
   attributionTarget.value = null
 }
 
-// 确定归因:关弹层,在右侧面板里发起(归因不挂 isLoading,聊天照常可用)
+// 确定归因:请求体写 localStorage 交接,window.open 新页面(/attribution?id=)。
+// 必须在点击手势的同步上下文里开窗,否则被浏览器弹窗拦截(与生成报告同款约束)。
 function confirmAttribution() {
   const message = attributionTarget.value
   if (!message) return
   attributionTarget.value = null
-  void attributionPanel.value?.open({
+  const id = stashAttributionRequest({
     rows: message.result,
     query: questionFor(message),
     sql: message.sql,
@@ -570,6 +573,7 @@ function confirmAttribution() {
     datasourceId: props.datasourceId,
     conversationId: activeConversationId.value,
   })
+  window.open(router.resolve({ name: 'attribution', query: { id } }).href, '_blank')
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -1025,7 +1029,7 @@ onBeforeUnmount(() => {
               导出数据
             </button>
 
-            <!-- 归因分析:口径弹层选同比/环比 → 右侧面板独立分析(不占用聊天,无需禁用) -->
+            <!-- 归因分析:口径弹层选同比/环比 → 新标签页独立分析(不占用聊天,无需禁用) -->
             <button
               v-if="shouldShowResult(message.result)"
               type="button"
@@ -1325,7 +1329,7 @@ onBeforeUnmount(() => {
     >
       <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
         <h3 class="text-base font-semibold text-slate-800">归因分析</h3>
-        <p class="mt-1 text-xs text-slate-400">选择对比口径，分析将在右侧面板进行，不影响继续提问</p>
+        <p class="mt-1 text-xs text-slate-400">选择对比口径，分析将在新页面打开，不影响继续提问</p>
 
         <div class="mt-4 grid grid-cols-2 gap-3">
           <button
@@ -1371,8 +1375,5 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-
-    <!-- 归因面板:右侧滑出,独立 SSE,不碰聊天状态 -->
-    <AttributionPanel ref="attributionPanel" />
   </div>
 </template>
