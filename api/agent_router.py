@@ -5,7 +5,8 @@ from api.deps import get_current_user, get_current_username
 from core.log import logger
 from agent.common.history import stream_with_history
 from clients.langfuse import build_run_config
-from agent.db_agent.graph import graph
+from agent.supervisor.graph import db_supervisor
+from agent.supervisor.schemas import SupervisorContext, SupervisorState
 from clients.mysql import meta_mysql_client
 from clients.es import es_client
 from clients.qdrant import qdrant_client
@@ -16,7 +17,7 @@ from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository
 from repositories.conversation import ConversationRepository
 from services.excel_ingest import get_session_factory
 from langchain.messages import HumanMessage
-from agent.schemas import WSAgentState, WSAgentContext
+from agent.schemas import WSAgentContext
 
 
 router = APIRouter(prefix="/agent")
@@ -42,14 +43,20 @@ async def query_graph(query: str, user_id: str | None = None, user_name: str | N
         async with Session() as s:
             history = await ConversationRepository(s).load_recent_turns(session_id)
 
-    state = WSAgentState(messages=[HumanMessage(query)], history=history)
-    context = WSAgentContext(
-        meta_db_client=meta_mysql_client,
-        es_repo=es_repo,
-        column_qdrant_repo=column_qdrant_repo,
-        metric_qdrant_repo=metric_qdrant_repo,
-        datasource_id=datasource_id,
-        database=database,
+    # 入口改接 supervisor 父图:route_intent 先分流「画图 / 查询」,
+    # 查询走 db_agent(context 原样透传),画图走 chart_agent(按 conversation_id 自取历史结果)。
+    # 新会话(session_id=None)首句让画图 → chart_agent 取不到数,发"请先查询数据"说明卡,行为正确。
+    state = SupervisorState(messages=[HumanMessage(query)], history=history)
+    context = SupervisorContext(
+        query_context=WSAgentContext(
+            meta_db_client=meta_mysql_client,
+            es_repo=es_repo,
+            column_qdrant_repo=column_qdrant_repo,
+            metric_qdrant_repo=metric_qdrant_repo,
+            datasource_id=datasource_id,
+            database=database,
+        ),
+        conversation_id=session_id,
     )
     # Langfuse 追踪 + 运行元数据(未启用 Langfuse 时只带 run_name/metadata,无害)
     run_config = build_run_config(
@@ -57,10 +64,10 @@ async def query_graph(query: str, user_id: str | None = None, user_name: str | N
         request_id=request_id, query=query,
     )
     #异步流式执行整个 LangGraph 图，每当有数据产出时，就立刻拿到一个 chunk（数据块）
-    # subgraphs=True:让子图(如 chart_agent)节点内部 runtime.stream_writer
-    # 写出的事件也能冒泡到这里,前端才能收到"分析数据形状/图表决策/生成图表"
-    # 这 3 个步骤事件。返回值变成 (namespace, chunk) tuple,namespace 我们不用。
-    async for namespace, chunk in graph.astream(
+    # subgraphs=True:supervisor 包装节点里 ainvoke 的子图(db_agent / chart_agent)
+    # 节点内部 runtime.stream_writer 写出的事件经此冒泡到这里,前端协议不变。
+    # 返回值是 (namespace, chunk) tuple,namespace 我们不用。
+    async for namespace, chunk in db_supervisor.astream(
         input=state,
         context=context,
         config=run_config,

@@ -10,8 +10,9 @@ from langchain.messages import HumanMessage
 from pydantic import BaseModel
 
 from agent.common.history import stream_with_history
-from agent.dataset_agent.graph import dataset_graph
-from agent.dataset_agent.schemas import DatasetAgentContext, DatasetAgentState
+from agent.dataset_agent.schemas import DatasetAgentContext
+from agent.supervisor.graph import dataset_supervisor
+from agent.supervisor.schemas import SupervisorContext, SupervisorState
 from api.deps import get_current_user, get_current_username, require_owned_dataset
 from clients.langfuse import build_run_config
 
@@ -35,19 +36,25 @@ async def _graph_chunks(dataset_id: int, query: str, user_id: str, user_name: st
         from services.excel_ingest import get_session_factory
         async with get_session_factory()() as s:
             history = await ConversationRepository(s).load_recent_turns(session_id)
-    state = DatasetAgentState(
+    # 入口改接 supervisor 父图:route_intent 先分流「画图 / 查询」,
+    # 查询走 dataset_agent(context 原样透传),画图走 chart_agent(按 conversation_id 自取历史结果)。
+    state = SupervisorState(
         messages=[HumanMessage(content=query)],
         dataset_id=dataset_id,
         history=history,
     )
-    context = DatasetAgentContext(user_id=user_id)
+    context = SupervisorContext(
+        query_context=DatasetAgentContext(user_id=user_id),
+        conversation_id=session_id,
+    )
     # Langfuse 追踪 + 运行元数据(未启用 Langfuse 时只带 run_name/metadata,无害)
     run_config = build_run_config(
         "dataset_query", user_id=user_id, user_name=user_name, session_id=session_id,
         request_id=request_id, query=query,
     )
-    # subgraphs=True:让 chart_subgraph 内部的 stream_writer 事件冒泡上来
-    async for namespace, chunk in dataset_graph.astream(
+    # subgraphs=True:supervisor 包装节点里 ainvoke 的子图(dataset_agent / chart_agent)
+    # 节点内部 stream_writer 写出的事件经此冒泡上来,前端协议不变
+    async for namespace, chunk in dataset_supervisor.astream(
         input=state,
         context=context,
         config=run_config,
