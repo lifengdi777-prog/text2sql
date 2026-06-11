@@ -13,14 +13,11 @@ onMounted(() => {
   void auth.refreshMe()
 })
 
-// 登录页用独立全屏布局,不套侧边栏外壳
-const isAuthPage = computed(() => route.name === 'login')
+// 独立全屏布局,不套侧边栏外壳:登录页、归因分析页(新标签页打开的专注页面)
+const isStandalonePage = computed(() => route.name === 'login' || route.name === 'attribution')
 
-// 满幅页面(聊天页/归因页):去掉外壳留白,让页面自己管理铺满与滚动
-// (外壳是 h-screen overflow-hidden,这些页面在内部各自滚动)
-const isChatView = computed(
-  () => route.name === 'db-chat' || route.name === 'dataset-chat' || route.name === 'attribution',
-)
+// 聊天页(DB / 数据集问数):去掉上下留白,让聊天卡片贴顶贴底铺满高度
+const isChatView = computed(() => route.name === 'db-chat' || route.name === 'dataset-chat')
 
 const navItems = [
   // 不再有「默认数据源」:数据库问数统一从「数据源」页选库后「开启问数」进入。
@@ -40,8 +37,8 @@ async function logout() {
 </script>
 
 <template>
-  <!-- 登录页:独立全屏,无侧边栏 -->
-  <router-view v-if="isAuthPage" />
+  <!-- 独立全屏页(登录/归因分析):无侧边栏外壳 -->
+  <router-view v-if="isStandalonePage" />
 
   <div v-else class="flex h-screen w-screen overflow-hidden bg-slate-100 text-[14px] text-slate-900">
     <aside
