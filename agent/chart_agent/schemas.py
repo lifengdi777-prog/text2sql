@@ -76,6 +76,10 @@ class ChartAgentState(BaseModel):
     # 上一轮已生成的图表配置(load_rows 从会话历史带回)。点名换图时若它带 field_map,
     # 走零 LLM 快通道:直接用上轮映射 + 目标类型构图,不再调 LLM 选型
     prev_chart_config: dict[str, Any] | None = None
+    # 数据源头的问题(load_rows 带回):对话画图轮 messages[-1] 是"生成饼状图"这类
+    # 指令,不能当图表标题;标题应该用产生这份数据的原始问题(如"Q1 各工厂实际产量")。
+    # 连续换图时从上一轮图表标题继承,保证一路传承不被指令覆盖
+    source_question: str | None = None
     # 最终 ECharts 配置(前端拿这个 setOption)
     chart_config: dict[str, Any] | None = None
 

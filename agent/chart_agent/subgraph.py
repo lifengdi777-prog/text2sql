@@ -188,7 +188,9 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
     rows = state.sql_result or []
     shape = state.data_shape
     query = state.messages[0].content if state.messages else "查询结果"
-    title = _make_title(query)
+    # 标题用数据源头的问题(对话画图轮的 query 是"生成饼状图"这类指令,不能当标题);
+    # query 本身仍用于点名图型识别与 LLM 选型意图
+    title = _make_title(state.source_question or query)
     requested = _requested_type(str(query))
 
     # ── 换图快通道:点名图型 + 上轮已有字段映射 → 零 LLM 直接构图 ────────────
@@ -296,7 +298,7 @@ async def render_metric(state: ChartAgentState, runtime: Runtime[ChartAgentConte
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
     rows = state.sql_result or []
-    query = state.messages[0].content if state.messages else ""
+    query = state.source_question or (state.messages[0].content if state.messages else "")
     title = str(query)[:50] or "结果"
     config = metric_tpl.render(title=title, rows=rows)
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
@@ -308,7 +310,7 @@ async def render_table(state: ChartAgentState, runtime: Runtime[ChartAgentContex
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
     rows = state.sql_result or []
-    query = state.messages[0].content if state.messages else "查询结果"
+    query = state.source_question or (state.messages[0].content if state.messages else "查询结果")
     config = _build_table_config(
         rows, title=str(query)[:50],
         reason=f"结果 {len(rows)} 行 > {CHART_MAX_ROWS},数据量大,降级为表格",
