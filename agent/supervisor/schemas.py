@@ -22,6 +22,14 @@ class SupervisorState(BaseModel):
     # route_intent 的 LLM 已完成「分流+改写+守门」(messages[-1] 已是自包含问题)→
     # 子图意图节点据此短路,不再重复调用 LLM
     intent_pre_parsed: bool = False
+    # 「查询+画图」组合请求(如"用饼图展示各工厂产量"):route=query 时由 route_intent
+    # 记下用户点名的展示形式(如"饼图"/"折线图"/"图")。查询子 agent 跑完且有结果 →
+    # supervisor 接着把结果直传 chart_agent 出图;空串表示用户没提图,跑完查询即结束。
+    chart_directive: str = ""
+    # 组合请求的桥接字段:run_query_agent 从查询子图末态取出的结果行/执行 SQL,
+    # 仅在 chart_directive 非空且查询成功时写入,供 run_chart_agent 直传(不回读会话历史)
+    query_result: list[dict[str, Any]] | None = None
+    query_sql: str | None = None
 
 
 class SupervisorContext(BaseModel):

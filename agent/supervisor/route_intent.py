@@ -7,6 +7,8 @@
      - chart → chart_agent;
      - query → 改写后的自包含问题原地替换 messages[-1] 并置 intent_pre_parsed,
        子图的意图节点据此短路 —— 不再重复调用 LLM(省一次调用、降低首 token 延迟);
+       若同时点名了展示形式("用饼图展示各工厂产量")→ chart_directive 记下形式词,
+       查询跑完 supervisor 把结果直传 chart_agent 接力出图(查询+画图一轮完成);
      - other(闲聊/与数据无关)→ 不短路,交子 agent 的完整意图节点处理
        (它有领域上下文,能做更准的守门 + 生成贴合本源的引导问题)。
 LLM 调用失败 → 兜底 query 且不短路(子图完整把关),不冲断流。
@@ -46,6 +48,9 @@ class RouteDecision(BaseModel):
     route: Literal["chart", "query", "other"]
     # 多轮改写:route=query 时为自包含问题(首轮=原消息);chart/other 留空
     standalone_query: str = ""
+    # 「查询+画图」组合请求:route=query 且用户点名了展示形式时,填形式词(如"饼图");
+    # 查询跑完 supervisor 据此接力 chart_agent 出图。纯查询 / chart / other 留空
+    chart_directive: str = ""
 
 
 def _render_history(history: list[dict] | None) -> str:
@@ -94,18 +99,24 @@ async def route_intent(state: SupervisorState, runtime: Runtime[SupervisorContex
         logger.info(f"supervisor 路由 → chart(消息:{text[:50]!r})")
         return {"route": "chart"}
 
+    # 「查询+画图」组合(如"用饼图展示各工厂产量"):记下点名的展示形式,
+    # 查询子 agent 跑完且有结果后,supervisor 接力 chart_agent 出图
+    directive = decision.chart_directive.strip() if decision.route == "query" else ""
+
     if decision.route == "query" and decision.standalone_query.strip():
         # 改写后的自包含问题同 id 原地替换(add_messages 见同 id 替换而非追加),
         # 子图意图节点据 intent_pre_parsed 短路,本轮只有这一次意图 LLM 调用。
         orig = state.messages[-1]
         logger.info(f"supervisor 路由 → query(已改写,子图意图节点短路):"
-                    f"{decision.standalone_query[:50]!r}")
+                    f"{decision.standalone_query[:50]!r}"
+                    f"{',画图诉求:' + directive if directive else ''}")
         return {
             "route": "query",
             "intent_pre_parsed": True,
+            "chart_directive": directive,
             "messages": [HumanMessage(content=decision.standalone_query, id=orig.id)],
         }
 
     # other / query-但没给出改写 → 不短路,交子 agent 完整意图节点把关
     logger.info(f"supervisor 路由 → query(完整意图判定,LLM 初判={decision.route})")
-    return {"route": "query"}
+    return {"route": "query", "chart_directive": directive}
