@@ -4,7 +4,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { hasDisplayableResult } from '@/lib/result-display'
 import { exportRowsToCsv } from '@/lib/export'
 import { uuid } from '@/lib/uuid'
-import { toErrorMessage, generateChart, generateReport, fetchHotQuestions } from '@/services/agent'
+import {
+  toErrorMessage,
+  generateChart,
+  generateReport,
+  fetchHotQuestions,
+  streamAttribution,
+  type QueryOptions,
+} from '@/services/agent'
 import {
   type ConversationBrief,
   type ConversationSource,
@@ -445,17 +452,19 @@ async function scrollToBottom() {
   scrollContainer.value.scrollTo({ top: scrollContainer.value.scrollHeight, behavior: 'smooth' })
 }
 
-async function submitQuery() {
-  const query = inputValue.value.trim()
-  if (!query) return
-  // 上一轮还在执行时,禁止发起新提问:必须等本轮(数据解读 + 图表)全部完成
+// 发起一轮流式对话的公共骨架:推 user/reply 消息、串回调、收尾状态。
+// submitQuery(输入框提问)与 onAttribution(归因按钮)共用。
+async function runTurn(
+  userContent: string,
+  start: (opts: QueryOptions) => Promise<void>,
+) {
+  // 上一轮还在执行时,禁止发起新一轮:必须等本轮(数据解读 + 图表)全部完成
   if (isLoading.value) return
 
-  const userMessage = { id: uuid(), role: 'user' as const, content: query }
+  const userMessage = { id: uuid(), role: 'user' as const, content: userContent }
   const replyMessage = createReplyMessage()
 
   messages.value.push(userMessage, replyMessage)
-  inputValue.value = ''
   isLoading.value = true
   await scrollToBottom()
 
@@ -466,7 +475,7 @@ async function submitQuery() {
   const wasNewConversation = activeConversationId.value === null
 
   try {
-    await props.streamFn(query, {
+    await start({
       signal: controller.signal,
       conversationId: activeConversationId.value,
       onConversation: (id) => {
@@ -521,6 +530,30 @@ async function submitQuery() {
     }
     await scrollToBottom()
   }
+}
+
+async function submitQuery() {
+  const query = inputValue.value.trim()
+  if (!query || isLoading.value) return
+  inputValue.value = ''
+  await runTurn(query, (opts) => props.streamFn(query, opts))
+}
+
+// ── 归因分析:对该轮结果做"为什么变化"的多维拆解(SSE 新一轮,复用整套渲染) ──
+async function onAttribution(message: AgentReplyMessage) {
+  if (!shouldShowResult(message.result) || isLoading.value) return
+  const q = questionFor(message)
+  await runTurn(`归因分析:${q}`, (opts) =>
+    streamAttribution(
+      {
+        rows: message.result,
+        query: q,
+        sql: message.sql,
+        datasetId: props.source === 'dataset' ? props.datasetId : undefined,
+      },
+      { ...opts, datasourceId: props.datasourceId },
+    ),
+  )
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -974,6 +1007,25 @@ onBeforeUnmount(() => {
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               导出数据
+            </button>
+
+            <!-- 归因分析:对该轮结果做"为什么变化"的多维拆解(新一轮 SSE 对话) -->
+            <button
+              v-if="shouldShowResult(message.result)"
+              type="button"
+              :disabled="isLoading"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-600"
+              @click="onAttribution(message)"
+            >
+              <!-- 分叉/拆解图标 -->
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="12" r="3" />
+                <path d="M9 6h4a2 2 0 0 1 2 2v0" />
+                <path d="M9 18h4a2 2 0 0 0 2-2v0" />
+              </svg>
+              归因分析
             </button>
 
             <!-- 按需分析报告:对该轮结果生成 HTML 报告,新标签页打开 -->

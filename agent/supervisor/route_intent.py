@@ -29,11 +29,10 @@ from core.log import logger
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "route.md"
 _PROMPT_CACHE: str | None = None
 
-# 预筛:不含任何绘图/归因相关字眼的消息必然是 query,直接放行省一次 LLM 调用。
+# 预筛:不含任何绘图相关字眼的消息必然是 query,直接放行省一次 LLM 调用。
 # 允许误命中(如"图书销量"含"图"),由 LLM 终判纠正。
+# (归因分析不走对话路由:它是结果卡上的「归因分析」按钮,直达专用端点)
 CHART_HINT = re.compile(r"图|画|可视化|chart|plot", re.IGNORECASE)
-# 归因字眼:问"原因"而非"数值"的特征词("为什么下降"→归因;"下降了多少"→查询,由 LLM 终判)
-ATTRIBUTION_HINT = re.compile(r"为什么|为何|什么原因|原因是|怎么回事|归因")
 
 
 def _get_prompt() -> str:
@@ -44,9 +43,8 @@ def _get_prompt() -> str:
 
 
 class RouteDecision(BaseModel):
-    route: Literal["chart", "attribution", "query", "other"]
-    # 多轮改写:route=query 时为自包含问题(首轮=原消息);chart/attribution/other 留空
-    # (归因有自己的目标解析节点,自带历史做指代消解)
+    route: Literal["chart", "query", "other"]
+    # 多轮改写:route=query 时为自包含问题(首轮=原消息);chart/other 留空
     standalone_query: str = ""
 
 
@@ -83,7 +81,7 @@ async def route_intent(state: SupervisorState, runtime: Runtime[SupervisorContex
     # 路由本身不发步骤事件:query 路径由子 agent 的意图节点开场,
     # chart 路径由"读取查询结果"开场,前端无感知空窗。
     text = str(state.messages[-1].content) if state.messages else ""
-    if not CHART_HINT.search(text) and not ATTRIBUTION_HINT.search(text):
+    if not CHART_HINT.search(text):
         return {"route": "query"}
 
     try:
@@ -92,9 +90,9 @@ async def route_intent(state: SupervisorState, runtime: Runtime[SupervisorContex
         logger.warning(f"意图路由 LLM 失败,兜底走查询(子图完整把关):{exc}")
         return {"route": "query"}
 
-    if decision.route in ("chart", "attribution"):
-        logger.info(f"supervisor 路由 → {decision.route}(消息:{text[:50]!r})")
-        return {"route": decision.route}
+    if decision.route == "chart":
+        logger.info(f"supervisor 路由 → chart(消息:{text[:50]!r})")
+        return {"route": "chart"}
 
     if decision.route == "query" and decision.standalone_query.strip():
         # 改写后的自包含问题同 id 原地替换(add_messages 见同 id 替换而非追加),

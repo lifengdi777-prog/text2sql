@@ -53,7 +53,7 @@ async def plan_dimensions(state: AttributionState, runtime: Runtime[AttributionC
         logger.warning(f"维度规划失败:{exc}")
         writer(WSStepInfo(step="规划拆解维度", status="error",
                           data={"error": "维度规划失败,请稍后重试"}, finish=True))
-        return {"should_continue": False, "error": str(exc)}
+        return {"halt": True, "error": str(exc)}
 
     dims = [d.model_dump() for d in plan.dimensions[:MAX_DIMENSIONS] if d.name and d.question]
     if not dims:
@@ -62,7 +62,7 @@ async def plan_dimensions(state: AttributionState, runtime: Runtime[AttributionC
             data={"clarify": "当前数据里没有找到可用于拆解归因的维度,无法进一步分析"},
             finish=True,
         ))
-        return {"should_continue": False}
+        return {"halt": True}
 
     writer(WSStepInfo(step="规划拆解维度", status="success",
                       data={"dimensions": [d["name"] for d in dims]}))

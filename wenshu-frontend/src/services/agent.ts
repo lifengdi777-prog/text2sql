@@ -33,7 +33,7 @@ agentApi.interceptors.response.use(
   },
 )
 
-interface QueryOptions {
+export interface QueryOptions {
   signal?: AbortSignal
   onStep: (message: AgentReplyMessage) => void
   // 续聊到已有会话;不传则后端新建
@@ -281,6 +281,25 @@ export async function streamDatasetQuery(
   await runStream(
     `/dataset/${datasetId}/query`,
     { query, conversation_id: options.conversationId ?? null },
+    options,
+  )
+}
+
+// 归因分析:对当前结果做"为什么变化"的多维拆解(结果卡「归因分析」按钮,SSE 流式)。
+export async function streamAttribution(
+  payload: { rows: ResultRow[]; query: string; sql: string | null; datasetId?: number },
+  options: QueryOptions,
+): Promise<void> {
+  await runStream(
+    '/agent/attribution',
+    {
+      rows: payload.rows,
+      query: payload.query,
+      sql: payload.sql,
+      conversation_id: options.conversationId ?? null,
+      datasource_id: options.datasourceId,
+      dataset_id: payload.datasetId ?? null,
+    },
     options,
   )
 }

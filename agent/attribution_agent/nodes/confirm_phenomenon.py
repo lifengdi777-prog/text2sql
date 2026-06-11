@@ -67,7 +67,7 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
     if rq is None:
         writer(WSStepInfo(step=_STEP, status="error",
                           data={"error": "归因服务未正确初始化(缺少查询能力)"}, finish=True))
-        return {"should_continue": False, "error": "run_query missing"}
+        return {"halt": True, "error": "run_query missing"}
 
     target_out, base_out = await asyncio.gather(
         rq(_total_question(t, t.target_period)),
@@ -88,7 +88,7 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
             guide_queries=guides, finish=True,
         ))
         logger.info(f"归因终止:基准期无数据({t.baseline_period})")
-        return {"should_continue": False}
+        return {"halt": True}
 
     # 目标期无数据 → 提示
     if tv is None:
@@ -98,7 +98,7 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
             guide_queries=[], finish=True,
         ))
         logger.info(f"归因终止:目标期无数据({t.target_period})")
-        return {"should_continue": False}
+        return {"halt": True}
 
     change = tv - bv
     pct = (change / bv * 100) if bv else None
@@ -116,7 +116,7 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
             guide_queries=[], finish=True,
         ))
         logger.info(f"归因终止:现象不成立({desc})")
-        return {"should_continue": False}
+        return {"halt": True}
 
     phenomenon = {
         "target_value": tv, "baseline_value": bv,
