@@ -37,6 +37,9 @@ export interface ChartConfig {
   // 后端附带的用户提示(如「点名的图型画不出:原因 + 可生成的图型」),横幅展示
   notice?: string | null
   original_sql?: string | null
+  // 产生这份数据的完整原始问题(元字段)。图表指令轮("生成折线图")的标题/报告/归因
+  // 都需要数据源头的问题,且标题有去前缀+截断,只有这个字段是全保真的
+  source_question?: string | null
   // 6 种正常图表 / table 的字段由前端按 chart_type 分别解析,这里不强制
   [key: string]: unknown
 }

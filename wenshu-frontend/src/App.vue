@@ -16,8 +16,11 @@ onMounted(() => {
 // 登录页用独立全屏布局,不套侧边栏外壳
 const isAuthPage = computed(() => route.name === 'login')
 
-// 聊天页(DB / 数据集问数):去掉上下留白,让聊天卡片贴顶贴底铺满高度
-const isChatView = computed(() => route.name === 'db-chat' || route.name === 'dataset-chat')
+// 满幅页面(聊天页/归因页):去掉外壳留白,让页面自己管理铺满与滚动
+// (外壳是 h-screen overflow-hidden,这些页面在内部各自滚动)
+const isChatView = computed(
+  () => route.name === 'db-chat' || route.name === 'dataset-chat' || route.name === 'attribution',
+)
 
 const navItems = [
   // 不再有「默认数据源」:数据库问数统一从「数据源」页选库后「开启问数」进入。

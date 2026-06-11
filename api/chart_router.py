@@ -26,7 +26,9 @@ class ChartBody(BaseModel):
 @router.post("/chart")
 async def generate_chart(body: ChartBody, user_id: str = Depends(get_current_user)):
     """对给定结果行生成 ECharts 配置。复用 chart_subgraph(它只读 sql_result/messages,不读 context)。"""
-    state = ChartAgentState(messages=[HumanMessage(content=body.query)], sql_result=body.rows)
+    # query 就是产生这份数据的问题,显式作为 source_question(config 元字段原样带回前端)
+    state = ChartAgentState(messages=[HumanMessage(content=body.query)], sql_result=body.rows,
+                            source_question=body.query)
     # 按用户限流(与 SSE 端点共享同一套配额):图表的 LLM 选型调用也计入,超限抛 429
     async with llm_rate_limiter.slot(user_id):
         try:

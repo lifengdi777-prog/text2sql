@@ -191,6 +191,10 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
     # 标题用数据源头的问题(对话画图轮的 query 是"生成饼状图"这类指令,不能当标题);
     # query 本身仍用于点名图型识别与 LLM 选型意图
     title = _make_title(state.source_question or query)
+    # 完整源头问题随 config 带给前端(元字段):标题会去前缀+截断,不可逆;
+    # 前端的报告/归因/再出图都需要"产生这份数据的原始问题",而图表指令轮
+    # 最近的 user 消息是"生成折线图"这类指令,只能从这里拿
+    src_question = str(state.source_question or query)
     requested = _requested_type(str(query))
 
     # ── 换图快通道:点名图型 + 上轮已有字段映射 → 零 LLM 直接构图 ────────────
@@ -209,6 +213,7 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
                 target = ({"line": "multi_line", "bar": "stacked_bar"}.get(requested, requested)
                           if prev_fm.get("series") else requested)
                 config = _build_for_requested(requested, target, prev_fm, shape, rows, title)
+                config["source_question"] = src_question
                 logger.info(f"换图快通道(零 LLM):{requested} → {config.get('chart_type')}")
                 writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
                 return {"chart_config": config}
@@ -241,6 +246,7 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
                 # 否则用点名类型本身。
                 target = chart_type if chart_type in _SATISFIES.get(requested, {requested}) else requested
                 config = _build_for_requested(requested, target, field_map, shape, rows, title)
+                config["source_question"] = src_question
                 logger.info(f"图表生成(点名{_TYPE_CN[requested]}):type={config.get('chart_type')}"
                             f"{',notice:' + config['notice'] if config.get('notice') else ''}")
                 writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
@@ -273,6 +279,7 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
         logger.exception(f"build_chart 异常,兜底表格:{exc}")
         config = _build_table_config(rows, title, f"图表生成异常,降级为表格:{exc}")
 
+    config["source_question"] = src_question
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 
@@ -301,6 +308,7 @@ async def render_metric(state: ChartAgentState, runtime: Runtime[ChartAgentConte
     query = state.source_question or (state.messages[0].content if state.messages else "")
     title = str(query)[:50] or "结果"
     config = metric_tpl.render(title=title, rows=rows)
+    config["source_question"] = str(query)
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 
@@ -315,6 +323,7 @@ async def render_table(state: ChartAgentState, runtime: Runtime[ChartAgentContex
         rows, title=str(query)[:50],
         reason=f"结果 {len(rows)} 行 > {CHART_MAX_ROWS},数据量大,降级为表格",
     )
+    config["source_question"] = str(query)
     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
     return {"chart_config": config}
 

@@ -264,7 +264,8 @@ const barOption = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[linear-gradient(180deg,rgba(255,255,255,0.6),rgba(241,245,249,0.9))]">
+  <!-- 应用外壳是 h-screen overflow-hidden:这里自己撑满高度、内部滚动(否则长内容滚不动) -->
+  <div class="h-full overflow-y-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.6),rgba(241,245,249,0.9))]">
     <!-- 顶栏 -->
     <header class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 backdrop-blur">
       <div class="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3 sm:px-6">

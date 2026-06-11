@@ -56,6 +56,7 @@ const option = computed(() => {
     'message',
     'hint',
     'original_sql',
+    'source_question',
     'row_count',
     'columns',
     'rows',
