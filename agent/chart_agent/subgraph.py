@@ -172,8 +172,8 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
 
             # ── 用户点名了图表类型(如"画成折线图""换成饼图")────────────────
             #   - 点名的画得出(过 enforce_limits)→ 直接尊重,覆盖 LLM 的选型;
-            #   - 画不出 → 不"静默换图":出中性表格 + notice 明确告知原因与可生成的
-            #     图型,可生成图型同时放进 compatible_types,用户点按钮即可切换。
+            #   - 画不出 → 不"静默换图":默认展示推荐的可生成图 + notice 明确告知原因,
+            #     其余可生成图型与表格做切换项;什么图都画不出才落到表格。
             #   注意:LLM 顺着用户点名选了该类型、但 enforce_limits 判画不出的情况,
             #   也必须走提示分支 —— 否则会被后面的兜底校验静默降级,用户以为生成错图。
             requested = _requested_type(str(query))
@@ -189,17 +189,21 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
                 else:
                     drawable = _filter_compatible(list(SUPPORTED_CHART_TYPES), field_map, shape)
                     why = (req_reason or "不满足该图型的数据要求").split(",降级")[0].split(",改用")[0]
-                    tip = ("可生成:" + "、".join(_TYPE_CN.get(t, t) for t in drawable)
-                           ) if drawable else "已展示数据表格"
-                    config = _build_table_config(rows, title, f"用户指定{_TYPE_CN[requested]}画不出:{why}")
-                    config["notice"] = f"当前数据无法生成{_TYPE_CN[requested]}({why});{tip}"
                     if drawable:
-                        # 真实画得出的图型做切换项,表格放最后兜底(切换在前端按 field_map 本地构图);
-                        # 默认激活仍是表格(chart_type=table),按钮顺序不影响默认展示
+                        # 默认直接展示推荐图(可生成列表的第一个),不让用户先看一版表格;
+                        # 其余可生成图型 + 表格做切换项(切换在前端按 field_map 本地构图)
+                        best = drawable[0]
+                        others = "、".join(_TYPE_CN.get(t, t) for t in drawable[1:] + ["table"])
+                        config = build_chart_option(best, rows, field_map, title)
                         config["compatible_types"] = drawable + ["table"]
                         config["field_map"] = field_map
+                        config["notice"] = (f"当前数据无法生成{_TYPE_CN[requested]}({why}),"
+                                            f"已改用{_TYPE_CN.get(best, best)}展示;可切换:{others}")
+                    else:
+                        config = _build_table_config(rows, title, f"用户指定{_TYPE_CN[requested]}画不出:{why}")
+                        config["notice"] = f"当前数据无法生成{_TYPE_CN[requested]}({why}),已展示数据表格"
                     logger.info(f"图表生成:用户点名 {requested} 画不出({req_reason}),"
-                                f"出表格+可生成提示:{drawable}")
+                                f"默认展示 {drawable[0] if drawable else 'table'},可生成:{drawable}")
                     writer(WSStepInfo(step="生成图表", status="success", data=config, finish=True))
                     return {"chart_config": config}
 
