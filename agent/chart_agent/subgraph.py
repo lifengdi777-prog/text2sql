@@ -1,6 +1,8 @@
 """Chart Agent 子图。
 
 数据流:
+    load_rows            (rows 已回传 → 放行;否则从会话历史取数;取不到 → 说明卡结束)
+        ↓
     analyze_data_shape
         ├─ render_error      (state.error / sql_result is None)
         ├─ render_empty      (空结果)
@@ -30,6 +32,7 @@ from agent.chart_agent.option_builder import build_chart_option
 from agent.chart_agent.templates import empty as empty_tpl
 from agent.chart_agent.templates import error as error_tpl
 from agent.chart_agent.templates import metric as metric_tpl
+from agent.chart_agent.load_rows import load_rows
 from agent.chart_agent.schemas import ChartAgentContext, ChartAgentState
 from agent.schemas import WSStepInfo
 from core.log import logger
@@ -218,9 +221,18 @@ async def render_table(state: ChartAgentState, runtime: Runtime[ChartAgentContex
     return {"chart_config": config}
 
 
+def _route_after_load(state: ChartAgentState) -> str:
+    # 有数据(空数组也算,走 render_empty)或带上游错误(走 render_error)→ 进形状分析;
+    # 取数失败(load_rows 已发说明卡)→ 直接结束。
+    if state.sql_result is not None or state.error:
+        return "analyze_data_shape"
+    return END
+
+
 def _build():
     sg = StateGraph(state_schema=ChartAgentState, context_schema=ChartAgentContext)
 
+    sg.add_node("load_rows", load_rows)
     sg.add_node("analyze_data_shape", analyze_data_shape)
     sg.add_node("build_chart", build_chart)
     sg.add_node("render_table", render_table)
@@ -228,7 +240,12 @@ def _build():
     sg.add_node("render_empty", render_empty)
     sg.add_node("render_metric", render_metric)
 
-    sg.add_edge(START, "analyze_data_shape")
+    sg.add_edge(START, "load_rows")
+    sg.add_conditional_edges(
+        "load_rows",
+        _route_after_load,
+        {"analyze_data_shape": "analyze_data_shape", END: END},
+    )
     sg.add_conditional_edges(
         "analyze_data_shape",
         _route_after_analyze,

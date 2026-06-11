@@ -198,6 +198,40 @@ class ConversationRepository:
                 i += 1
         return turns[-max_turns:]
 
+    async def load_last_result(self, conversation_id: int) -> dict[str, Any] | None:
+        """找最近一条带非空结果行的 assistant 消息,供「对话内画图」取数。
+
+        payload["result"] 存的是执行后的全量行(MAX_RESULT_ROWS 截断内),与前端
+        点「生成图表」按钮回传给 /chart 的 rows 完全一致,无需重跑 SQL。
+        图表轮/失败轮/引导轮的 result 为空 → 跳过继续往前找;整个会话都没有 → None。
+
+        返回 {question, sql, rows, chart_config}:
+          - question:该轮配对的用户问题(往前最近的 user 消息,作图表标题/选型上下文)
+          - sql:该轮真正执行的 SQL(画图出错降级 error 卡时展示来源)
+          - chart_config:该轮已生成过的图表配置(留给"换图快通道":直接换类型不重选型)
+        """
+        msgs = await self.list_messages(conversation_id)
+        for i in range(len(msgs) - 1, -1, -1):
+            msg = msgs[i]
+            if msg.role != "assistant":
+                continue
+            payload = msg.payload or {}
+            rows = payload.get("result") or []
+            if not rows:
+                continue
+            question: str | None = None
+            for j in range(i - 1, -1, -1):
+                if msgs[j].role == "user":
+                    question = msgs[j].content
+                    break
+            return {
+                "question": question,
+                "sql": payload.get("sql"),
+                "rows": rows,
+                "chart_config": payload.get("chartConfig"),
+            }
+        return None
+
 
 # 幂等迁移:给已存在的 conversations 表补 datasource_id 列(问数会话绑数据源用)。
 # conversations 在 upload 库,create_all 只建新表不改旧表,故启动时单独 ALTER 补列。

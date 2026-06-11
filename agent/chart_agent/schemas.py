@@ -80,7 +80,7 @@ class ChartAgentState(BaseModel):
 class ChartAgentContext(BaseModel):
     """Chart Agent 的运行时上下文。
 
-    当前所有节点都不读 context(调用方可传 None),先占位;
-    后续「对话内画图」需要的 conversation_id 等请求级注入放这里。
+    「对话内画图」入口注入 conversation_id,load_rows 节点据此从会话历史取数;
+    /chart 端点入口 rows 由前端回传,不需要取数,context 可传 None。
     """
-    pass
+    conversation_id: int | None = None
