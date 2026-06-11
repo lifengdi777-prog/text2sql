@@ -1,5 +1,7 @@
 """Chart Agent 内部数据结构。
 
+- ChartAgentState / ChartAgentContext:本 agent 自己的运行时 State / Context
+  (独立于主图的 WSAgentState,字段名保持一致,节点 duck-typing 零改动)。
 - ChartTypeDecision:LLM 唯一产出(只选 chart_type)。
 - DataShape / ColumnFeature:analyzer 对结果集做的形状摘要,供选型与构图用。
 
@@ -7,8 +9,10 @@ ECharts option 不再由 LLM 产出,改由 option_builder 用代码确定性构�
 """
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
+from langchain.messages import AnyMessage
+from langgraph.graph import add_messages
 from pydantic import BaseModel
 
 
@@ -52,3 +56,31 @@ class ColumnFeature(BaseModel):
 class DataShape(BaseModel):
     row_count: int
     columns: list[ColumnFeature]
+
+
+class ChartAgentState(BaseModel):
+    """Chart Agent 的运行时状态(不再寄生 WSAgentState)。
+
+    字段名与原 WSAgentState 完全一致,6 个节点函数 duck-typing 原样可用。
+    /chart 端点入口:sql_result 由前端回传结果行直接填充。
+    """
+    messages: Annotated[list[AnyMessage], add_messages]
+    # 待绘图的结果行(出错场景为 None → render_error 卡)
+    sql_result: list[dict[str, Any]] | None = None
+    # 上游执行失败的错误信息(render_error 卡展示)
+    error: str | None = None
+    # 出错时一并展示的原 SQL(render_error 卡用)
+    sql: str | None = None
+    # analyzer 算出的数据形状摘要
+    data_shape: DataShape | None = None
+    # 最终 ECharts 配置(前端拿这个 setOption)
+    chart_config: dict[str, Any] | None = None
+
+
+class ChartAgentContext(BaseModel):
+    """Chart Agent 的运行时上下文。
+
+    当前所有节点都不读 context(调用方可传 None),先占位;
+    后续「对话内画图」需要的 conversation_id 等请求级注入放这里。
+    """
+    pass

@@ -10,8 +10,6 @@ from repositories.es import ESRepository
 from repositories.mysql import MetaDBRepository, DWDBRepository
 from conf.app_config import DEFAULT_DATASOURCE_ID
 from dtos.meta import ColumnInfo, MetricInfo, ValueInfo
-# Chart Agent 子图相关 schema(WSAgentState 里要嵌)
-from agent.chart_agent.schemas import DataShape
 
 class WSAgentTableInfoState(BaseModel):
     id: str
@@ -60,16 +58,13 @@ class WSAgentState(BaseModel):
     #SQL 校正次数：每进一次 correct_sql 自增 1。graph 路由据此判断是否超过重试上限，
     #避免 SQL 永远修不好时在 validate_sql↔correct_sql 之间无限循环撞 recursion_limit。
     correct_attempts: int = 0
-    # ── 以下字段由 chart_agent 子图使用 ───────────────────────────────
+    # ── 执行结果(execute_sql 写入,translate_columns / interpret_result 读)──
     # execute_sql 跑完后的结果集(成功时是 list[dict],出错时为 None)
     sql_result: list[dict[str, Any]] | None = None
     # 结果是否被行数上限截断(>MAX_RESULT_ROWS),供解读环节提示用户"仅展示前 N 行"
     truncated: bool = False
-    # analyzer 算出的数据形状摘要
-    data_shape: DataShape | None = None
-    # 最终 ECharts 配置(前端拿这个 setOption)
-    chart_config: dict[str, Any] | None = None
-    # interpret_result 节点产出的自然语言解读(与图表并行生成)
+    # interpret_result 节点产出的自然语言解读
+    # (图表已是前端按需出图,data_shape/chart_config 字段随 chart_agent 独立迁走)
     interpretation: str | None = None
     # ── SQL 缓存(lookup_sql_cache 节点写入)─────────────────────────────
     # 本轮缓存键(归一化问题+数据源+库+版本的 sha256)。命中/未命中都会算出来,

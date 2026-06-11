@@ -1,6 +1,7 @@
-"""Chart Agent — 图表生成子图。
+"""Chart Agent — 独立的图表生成 agent(自有 ChartAgentState / ChartAgentContext)。
 
-主图把它当成一个普通节点接入:`from agent.chart_agent import chart_subgraph`。
+入口:`from agent.chart_agent import chart_subgraph`,目前由 /chart 端点按需调用;
+后续「对话内画图」意图路由也复用同一张图。
 
 数据流(subgraph.py 里编排):
     analyze_data_shape
@@ -15,7 +16,7 @@
 """
 
 def __getattr__(name: str):
-    # 延迟导入,避免 agent.schemas 引用本包 schemas 时的循环 import
+    # 延迟导入:让 `import agent.chart_agent.schemas` 保持轻量,不连带拉起整张图(LLM 等依赖)
     if name == "chart_subgraph":
         from agent.chart_agent.subgraph import chart_subgraph as _sg
         return _sg

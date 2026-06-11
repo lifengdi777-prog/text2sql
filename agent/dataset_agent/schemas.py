@@ -1,6 +1,6 @@
 """数据集分析 graph 的 State / Context schema。
 
-继承 WSAgentState,这样 chart_agent / interpret_result 这些节点能原样复用
+继承 WSAgentState,这样 interpret_result 等共享节点能原样复用
 (它们读 state.sql_result / state.messages,字段都在父类里)。
 额外字段是 dataset_agent 专用的中间状态。
 """
@@ -28,7 +28,7 @@ class DatasetAgentState(WSAgentState):
     sql_issues: list[str] = []
     # correct_sql 每修一次 +1,达到 MAX_RETRY 不再重试 → 兜底(带 error 跳过执行 → error 卡)
     sql_retry_count: int = 0
-    # execute_sql 写完后,继承字段 sql_result 装 rows,下游 chart_agent / interpret_result 原样读
+    # execute_sql 写完后,继承字段 sql_result 装 rows,下游 interpret_result 原样读
 
 
 class DatasetAgentContext(BaseModel):

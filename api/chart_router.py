@@ -10,7 +10,7 @@ from langchain.messages import HumanMessage
 from pydantic import BaseModel
 
 from agent.chart_agent import chart_subgraph
-from agent.schemas import WSAgentState
+from agent.chart_agent.schemas import ChartAgentState
 from api.deps import get_current_user
 from core.log import logger
 
@@ -25,7 +25,7 @@ class ChartBody(BaseModel):
 @router.post("/chart")
 async def generate_chart(body: ChartBody, user_id: str = Depends(get_current_user)):
     """对给定结果行生成 ECharts 配置。复用 chart_subgraph(它只读 sql_result/messages,不读 context)。"""
-    state = WSAgentState(messages=[HumanMessage(content=body.query)], sql_result=body.rows)
+    state = ChartAgentState(messages=[HumanMessage(content=body.query)], sql_result=body.rows)
     try:
         # chart_subgraph 节点只用 stream_writer + state,不读 context;非流式 ainvoke 直接取末态 chart_config
         final = await chart_subgraph.ainvoke(state, context=None)

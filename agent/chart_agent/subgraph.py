@@ -30,7 +30,8 @@ from agent.chart_agent.option_builder import build_chart_option
 from agent.chart_agent.templates import empty as empty_tpl
 from agent.chart_agent.templates import error as error_tpl
 from agent.chart_agent.templates import metric as metric_tpl
-from agent.schemas import WSAgentContext, WSAgentState, WSStepInfo
+from agent.chart_agent.schemas import ChartAgentContext, ChartAgentState
+from agent.schemas import WSStepInfo
 from core.log import logger
 
 
@@ -61,7 +62,7 @@ def _build_table_config(rows: list[dict[str, Any]], title: str, reason: str) -> 
     }
 
 
-async def analyze_data_shape(state: WSAgentState, runtime: Runtime[WSAgentContext]):
+async def analyze_data_shape(state: ChartAgentState, runtime: Runtime[ChartAgentContext]):
     writer = runtime.stream_writer
     writer(WSStepInfo(step="分析数据形状", status="running"))
     shape = analyzer.analyze(state.sql_result or [])
@@ -69,7 +70,7 @@ async def analyze_data_shape(state: WSAgentState, runtime: Runtime[WSAgentContex
     return {"data_shape": shape}
 
 
-def _route_after_analyze(state: WSAgentState) -> str:
+def _route_after_analyze(state: ChartAgentState) -> str:
     if state.error or state.sql_result is None:
         return "render_error"
     rows = state.sql_result
@@ -119,7 +120,7 @@ def _resolve_field_map(decision, shape) -> dict:
 
 
 # ── 核心:LLM 选型 + 给字段映射,option 由代码按映射构造 ─────────────────
-async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
+async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext]):
     """LLM 决定 chart_type + 字段映射;option_builder 按映射用代码透视、填数据。"""
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
@@ -176,7 +177,7 @@ async def build_chart(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
 
 # ── 3 个状态卡(deterministic,不调 LLM)─────────────────────────────────
-async def render_error(state: WSAgentState, runtime: Runtime[WSAgentContext]):
+async def render_error(state: ChartAgentState, runtime: Runtime[ChartAgentContext]):
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
     config = error_tpl.render(error_message=state.error or "未知错误", original_sql=state.sql)
@@ -184,7 +185,7 @@ async def render_error(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     return {"chart_config": config}
 
 
-async def render_empty(state: WSAgentState, runtime: Runtime[WSAgentContext]):
+async def render_empty(state: ChartAgentState, runtime: Runtime[ChartAgentContext]):
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
     config = empty_tpl.render()
@@ -192,7 +193,7 @@ async def render_empty(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     return {"chart_config": config}
 
 
-async def render_metric(state: WSAgentState, runtime: Runtime[WSAgentContext]):
+async def render_metric(state: ChartAgentState, runtime: Runtime[ChartAgentContext]):
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
     rows = state.sql_result or []
@@ -203,7 +204,7 @@ async def render_metric(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     return {"chart_config": config}
 
 
-async def render_table(state: WSAgentState, runtime: Runtime[WSAgentContext]):
+async def render_table(state: ChartAgentState, runtime: Runtime[ChartAgentContext]):
     """行数 > CHART_MAX_ROWS:数据太多,直接表格展示全量数据。"""
     writer = runtime.stream_writer
     writer(WSStepInfo(step="生成图表", status="running"))
@@ -218,7 +219,7 @@ async def render_table(state: WSAgentState, runtime: Runtime[WSAgentContext]):
 
 
 def _build():
-    sg = StateGraph(state_schema=WSAgentState, context_schema=WSAgentContext)
+    sg = StateGraph(state_schema=ChartAgentState, context_schema=ChartAgentContext)
 
     sg.add_node("analyze_data_shape", analyze_data_shape)
     sg.add_node("build_chart", build_chart)
