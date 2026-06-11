@@ -93,6 +93,16 @@ export async function deleteConversation(conversationId: number): Promise<void> 
   await convApi.delete(`/conversations/${conversationId}`)
 }
 
+// 往会话里追加一轮消息(归因页「保存到对话」用):question 落 user 消息,
+// payload(AgentReplyMessage 形状)落 assistant 消息,重开会话即可回放。
+export async function appendConversationMessage(
+  conversationId: number,
+  question: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  await convApi.post(`/conversations/${conversationId}/messages`, { question, payload })
+}
+
 // 把按需生成的 chart_config 回写到某条 assistant 消息,落进历史(重开会话原样重现图表/提示)。
 export async function persistMessageChart(
   conversationId: number,

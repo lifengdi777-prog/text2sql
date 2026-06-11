@@ -32,6 +32,13 @@ class CreateBody(BaseModel):
     title: str = "新对话"
 
 
+class AppendMessageBody(BaseModel):
+    # 归因页「保存到对话」:question 作为 user 消息,payload 作为 assistant 消息
+    # (payload 形状即前端 AgentReplyMessage,历史回放直接渲染)
+    question: str = ""
+    payload: dict
+
+
 def _conv_brief(conv) -> dict:
     return {
         "id": conv.id,
@@ -106,6 +113,33 @@ async def get_conversation(conversation_id: int, user_id: str = Depends(get_curr
             for m in msgs
         ],
     }
+
+
+@router.post("/{conversation_id}/messages")
+async def append_message(
+    conversation_id: int,
+    body: AppendMessageBody,
+    user_id: str = Depends(get_current_user),
+):
+    """往会话里追加一轮消息(user 提问 + assistant 回复),仅限归属当前用户。
+
+    归因在独立页面进行、不落历史;用户点「保存到对话」时调这里把结论落进会话,
+    重开会话可回放(payload 形状与流式落库的 assistant 消息一致)。
+    """
+    Session = get_session_factory()
+    async with Session() as session:
+        repo = ConversationRepository(session)
+        conv = await repo.get_owned(conversation_id, user_id)
+        if conv is None:
+            raise HTTPException(status_code=404, detail=f"会话 {conversation_id} 不存在")
+        if body.question:
+            await repo.add_message(conversation_id, role="user", content=body.question)
+        msg = await repo.add_message(conversation_id, role="assistant", payload=body.payload)
+        await repo.touch(conversation_id)
+        # flush 后(add_message 内已 flush)在 commit 前取自增 id,避免过期属性异步懒加载报错
+        message_id = msg.id
+        await session.commit()
+    return {"ok": True, "id": message_id}
 
 
 @router.patch("/{conversation_id}/messages/{message_id}/chart")

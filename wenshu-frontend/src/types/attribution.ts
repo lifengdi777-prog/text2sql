@@ -41,6 +41,22 @@ export interface AttributionResult {
   conclusion: string
 }
 
+// 归因页一次运行的完整快照(口径/观察期切换缓存 + F5 恢复用):
+// 同一份数据换口径来回切不重新计算,命中快照直接回放
+export interface AttributionStep {
+  step: string
+  status: 'running' | 'success' | 'error'
+  detail?: string
+}
+
+export interface AttributionSnapshot {
+  steps: AttributionStep[]
+  result: AttributionResult | null
+  clarify: string | null
+  suggestCompareType: 'mom' | 'yoy' | null
+  errorMessage: string | null
+}
+
 export function isAttributionResult(data: unknown): data is AttributionResult {
   return (
     !!data &&
