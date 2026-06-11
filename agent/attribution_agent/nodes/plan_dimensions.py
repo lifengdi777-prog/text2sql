@@ -1,4 +1,9 @@
-"""维度拆解规划节点:按领域元数据规划 2~4 个拆解维度,每维度一条"两期对比"子问题。"""
+"""维度拆解规划节点:LLM 只按领域元数据选 2~4 个维度名,子问题由代码模板生成。
+
+每维度两条**单期分组**子问题(观察期/基准期各一条):
+  f"{period}{scope}各{dim}的{metric}分别是多少"
+单期问法保证行形状确定(成员, 值),两期数值由 run_dims 代码 join 后纯代码算贡献度,
+消灭 LLM 算数。"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,7 +33,7 @@ def _get_prompt() -> str:
 
 def _render_target(t: AttributionTarget) -> str:
     return (f"归因指标:{t.metric}\n范围限定:{t.scope or '(无)'}\n"
-            f"目标期:{t.target_period}\n基准期:{t.baseline_period}\n"
+            f"观察期:{t.target_period}\n基准期:{t.baseline_period}\n"
             f"现象方向:{t.direction}")
 
 
@@ -55,7 +60,13 @@ async def plan_dimensions(state: AttributionState, runtime: Runtime[AttributionC
                           data={"error": "维度规划失败,请稍后重试"}, finish=True))
         return {"halt": True, "error": str(exc)}
 
-    dims = [d.model_dump() for d in plan.dimensions[:MAX_DIMENSIONS] if d.name and d.question]
+    # LLM 只选维度名;两条单期分组子问题(观察期/基准期)由代码模板生成
+    t = state.target
+    dims = [{
+        "name": name,
+        "target_question": f"{t.target_period}{t.scope or ''}各{name}的{t.metric}分别是多少",
+        "baseline_question": f"{t.baseline_period}{t.scope or ''}各{name}的{t.metric}分别是多少",
+    } for name in dict.fromkeys(d.strip() for d in plan.dimensions if d.strip())][:MAX_DIMENSIONS]
     if not dims:
         writer(WSStepInfo(
             step="规划拆解维度", status="success",

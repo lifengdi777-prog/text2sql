@@ -1,13 +1,13 @@
 """Attribution Agent 的图编排。
 
-    START → parse_target ──(需澄清口径/结果不可归因/失败)──→ END
+    START → parse_target ──(结果不可归因/失败)──→ END   (口径由前端弹层前置给定)
               ↓ 并行 fan-out(二者互不依赖,省一段串行等待)
-        ┌─ confirm_phenomenon (现象确认;无数据/不成立 → 置 halt=True)
-        └─ plan_dimensions    (维度规划;无可用维度    → 置 halt=True)
+        ┌─ confirm_phenomenon (现象确认;无数据/持平/不成立 → 置 halt=True)
+        └─ plan_dimensions    (LLM 只选维度名,子问题代码模板生成;无维度 → halt)
               ↓ 在 run_dims 汇合(屏障)
           run_dims ──(上游已判终止/全部失败)──→ END
-              ↓     (维度子查询并发 3 路)
-          synthesize(综合归因:结论 + 主维度表 + 对比图) → END
+              ↓     (每维度两条单期子查询并发 4 路,纯代码 join 算贡献度)
+          synthesize(LLM 只写结论;流末发结构化 attribution_result 事件) → END
 
 注:confirm 与 plan 并行后,任一分支判终止时另一分支可能已发过自己的步骤事件,
    属预期(用户会看到对应说明卡);halt/error 带 or 归并器,同超步双写安全。

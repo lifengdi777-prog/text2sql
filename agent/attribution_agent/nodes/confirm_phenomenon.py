@@ -1,8 +1,10 @@
 """现象确认节点:查目标期与基准期的指标总量,确认"下降/上升"是否成立并量化。
 
 零 LLM,纯代码 + 两次子查询(并发):
-  - 基准期没数据 → 说明卡 + 「改用另一口径」的可点建议(同比缺数据就建议环比,反之亦然);
+  - 基准期没数据 → 说明卡 + 改用另一口径的结构化建议(suggest_compare_type,
+    面板据此渲染「改用环比/同比」按钮,点了带新口径重发请求);
   - 目标期没数据 → 说明卡;
+  - 两期持平(总变化为 0)→ 没有可归因的变化,说明后结束(也避免贡献度除零);
   - 用户说"下降"但实际没降(或说"上升"但没升)→ 用数字说明实情,无需归因,结束;
   - 现象成立 → 量化(差值/降幅)写入 state.phenomenon,继续维度拆解。
 
@@ -11,7 +13,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from decimal import Decimal
 from typing import Any
 
@@ -38,23 +39,17 @@ def _first_number(rows: list[dict[str, Any]] | None) -> float | None:
     return None
 
 
-def _strip_basis_suffix(question: str) -> str:
-    """去掉问题尾部的口径标注(澄清卡点选带上的"(环比,对比…)"),便于拼新口径建议。"""
-    return re.sub(r"[（(](同比|环比)[^）)]*[）)]\s*$", "", question).strip()
-
-
 def _fmt(v: float) -> str:
     return f"{v:,.0f}" if float(v).is_integer() else f"{v:,.2f}"
 
 
-def _other_basis_guide(t: AttributionTarget, question: str) -> list[str]:
-    """当前口径走不通时,给出另一口径的可点建议(有候选基准才给)。"""
-    base = _strip_basis_suffix(question)
+def _other_basis(t: AttributionTarget) -> tuple[str, str] | None:
+    """当前口径走不通时的另一口径建议:(compare_type, 基准期);候选基准缺失则不建议。"""
     if t.compare_type == "yoy" and t.mom_baseline:
-        return [f"{base}(环比,对比{t.mom_baseline})"]
+        return "mom", t.mom_baseline
     if t.compare_type == "mom" and t.yoy_baseline:
-        return [f"{base}(同比,对比{t.yoy_baseline})"]
-    return []
+        return "yoy", t.yoy_baseline
+    return None
 
 
 async def confirm_phenomenon(state: AttributionState, runtime: Runtime[AttributionContext]):
@@ -62,7 +57,6 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
     writer(WSStepInfo(step=_STEP, status="running"))
     t = state.target
     assert t is not None
-    question = str(state.messages[-1].content) if state.messages else ""
     rq = runtime.context.run_query
     if rq is None:
         writer(WSStepInfo(step=_STEP, status="error",
@@ -78,15 +72,15 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
 
     basis_cn = {"mom": "环比", "yoy": "同比", "custom": "对比"}.get(t.compare_type, "对比")
 
-    # 基准期无数据 → 提示 + 改口径建议(用户要求:没有数据要提示,不硬算)
+    # 基准期无数据 → 提示 + 结构化改口径建议(没有数据要提示,不硬算)
     if bv is None:
-        guides = _other_basis_guide(t, question)
-        tip = f"缺少{t.baseline_period}的数据,无法{basis_cn}对比"
-        writer(WSStepInfo(
-            step=_STEP, status="success",
-            data={"clarify": tip + ("。可改用以下口径:" if guides else "")},
-            guide_queries=guides, finish=True,
-        ))
+        other = _other_basis(t)
+        data: dict[str, Any] = {"clarify": f"缺少{t.baseline_period}的数据,无法{basis_cn}对比"}
+        if other:
+            other_cn = "环比" if other[0] == "mom" else "同比"
+            data["clarify"] += f",可改用{other_cn}(对比{other[1]})"
+            data["suggest_compare_type"] = other[0]
+        writer(WSStepInfo(step=_STEP, status="success", data=data, finish=True))
         logger.info(f"归因终止:基准期无数据({t.baseline_period})")
         return {"halt": True}
 
@@ -95,7 +89,7 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
         writer(WSStepInfo(
             step=_STEP, status="success",
             data={"clarify": f"没有找到{t.target_period}{t.scope or ''}的{t.metric}数据,无法归因"},
-            guide_queries=[], finish=True,
+            finish=True,
         ))
         logger.info(f"归因终止:目标期无数据({t.target_period})")
         return {"halt": True}
@@ -106,6 +100,15 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
             f"{t.baseline_period}为 {_fmt(bv)},"
             f"变化 {_fmt(change)}" + (f"({pct:+.1f}%)" if pct is not None else ""))
 
+    # 两期持平 → 没有可归因的变化(也避免下游贡献度除零)
+    if change == 0:
+        writer(WSStepInfo(
+            step=_STEP, status="success",
+            data={"clarify": f"{desc} —— 两期持平,没有可归因的变化"}, finish=True,
+        ))
+        logger.info(f"归因终止:两期持平({desc})")
+        return {"halt": True}
+
     # 现象核实:用户说"下降"但实际没降(或反之)→ 说明实情,无需归因
     if (t.direction == "down" and change >= 0) or (t.direction == "up" and change <= 0):
         actual = "并未下降,反而上升" if t.direction == "down" and change > 0 else \
@@ -113,14 +116,18 @@ async def confirm_phenomenon(state: AttributionState, runtime: Runtime[Attributi
         writer(WSStepInfo(
             step=_STEP, status="success",
             data={"clarify": f"{desc} —— {actual},无需做{ '下降' if t.direction == 'down' else '上升' }归因"},
-            guide_queries=[], finish=True,
+            finish=True,
         ))
         logger.info(f"归因终止:现象不成立({desc})")
         return {"halt": True}
 
     phenomenon = {
         "target_value": tv, "baseline_value": bv,
-        "change": change, "change_pct": pct, "description": desc,
+        "change": change, "change_pct": pct,
+        # 面板结构化展示用的口径信息(attribution_result.phenomenon 原样带出)
+        "target_period": t.target_period, "baseline_period": t.baseline_period,
+        "metric": t.metric, "scope": t.scope, "compare_type": t.compare_type,
+        "description": desc,
         "target_sql": target_out.get("sql"), "baseline_sql": base_out.get("sql"),
     }
     writer(WSStepInfo(step=_STEP, status="success", data={"description": desc}))

@@ -16,35 +16,34 @@ def _or(a, b):
 
 
 class AttributionTarget(BaseModel):
-    """parse_target 的 LLM 结构化输出:归因目标。"""
+    """parse_target 的 LLM 结构化输出:归因目标。
+
+    口径前置后,compare_type / baseline_period 不再由 LLM 输出:
+    前端弹层给定口径,parse_target 节点按口径从候选基准里代码回填。"""
     # 归因指标(用领域里的说法,如"实际产量")
     metric: str = ""
     # 限定范围(如"华东工厂";没有则空串)
     scope: str = ""
-    # 目标期(如"2026年3月";按当前日期补全年份)
+    # 观察期(结果/问题对应的期间,如"2026年3月";按当前日期补全年份)
     target_period: str = ""
     # 现象方向:用户说"下降"=down、"上升/这么高"=up、没说=unknown
     direction: Literal["down", "up", "unknown"] = "unknown"
-    # 对比口径:mom=环比 / yoy=同比 / custom=用户指定基准 / unspecified=没说(要澄清)
-    compare_type: Literal["mom", "yoy", "custom", "unspecified"] = "unspecified"
-    # 基准期(unspecified 时为空串)
+    # 对比口径:由代码按前端弹层的选择回填(custom 留给二期自定义日期)
+    compare_type: Literal["mom", "yoy", "custom"] = "mom"
+    # 基准期:代码按口径从下面两个候选里回填
     baseline_period: str = ""
-    # 两个候选基准(无论口径是什么都给,供澄清话术/无数据改口径建议用)
+    # 两个候选基准(LLM 必给,供按口径回填/无数据改口径建议用)
     mom_baseline: str = ""
     yoy_baseline: str = ""
-    # 结果模式(归因按钮):当前结果是否存在可归因的变化。
-    # 单期汇总等没有时间对比的结果 → False,并在 infeasible_reason 说明
+    # 连观察期都识别不出(结果无时间信息、问题也没给期间)→ False,
+    # 并在 infeasible_reason 说明;有显式口径后单期结果也可归因
     feasible: bool = True
     infeasible_reason: str = ""
 
 
 class DimensionPlan(BaseModel):
-    """plan_dimensions 的 LLM 结构化输出:拆解维度清单。"""
-    class Dim(BaseModel):
-        name: str       # 维度名(如"工厂")
-        question: str   # 自包含子问题,一条覆盖目标期+基准期、按该维度分组
-
-    dimensions: list[Dim] = []
+    """plan_dimensions 的 LLM 结构化输出:只选维度名,子问题由代码模板生成。"""
+    dimensions: list[str] = []
 
 
 class AttributionState(BaseModel):
@@ -52,17 +51,20 @@ class AttributionState(BaseModel):
     # 多轮历史(指代消解用),入口注入
     history: list[dict[str, Any]] | None = None
     # ── 结果模式(归因按钮)的种子:用户点按钮那一轮的 问题/SQL/结果行 ──
-    # parse_target 据此从结果里识别最显著变化,省掉口径澄清(基准就在数据里)
+    # parse_target 据此识别观察期与指标
     seed_question: str | None = None
     seed_sql: str | None = None
     seed_rows: list[dict[str, Any]] | None = None
+    # 对比口径:前端弹层选定后随请求传入(口径前置,不再让 LLM 猜/向用户澄清)
+    compare_type: Literal["mom", "yoy"] = "mom"
     # parse_target 写入
     target: AttributionTarget | None = None
     # confirm_phenomenon 写入:{target_value, baseline_value, change, change_pct, ...}
     phenomenon: dict[str, Any] | None = None
     # plan_dimensions 写入
     plan: list[dict[str, Any]] | None = None
-    # run_dims 写入:[{dimension, question, sql, rows, error}]
+    # run_dims 写入:[{dimension, members: [{member, target_value, baseline_value,
+    #   change, change_pct, contribution_pct}], target_sql, baseline_sql}]
     dim_results: list[dict[str, Any]] | None = None
     # synthesize 写入:归因结论(自然语言,带数字论证)
     conclusion: str | None = None

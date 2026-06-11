@@ -1,13 +1,12 @@
 """Attribution Agent — 归因分析("为什么 X 下降了?")。
 
-方法论(五步,每步对应一个节点):
-  parse_target        解析归因目标:指标/范围/目标期/对比口径(同比|环比|用户指定)。
-                      口径没说 → 澄清卡让用户选,不猜。
-  confirm_phenomenon  查目标期 vs 基准期总量,确认现象并量化。
-                      基准期没数据 → 说明卡 + 可点的改口径建议,不硬算。
-  plan_dimensions     按领域元数据规划 2~4 个拆解维度,每维度一条"两期对比"子问题。
-  run_dims            逐维度执行子查询(走注入的 run_query,复用完整查询管线)。
-  synthesize          综合各维度对比,定位主要贡献项,产出归因结论。
+方法论(五步,每步对应一个节点;对比口径由前端弹层前置给定,不澄清不猜):
+  parse_target        解析归因目标:指标/范围/观察期;基准期按口径从候选里代码回填。
+  confirm_phenomenon  查观察期 vs 基准期总量,确认现象并量化。
+                      基准期没数据 → 说明卡 + 结构化改口径建议,不硬算。
+  plan_dimensions     LLM 只选 2~4 个维度名,每维度两条单期分组子问题由代码模板生成。
+  run_dims            并发执行子查询(走注入的 run_query),纯代码 join 算贡献度。
+  synthesize          LLM 照贡献清单写核心结论;流末发结构化 attribution_result 事件。
 
 跨后端复用的关键:本 agent 不懂 SQL/DuckDB,Context 只注入
   run_query(自包含问题) -> {rows, sql, error}   和   domain_md(领域描述)。

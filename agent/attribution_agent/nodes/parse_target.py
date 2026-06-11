@@ -1,8 +1,8 @@
-"""归因目标解析节点:指标/范围/目标期/对比口径。
+"""归因目标解析节点:指标/范围/观察期。
 
-口径规则(用户可自选):
-  - 话术里明说了 同比/环比/具体基准 → 尊重;
-  - 没说 → 不替用户猜:发澄清卡,给出"环比 vs 同比"两个可点选项,本轮结束。
+口径前置:对比口径由前端弹层选定后随请求传入(state.compare_type),
+LLM 只识别指标/范围/观察期并给出两个候选基准期,基准期由代码按口径回填。
+有显式口径后单期结果也可归因;只有连观察期都识别不出才 feasible=false。
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from pathlib import Path
 
 from langchain.messages import HumanMessage, SystemMessage
 from langgraph.runtime import Runtime
-from pydantic import BaseModel
 
 from agent.attribution_agent.schemas import AttributionContext, AttributionState, AttributionTarget
 from agent.llm import llm
@@ -43,13 +42,18 @@ def _render_history(history: list[dict] | None) -> str:
     return "\n\n".join(blocks)
 
 
+_BASIS_CN = {"mom": "环比(与上一可比期对比)", "yoy": "同比(与去年同期对比)"}
+
+
 async def _llm_parse(question: str, history: list[dict] | None,
                      seed_question: str | None = None,
-                     seed_rows: list[dict] | None = None) -> AttributionTarget:
+                     seed_rows: list[dict] | None = None,
+                     compare_type: str = "mom") -> AttributionTarget:
     """LLM 解析归因目标。结果模式(归因按钮)额外注入当前查询与结果数据。独立成函数,便于测试替换。"""
     msgs = [
         SystemMessage(content=_get_prompt()),
         SystemMessage(content=f"当前日期:{datetime.now():%Y-%m-%d}"),
+        SystemMessage(content=f"用户已选口径:{_BASIS_CN.get(compare_type, compare_type)}"),
         SystemMessage(content="# 对话历史(供指代消解)\n" + _render_history(history)),
     ]
     if seed_rows:
@@ -67,40 +71,33 @@ async def parse_target(state: AttributionState, runtime: Runtime[AttributionCont
     writer(WSStepInfo(step="解析归因目标", status="running"))
     question = str(state.messages[-1].content) if state.messages else ""
 
+    compare = state.compare_type or "mom"
     try:
         target = await _llm_parse(question, state.history,
-                                  seed_question=state.seed_question, seed_rows=state.seed_rows)
+                                  seed_question=state.seed_question, seed_rows=state.seed_rows,
+                                  compare_type=compare)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"归因目标解析失败:{exc}")
         writer(WSStepInfo(step="解析归因目标", status="error",
                           data={"error": "归因目标解析失败,请换一种问法重试"}, finish=True))
         return {"halt": True, "error": str(exc)}
 
-    # 结果模式:当前结果没有可归因的变化(单期汇总等)→ 说明 + 引导,结束
+    # 口径前置:LLM 不输出口径/基准期,代码按前端选定的口径从候选里回填
+    target.compare_type = compare
+    target.baseline_period = target.mom_baseline if compare == "mom" else target.yoy_baseline
+    if target.feasible and not (target.target_period and target.baseline_period):
+        target.feasible = False
+        target.infeasible_reason = (target.infeasible_reason
+                                    or "无法识别观察期或推导对比基准期")
+
+    # 连观察期都识别不出(结果无时间信息、问题也没给期间)→ 说明,结束
     if not target.feasible:
         writer(WSStepInfo(
             step="解析归因目标", status="success",
-            data={"clarify": target.infeasible_reason or "当前结果没有可归因的变化"},
-            guide_queries=["各月份的实际产量"],
+            data={"clarify": target.infeasible_reason or "当前结果没有可归因的期间信息"},
             finish=True,
         ))
         logger.info(f"归因终止:结果不可归因({target.infeasible_reason!r})")
-        return {"target": target, "halt": True}
-
-    # 口径没说 → 澄清:给出环比/同比两个可点选项,让用户自己选,绝不替用户猜
-    if target.compare_type == "unspecified":
-        guides = []
-        if target.mom_baseline:
-            guides.append(f"{question}(环比,对比{target.mom_baseline})")
-        if target.yoy_baseline:
-            guides.append(f"{question}(同比,对比{target.yoy_baseline})")
-        writer(WSStepInfo(
-            step="解析归因目标", status="success",
-            data={"clarify": "需要先确定对比口径(环比还是同比),请点击选择"},
-            guide_queries=guides or [f"{question}(环比)", f"{question}(同比)"],
-            finish=True,
-        ))
-        logger.info(f"归因口径未指定,发澄清卡:{question!r}")
         return {"target": target, "halt": True}
 
     writer(WSStepInfo(
