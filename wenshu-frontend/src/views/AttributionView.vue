@@ -10,17 +10,16 @@
  *
  * 结构:进度区(步骤卡)→ 结果区(指标卡+变化徽章 → 核心结论 →
  *       维度 chips → 贡献度横向条形(ECharts)→ 维度明细表 → 查看 SQL)。
- * 说明卡带 suggest_compare_type 时渲染「改用环比/同比重试」按钮;
- * 「下载 PDF」走浏览器打印导出(图表用 SVG 渲染,保证打印可见)。
+ * 说明卡带 suggest_compare_type 时渲染「改用环比/同比重试」按钮。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import VChart from 'vue-echarts'
 
 import { use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
-import { SVGRenderer } from 'echarts/renderers'
+import { CanvasRenderer } from 'echarts/renderers'
 
 import {
   streamAttributionEvents,
@@ -37,8 +36,7 @@ import {
   type AttributionStep,
 } from '@/types/attribution'
 
-// SVG 渲染(而非 canvas):「下载 PDF」走浏览器打印,canvas 在打印快照里是空白,SVG 矢量必现
-use([SVGRenderer, BarChart, GridComponent, TooltipComponent])
+use([CanvasRenderer, BarChart, GridComponent, TooltipComponent])
 
 const COMPARE_CN: Record<CompareType, string> = { mom: '环比', yoy: '同比' }
 const COMPARE_OPTIONS: { value: CompareType; label: string; desc: string }[] = [
@@ -226,48 +224,7 @@ function rerun() {
   void run(lastRequest)
 }
 
-// 下载 PDF:走浏览器打印(长内容自动分页、文字矢量、零依赖);
-// 打印样式隐藏交互元素(口径按钮/进度区/SQL/chips),只留结果本体。
-// 图表特殊处理:打印快照里动态渲染的 canvas/SVG 不可靠(实测空白),
-// 打印前把图表导出成静态 <img>(打印时显示,屏幕上隐藏),<img> 在打印里必现。
-const chartRef = ref<{ getDataURL?: (opts?: object) => string } | null>(null)
-const printImg = ref<HTMLImageElement | null>(null)
-const printChartSrc = ref('')
-
-async function preparePrintChart() {
-  printChartSrc.value = chartRef.value?.getDataURL?.({ backgroundColor: '#ffffff' }) ?? ''
-  if (!printChartSrc.value) return
-  await nextTick()
-  try {
-    // 等图片解码完成再调起打印,否则快照里还是空白
-    await printImg.value?.decode()
-  } catch {
-    /* 解码失败就让浏览器尽力而为 */
-  }
-}
-
-// Ctrl+P 直接打印的兜底:beforeprint 里同步生成打印图(来不及 await 解码,尽力而为;
-// 走「下载 PDF」按钮的路径会提前生成并等解码完成)
-function onBeforePrint() {
-  printChartSrc.value =
-    chartRef.value?.getDataURL?.({ backgroundColor: '#ffffff' }) ?? printChartSrc.value
-}
-
-async function downloadPdf() {
-  if (!result.value) return
-  await preparePrintChart()
-  const original = document.title
-  // 打印对话框的默认文件名取自 document.title
-  document.title = `归因分析_${query.value}_${COMPARE_CN[compareType.value]}`
-  try {
-    window.print()
-  } finally {
-    document.title = original
-  }
-}
-
 onMounted(() => {
-  window.addEventListener('beforeprint', onBeforePrint)
   const entry = handoffId.value ? loadAttributionEntry(handoffId.value) : null
   if (!entry) {
     missing.value = true
@@ -287,10 +244,7 @@ onMounted(() => {
   void run(entry.req)
 })
 
-onBeforeUnmount(() => {
-  window.removeEventListener('beforeprint', onBeforePrint)
-  controller?.abort()
-})
+onBeforeUnmount(() => controller?.abort())
 
 // ── 展示派生 ────────────────────────────────────────────
 const phenomenon = computed(() => result.value?.phenomenon ?? null)
@@ -381,7 +335,7 @@ const barOption = computed(() => {
   <!-- 独立全屏页(App.vue 不套侧栏外壳):文档级滚动,顶栏对视口吸顶 -->
   <div class="min-h-screen bg-[linear-gradient(180deg,rgba(255,255,255,0.6),rgba(241,245,249,0.9))]">
     <!-- 顶栏 -->
-    <header class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 backdrop-blur print:static">
+    <header class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 backdrop-blur">
       <div class="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <div class="min-w-0">
           <div class="flex items-center gap-2.5">
@@ -407,8 +361,8 @@ const barOption = computed(() => {
           </div>
         </div>
 
-        <!-- 口径切换(命中快照直接回放)/ 重新分析 / 下载 PDF -->
-        <div v-if="!missing" class="flex shrink-0 items-center gap-1.5 print:hidden">
+        <!-- 口径切换(命中快照直接回放)/ 重新分析 -->
+        <div v-if="!missing" class="flex shrink-0 items-center gap-1.5">
           <button
             v-for="opt in COMPARE_OPTIONS"
             :key="opt.value"
@@ -437,20 +391,6 @@ const barOption = computed(() => {
             </svg>
           </button>
 
-          <button
-            v-if="result"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500 transition hover:border-sky-300 hover:text-sky-600"
-            title="下载为 PDF(浏览器打印对话框里选「另存为 PDF」)"
-            @click="downloadPdf"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke-linecap="round" />
-              <polyline points="7 10 12 15 17 10" stroke-linecap="round" stroke-linejoin="round" />
-              <line x1="12" y1="15" x2="12" y2="3" stroke-linecap="round" />
-            </svg>
-            下载 PDF
-          </button>
         </div>
       </div>
     </header>
@@ -469,7 +409,7 @@ const barOption = computed(() => {
 
       <template v-else>
         <!-- 进度区:结果出来后折叠为一行,可展开回看 -->
-        <section v-if="steps.length > 0" class="print:hidden">
+        <section v-if="steps.length > 0">
           <button
             v-if="showStepsCollapsed"
             type="button"
@@ -594,8 +534,8 @@ const barOption = computed(() => {
             </p>
           </section>
 
-          <!-- 维度 chips(打印只保留当前选中维度的图表与明细,chips 不打) -->
-          <div class="flex flex-wrap items-center gap-2 print:hidden">
+          <!-- 维度 chips -->
+          <div class="flex flex-wrap items-center gap-2">
             <button
               v-for="(dim, i) in result.dimensions"
               :key="dim.name"
@@ -625,20 +565,9 @@ const barOption = computed(() => {
             </div>
             <div class="px-3 py-4">
               <VChart
-                ref="chartRef"
-                class="print:hidden"
                 :option="barOption"
                 :autoresize="true"
-                :init-options="{ renderer: 'svg' }"
                 :style="{ height: `${chartHeight}px`, width: '100%' }"
-              />
-              <!-- 打印专用静态图(downloadPdf 时生成):打印快照里动态图表不可靠,<img> 必现 -->
-              <img
-                v-if="printChartSrc"
-                ref="printImg"
-                :src="printChartSrc"
-                alt="贡献度排名"
-                class="hidden w-full print:block"
               />
             </div>
           </section>
@@ -687,7 +616,7 @@ const barOption = computed(() => {
           </section>
 
           <!-- 查看该维度 SQL -->
-          <section v-if="activeDim && (activeDim.target_sql || activeDim.baseline_sql)" class="print:hidden">
+          <section v-if="activeDim && (activeDim.target_sql || activeDim.baseline_sql)">
             <button
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
@@ -727,16 +656,3 @@ const barOption = computed(() => {
     </main>
   </div>
 </template>
-
-<style>
-/* 下载 PDF(浏览器打印):保留徽章/贡献条形的配色,白底,长表格自动分页 */
-@media print {
-  * {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  body {
-    background: #fff;
-  }
-}
-</style>
