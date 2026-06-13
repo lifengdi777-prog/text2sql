@@ -14,7 +14,6 @@ chart_agent 出图(load_rows 见 sql_result 已就位直接放行,不回读会�
 不动子 agent 内部:包装节点里 ainvoke 子图,子图节点 stream_writer 写出的
 WSStepInfo 事件经 contextvars 自动冒泡——入口 astream 已带 subgraphs=True,
 与此前 chart 子图嵌入主图时的事件冒泡是同一机制,前端协议零变化。
-(归因分析不在此路由:它是结果卡上的按钮,直达 POST /agent/attribution。)
 """
 from __future__ import annotations
 
@@ -58,7 +57,7 @@ def build_supervisor(query_graph, make_query_state: Callable[[SupervisorState], 
         if state.query_result is not None:
             # 「查询+画图」组合轮:本轮刚查出的数据直传(load_rows 见 sql_result 非 None 放行)。
             # messages 用画图指令(chart_agent 据此识别点名图型,如"饼"→pie);
-            # source_question 用改写后的查询问题(图表标题/前端报告与归因都要它,
+            # source_question 用改写后的查询问题(图表标题/前端报告都要它,
             # 不能用原始消息——其中混着"用饼图展示"这类指令词)。
             child = ChartAgentState(
                 messages=[HumanMessage(content=f"用{state.chart_directive}展示")],

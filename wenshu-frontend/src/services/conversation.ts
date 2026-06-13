@@ -121,7 +121,7 @@ function toChatMessage(m: StoredMessage): ChatMessage {
     interpretation: p.interpretation ?? null,
     sql: p.sql ?? null,
     guideQueries: p.guideQueries ?? [],
-    // 意图节点改写后的自包含问题:历史里再次出图/报告/归因时作数据问题(老数据无此字段则回退)
+    // 意图节点改写后的自包含问题:历史里再次出图/报告时作数据问题(老数据无此字段则回退)
     standaloneQuestion: p.standaloneQuestion ?? null,
     // 扇出风险标记 + 文案:历史回放时重现警告样式(老数据无此字段则按非扇出处理)
     fanout: p.fanout ?? false,

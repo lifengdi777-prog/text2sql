@@ -73,7 +73,7 @@ async def load_rows(state: ChartAgentState, runtime: Runtime[ChartAgentContext])
         sql=last.get("sql"),
         finish=True,
     ))
-    # 数据源头的问题,供图表标题/前端报告与归因用:
+    # 数据源头的问题,供图表标题/前端报告用:
     #   - 上一轮是查询轮(无图表配置)→ 用它配对的用户问题(如"Q1 各工厂实际产量");
     #   - 上一轮已是图表轮 → 它配对的问题是"生成饼状图"这类指令,不能用;
     #     优先用它 config 里的 source_question(完整原问题,连续换图一路传承),

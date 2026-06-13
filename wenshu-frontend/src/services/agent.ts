@@ -75,7 +75,7 @@ function isFanoutData(data: AgentEventData): data is { fanout: boolean; message?
 
 // 意图节点(db="解析用户意图" / dataset="意图识别")的改写问题:按 data 形状识别,
 // 只认守门放行(should_continue===true)且改写非空的事件。追问轮的原始消息是
-// "2025年呢"这类残句,按需出图/报告/归因要用这里的自包含问题。
+// "2025年呢"这类残句,按需出图/报告要用这里的自包含问题。
 function standaloneQuestionOf(data: AgentEventData): string | null {
   if (!data || Array.isArray(data) || typeof data !== 'object') return null
   const d = data as Record<string, unknown>
@@ -298,73 +298,6 @@ export async function streamDatasetQuery(
     { query, conversation_id: options.conversationId ?? null },
     options,
   )
-}
-
-// ── 归因分析(面板形态)────────────────────────────────────
-// 口径前置:同比/环比由弹层选定后必传;归因在右侧面板独立进行,不作为对话轮次。
-export type CompareType = 'mom' | 'yoy'
-
-export interface AttributionRequest {
-  rows: ResultRow[]
-  query: string
-  sql: string | null
-  compareType: CompareType
-  // 观察期:多期结果由弹层让用户选定(观察期前置);单期结果不传
-  targetPeriod?: string
-  conversationId?: number | null
-  datasourceId?: string
-  datasetId?: number
-}
-
-// SSE 原始事件直通(步骤卡 + 流末 attribution_result),由 AttributionPanel 自行渲染;
-// 不走 runStream 的 AgentReplyMessage 合并逻辑(那套是对话轮次的形状)。
-export async function streamAttributionEvents(
-  req: AttributionRequest,
-  options: { signal?: AbortSignal; onEvent: (event: AgentEvent) => void },
-): Promise<void> {
-  let processedLength = 0
-  let rest = ''
-
-  const handle = (input: string) => {
-    const parsed = parseSseChunk(input)
-    rest = parsed.rest
-    for (const event of parsed.events) {
-      if (event.step && event.status) {
-        options.onEvent(event)
-      }
-    }
-  }
-
-  await agentApi.post(
-    '/agent/attribution',
-    {
-      rows: req.rows,
-      query: req.query,
-      sql: req.sql,
-      compare_type: req.compareType,
-      target_period: req.targetPeriod ?? null,
-      conversation_id: req.conversationId ?? null,
-      datasource_id: req.datasourceId,
-      dataset_id: req.datasetId ?? null,
-    },
-    {
-      signal: options.signal,
-      onDownloadProgress: (progressEvent) => {
-        const target = progressEvent.event?.target as XMLHttpRequest | undefined
-        const responseText = target?.responseText
-        if (typeof responseText !== 'string' || responseText.length <= processedLength) {
-          return
-        }
-        const chunk = responseText.slice(processedLength)
-        processedLength = responseText.length
-        handle(rest + chunk)
-      },
-    },
-  )
-
-  if (rest.trim()) {
-    handle(`${rest}\n\n`)
-  }
 }
 
 // 按需生成图表:把问数结果行 + 问题发给后端,返回 chart_config(用户点「生成图表」时调)。

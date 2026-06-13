@@ -37,7 +37,7 @@ export interface ChartConfig {
   // 后端附带的用户提示(如「点名的图型画不出:原因 + 可生成的图型」),横幅展示
   notice?: string | null
   original_sql?: string | null
-  // 产生这份数据的完整原始问题(元字段)。图表指令轮("生成折线图")的标题/报告/归因
+  // 产生这份数据的完整原始问题(元字段)。图表指令轮("生成折线图")的标题/报告
   // 都需要数据源头的问题,且标题有去前缀+截断,只有这个字段是全保真的
   source_question?: string | null
   // 6 种正常图表 / table 的字段由前端按 chart_type 分别解析,这里不强制
@@ -57,7 +57,7 @@ export interface AgentReplyMessage {
   sql: string | null                // 真正执行的那条 SQL(执行成功事件带上),供「查看 SQL」展示
   guideQueries: string[]
   // 意图节点改写后的自包含问题(多轮指代消解结果,如"2025年呢"→"2025年第一季度各工厂的实际产量")。
-  // 按需出图/报告/归因的标题与上下文优先用它,不能用原始残句
+  // 按需出图/报告的标题与上下文优先用它,不能用原始残句
   standaloneQuestion?: string | null
   // 扇出风险:为 true 时前端用"警告图标 + 危险色"渲染引导区,fanoutMessage 是风险说明文案
   fanout?: boolean

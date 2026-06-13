@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 
 import { hasDisplayableResult } from '@/lib/result-display'
-import { stashAttributionRequest } from '@/lib/attribution-handoff'
-import { detectPeriodCandidates } from '@/lib/periods'
 import { exportRowsToCsv } from '@/lib/export'
 import { uuid } from '@/lib/uuid'
 import {
@@ -12,7 +9,6 @@ import {
   generateChart,
   generateReport,
   fetchHotQuestions,
-  type CompareType,
   type QueryOptions,
 } from '@/services/agent'
 import {
@@ -57,8 +53,6 @@ const props = withDefaults(
     backTo: '',
   },
 )
-
-const router = useRouter()
 
 // 判断 chart_type 是否走 ECharts 渲染(否则走表格 / 状态卡)
 function isEChartsType(t: string | undefined | null): boolean {
@@ -357,7 +351,7 @@ function isUnchartable(message: AgentReplyMessage): boolean {
   return !Array.isArray(ct) || ct.filter((t) => t !== 'table').length === 0
 }
 
-// 该回复对应的「数据问题」(出图标题/分析报告/归因都用它),按保真度取:
+// 该回复对应的「数据问题」(出图标题/分析报告都用它),按保真度取:
 // 1) chart_config 的 source_question(数据源头的完整问题,换图也传承);
 // 2) 意图节点改写后的自包含问题 standaloneQuestion ——
 //    追问轮("2025年呢")的原始消息是残句,出图标题必须用改写后的完整问题;
@@ -467,7 +461,6 @@ async function scrollToBottom() {
 }
 
 // 发起一轮流式对话的公共骨架:推 user/reply 消息、串回调、收尾状态。
-// submitQuery(输入框提问)与 onAttribution(归因按钮)共用。
 async function runTurn(
   userContent: string,
   start: (opts: QueryOptions) => Promise<void>,
@@ -551,46 +544,6 @@ async function submitQuery() {
   if (!query || isLoading.value) return
   inputValue.value = ''
   await runTurn(query, (opts) => props.streamFn(query, opts))
-}
-
-// ── 归因分析:口径弹层(同比/环比 + 多期结果选观察期)→ 新标签页独立页面 ──────
-// 待归因的那条回复(非 null 时显示口径弹层)
-const attributionTarget = ref<AgentReplyMessage | null>(null)
-const attributionCompareType = ref<CompareType>('mom')
-// 观察期前置:结果含多个期间时(如"各月份产量"),观察期由用户在弹层里选,
-// 不让系统暗中挑"最近一期"(与口径前置同一道理);单期/识别不出 → 候选为空,不显示选择
-const attributionPeriods = ref<string[]>([])
-const attributionPeriod = ref('')
-
-function onAttribution(message: AgentReplyMessage) {
-  if (!shouldShowResult(message.result)) return
-  attributionCompareType.value = 'mom'
-  attributionPeriods.value = detectPeriodCandidates(message.result)
-  attributionPeriod.value = attributionPeriods.value[0] ?? '' // 默认最近一期
-  attributionTarget.value = message
-}
-
-function closeAttributionModal() {
-  attributionTarget.value = null
-}
-
-// 确定归因:请求体写 localStorage 交接,window.open 新页面(/attribution?id=)。
-// 必须在点击手势的同步上下文里开窗,否则被浏览器弹窗拦截(与生成报告同款约束)。
-function confirmAttribution() {
-  const message = attributionTarget.value
-  if (!message) return
-  attributionTarget.value = null
-  const id = stashAttributionRequest({
-    rows: message.result,
-    query: questionFor(message),
-    sql: message.sql,
-    compareType: attributionCompareType.value,
-    targetPeriod: attributionPeriods.value.length >= 2 ? attributionPeriod.value : undefined,
-    datasetId: props.source === 'dataset' ? props.datasetId : undefined,
-    datasourceId: props.datasourceId,
-    conversationId: activeConversationId.value,
-  })
-  window.open(router.resolve({ name: 'attribution', query: { id } }).href, '_blank')
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -1046,24 +999,6 @@ onBeforeUnmount(() => {
               导出数据
             </button>
 
-            <!-- 归因分析:口径弹层选同比/环比 → 新标签页独立分析(不占用聊天,无需禁用) -->
-            <button
-              v-if="shouldShowResult(message.result)"
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
-              @click="onAttribution(message)"
-            >
-              <!-- 分叉/拆解图标 -->
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="6" cy="6" r="3" />
-                <circle cx="6" cy="18" r="3" />
-                <circle cx="18" cy="12" r="3" />
-                <path d="M9 6h4a2 2 0 0 1 2 2v0" />
-                <path d="M9 18h4a2 2 0 0 0 2-2v0" />
-              </svg>
-              归因分析
-            </button>
-
             <!-- 按需分析报告:对该轮结果生成 HTML 报告,新标签页打开 -->
             <button
               v-if="shouldShowResult(message.result)"
@@ -1338,72 +1273,5 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 归因口径弹层:先选同比/环比,点「确定归因」才开始 -->
-    <div
-      v-if="attributionTarget"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-      @click.self="closeAttributionModal"
-    >
-      <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
-        <h3 class="text-base font-semibold text-slate-800">归因分析</h3>
-        <p class="mt-1 text-xs text-slate-400">
-          {{ attributionPeriods.length >= 2 ? '选择观察期与对比口径' : '选择对比口径' }}，分析将在新页面打开，不影响继续提问
-        </p>
-
-        <!-- 观察期:结果含多个期间时由用户选(默认最近一期),归因该期的变化 -->
-        <div v-if="attributionPeriods.length >= 2" class="mt-4">
-          <label class="text-xs font-medium text-slate-500">观察期（归因哪一期的变化）</label>
-          <select
-            v-model="attributionPeriod"
-            class="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-sky-300"
-          >
-            <option v-for="p in attributionPeriods" :key="p" :value="p">{{ p }}</option>
-          </select>
-        </div>
-
-        <div class="mt-4 grid grid-cols-2 gap-3">
-          <button
-            v-for="opt in ([
-              { value: 'mom', label: '环比', desc: '与上一期对比' },
-              { value: 'yoy', label: '同比', desc: '与去年同期对比' },
-            ] as { value: CompareType; label: string; desc: string }[])"
-            :key="opt.value"
-            type="button"
-            class="rounded-2xl border px-4 py-3 text-left transition"
-            :class="
-              attributionCompareType === opt.value
-                ? 'border-sky-400 bg-sky-50 shadow-[0_0_0_3px_rgba(186,230,253,0.7)]'
-                : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/50'
-            "
-            @click="attributionCompareType = opt.value"
-          >
-            <p
-              class="text-sm font-semibold"
-              :class="attributionCompareType === opt.value ? 'text-sky-700' : 'text-slate-700'"
-            >
-              {{ opt.label }}
-            </p>
-            <p class="mt-0.5 text-xs text-slate-400">{{ opt.desc }}</p>
-          </button>
-        </div>
-
-        <div class="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-            @click="closeAttributionModal"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            class="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
-            @click="confirmAttribution"
-          >
-            确定归因
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>

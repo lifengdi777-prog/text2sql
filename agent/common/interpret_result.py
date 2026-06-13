@@ -72,10 +72,6 @@ def _build_data_payload(rows: list[dict[str, Any]]) -> str:
 async def interpret_result(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     writer = runtime.stream_writer
 
-    # 归因等上层 agent 的内部子查询:只要数据不要解读,跳过(省一次 LLM 调用)
-    if state.internal_subquery:
-        return {"interpretation": None}
-
     # SQL 报错 / 无结果 → 没有可解读的数据，跳过（不发事件，前端也就不渲染解读块）
     if state.error or not state.sql_result:
         return {"interpretation": None}

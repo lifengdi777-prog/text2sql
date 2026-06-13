@@ -13,8 +13,8 @@ onMounted(() => {
   void auth.refreshMe()
 })
 
-// 独立全屏布局,不套侧边栏外壳:登录页、归因分析页(新标签页打开的专注页面)
-const isStandalonePage = computed(() => route.name === 'login' || route.name === 'attribution')
+// 独立全屏布局,不套侧边栏外壳:登录页
+const isStandalonePage = computed(() => route.name === 'login')
 
 // 聊天页(DB / 数据集问数):去掉上下留白,让聊天卡片贴顶贴底铺满高度
 const isChatView = computed(() => route.name === 'db-chat' || route.name === 'dataset-chat')
@@ -37,7 +37,7 @@ async function logout() {
 </script>
 
 <template>
-  <!-- 独立全屏页(登录/归因分析):无侧边栏外壳 -->
+  <!-- 独立全屏页(登录):无侧边栏外壳 -->
   <router-view v-if="isStandalonePage" />
 
   <div v-else class="flex h-screen w-screen overflow-hidden bg-slate-100 text-[14px] text-slate-900">

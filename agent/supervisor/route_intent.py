@@ -33,7 +33,6 @@ _PROMPT_CACHE: str | None = None
 
 # 预筛:不含任何绘图相关字眼的消息必然是 query,直接放行省一次 LLM 调用。
 # 允许误命中(如"图书销量"含"图"),由 LLM 终判纠正。
-# (归因分析不走对话路由:它是结果卡上的「归因分析」按钮,直达专用端点)
 CHART_HINT = re.compile(r"图|画|可视化|chart|plot", re.IGNORECASE)
 
 

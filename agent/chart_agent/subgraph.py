@@ -192,7 +192,7 @@ async def build_chart(state: ChartAgentState, runtime: Runtime[ChartAgentContext
     # query 本身仍用于点名图型识别与 LLM 选型意图
     title = _make_title(state.source_question or query)
     # 完整源头问题随 config 带给前端(元字段):标题会去前缀+截断,不可逆;
-    # 前端的报告/归因/再出图都需要"产生这份数据的原始问题",而图表指令轮
+    # 前端的报告/再出图都需要"产生这份数据的原始问题",而图表指令轮
     # 最近的 user 消息是"生成折线图"这类指令,只能从这里拿
     src_question = str(state.source_question or query)
     requested = _requested_type(str(query))

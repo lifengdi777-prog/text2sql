@@ -8,7 +8,7 @@
   - sql:执行成功事件带上的真正执行 SQL
   - guideQueries:finish 且 guide_queries 非空
   - standaloneQuestion:意图节点改写后的自包含问题(data 带 standalone_query)。
-    追问轮("2025年呢")的原始消息是残句,按需出图/报告/归因的标题与上下文要用这个
+    追问轮("2025年呢")的原始消息是残句,按需出图/报告的标题与上下文要用这个
 
 产出的 payload 字段名对齐前端 AgentReplyMessage(camelCase),历史加载时可直接渲染。
 """

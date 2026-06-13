@@ -43,13 +43,6 @@ const router = createRouter({
       name: 'dataset-edit',
       component: () => import('@/views/DatasetEditView.vue'),
     },
-    {
-      // 归因分析独立页:从问数/数据集结果卡发起,window.open 新标签页打开,
-      // 数据经 localStorage 交接(?id= 是交接条目的 key,见 lib/attribution-handoff.ts)
-      path: '/attribution',
-      name: 'attribution',
-      component: () => import('@/views/AttributionView.vue'),
-    },
     // 通配兜底:任何匹配不上的路径都落到 404 页(public,登录与否都能看到)
     {
       path: '/:pathMatch(.*)*',
