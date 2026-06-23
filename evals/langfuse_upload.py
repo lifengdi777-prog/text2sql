@@ -2,7 +2,7 @@
 
 用法:
     uv run python -m evals.langfuse_upload
-    uv run python -m evals.langfuse_upload --name text2sql-db-v1 --difficulty easy,medium
+    uv run python -m evals.langfuse_upload --name text2sql-db-v3 --difficulty easy,medium,hard
 
 要点:
   - dataset_item 的 id 直接用 case 的 id(easy_001 ...),所以**可重复执行**:

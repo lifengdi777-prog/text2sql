@@ -6,9 +6,7 @@
   - 在 UI 里可按 run 对比(改 prompt/模型前后 diff)
 
 用法:
-    uv run python -m evals.langfuse_experiment
-    uv run python -m evals.langfuse_experiment --name db-eval-fastllm --concurrency 3
-
+    uv run python -m evals.langfuse_experiment --datasource ds_2d5641051ac7 --name db-eval
 前置:
     1. 先 uv run python -m evals.langfuse_upload 把数据集传上去
     2. meta/dw/qdrant/es 服务在跑,且 meta 库已 init_data 灌过
@@ -41,7 +39,7 @@ from evals.metrics.schema_linking import schema_linking_recall  # noqa: E402
 from repositories.es import ESRepository  # noqa: E402
 from repositories.qdrant import ColumnQdrantRepository, MetricQdrantRepository  # noqa: E402
 
-DEFAULT_DATASET_NAME = "text2sql-db-v2"
+DEFAULT_DATASET_NAME = "text2sql-db-v3"
 
 # agent 召回用的数据源 id;由 main() 按 --datasource 覆盖。
 # 默认 ds_default 是空的,dw/制造库的 meta 物化在某个 ds_xxx 名下,跑前务必用 --datasource 指定。
