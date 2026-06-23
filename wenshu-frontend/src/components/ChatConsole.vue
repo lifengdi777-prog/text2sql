@@ -951,7 +951,7 @@ onBeforeUnmount(() => {
           >
             <div class="mb-2 flex items-center gap-2">
               <span class="h-1.5 w-1.5 rounded-full bg-violet-400"></span>
-              <span class="text-xs font-semibold text-violet-700 sm:text-sm">数据解读</span>
+              <span class="text-xs font-semibold text-violet-700 sm:text-sm">数据解读与分析</span>
             </div>
             <p class="whitespace-pre-line text-xs leading-7 text-slate-700 sm:text-sm">
               {{ message.interpretation }}
