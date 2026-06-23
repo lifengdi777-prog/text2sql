@@ -102,7 +102,7 @@
     GROUP BY d.month
     ORDER BY d.month
   gold_tables: [table_production_record, table_date]
-  gold_columns: [month, actual_quantity, year]
+  gold_columns: [month, actual_quantity]
 
 - id: medium_008
   difficulty: medium
