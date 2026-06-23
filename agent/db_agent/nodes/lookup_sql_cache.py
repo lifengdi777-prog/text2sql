@@ -20,6 +20,13 @@ from services.sql_cache import make_cache_key
 
 async def lookup_sql_cache(state: WSAgentState, runtime: Runtime[WSAgentContext]):
     ctx = runtime.context
+
+    # eval/实验场景显式关掉缓存:当未命中处理,且 cache_key=None ——
+    # 后续 execute_sql 的写回守卫(not state.cache_key)会一并跳过,做到既不读也不写。
+    if not ctx.use_sql_cache:
+        logger.info(f"SQL缓存已禁用(use_sql_cache=False) ds={ctx.datasource_id},走完整重新生成")
+        return {"from_cache": False, "cache_key": None, "meta_version": None}
+
     # parse_query_intention 已原地替换 messages[-1] 为改写后的自包含问题
     question = state.messages[-1].content if state.messages else ""
 

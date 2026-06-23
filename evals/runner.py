@@ -134,6 +134,7 @@ async def evaluate_case(
                 es_repo=ESRepository(es_client.client),
                 meta_db_client=meta_mysql_client,
                 datasource_id=datasource_id,   # 召回/补路径按该数据源作用域化(dw 在 ds_xxx 名下)
+                use_sql_cache=False,           # 评测必须绕开 SQL 缓存:既不命中旧缓存、也不写回污染生产缓存
             )
 
             # 跑图,同时通过 stream_mode="custom" 收集节点时长

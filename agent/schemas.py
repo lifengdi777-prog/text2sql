@@ -95,6 +95,9 @@ class WSAgentContext(BaseModel):
     # 所有元数据查询/召回/DW 连接都按它作用域化。
     datasource_id: str = DEFAULT_DATASOURCE_ID
     database: str | None = None
+    # 是否启用 SQL 缓存(读+写)。生产默认 True;eval/实验置 False,
+    # 让每条用例都走完整重新生成,既不命中旧缓存、也不把评测产物写回污染生产缓存。
+    use_sql_cache: bool = True
     #全是自定义类，所以需要在模型配置中设置arbitrary_types_allowed=True，
     #允许使用任意类型的字段。
     model_config = ConfigDict(arbitrary_types_allowed=True)
